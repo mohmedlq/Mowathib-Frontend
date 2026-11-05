@@ -1,0 +1,11 @@
+export { AdminDashboardPage } from './dashboard/pages/AdminDashboardPage';
+export { AdminAttendancePage } from './attendance/pages/AdminAttendancePage';
+export { AdminClassesPage } from './classes/pages/AdminClassesPage';
+export { AdminStudentsPage } from './students/pages/AdminStudentsPage';
+export { AdminRepresentativesPage } from './representatives/pages/AdminRepresentativesPage';
+export { AdminAcademicYearsPage } from './academic-years/pages/AdminAcademicYearsPage';
+export { AdminCardsPage } from './cards/pages/AdminCardsPage';
+export { AdminCardRequestsPage } from './card-requests/pages/AdminCardRequestsPage';
+export { AdminNotificationsPage } from './notifications/pages/AdminNotificationsPage';
+export { AdminSettingsPage } from './settings/pages/AdminSettingsPage';
+
