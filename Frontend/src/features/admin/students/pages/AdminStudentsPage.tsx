@@ -7,7 +7,6 @@ import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
 import { useNotifications } from '../../../notifications';
-import { RepresentativeBadge } from '../../../../shared/components/ui/RepresentativeBadge';
 
 export function AdminStudentsPage() {
   const [searchParams] = useSearchParams();
@@ -193,7 +192,9 @@ export function AdminStudentsPage() {
                     <td className="px-4 py-3 text-[#5F6B73] font-medium font-mono">{en.className}</td>
                     <td className="px-4 py-3 text-center">
                       {en.isRepresentative ? (
-                        <RepresentativeBadge representativeId={en.enrollmentId} className="px-2 text-[10px]" />
+                        <span className="text-[#245B63] bg-[#E8F1F1] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#245B63]/25">
+                          عريف
+                        </span>
                       ) : (
                         <span className="text-[#89949A] text-[11px]">طالب</span>
                       )}

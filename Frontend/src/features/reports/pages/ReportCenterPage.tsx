@@ -1,8 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import { reportCalculationService } from '../services/reportCalculationService';
 import { excelExportService } from '../services/excelExportService';
+import type { MonthlyAttendanceWeekData } from '../services/excelExportService';
+
 import { ReportFilters } from '../components/ReportFilters';
 import { DailyReportView } from '../components/DailyReportView';
 import { WeeklyReportView } from '../components/WeeklyReportView';
@@ -10,14 +13,144 @@ import { MonthlyReportView } from '../components/MonthlyReportView';
 import { ReportExportMenu } from '../components/ReportExportMenu';
 import { StageBatchExportCard } from '../components/StageBatchExportCard';
 import { LoadingState } from '../../../shared/components/ui/Spinner';
+
 import { useNotifications } from '../../notifications';
 import { useAuth } from '../../auth';
 import { useSchoolSettings } from '../../../shared/services/schoolSettingsService';
+
 import type { ReportFilterOptions } from '../types/report.types';
 import type { StudentWeeklyAttendance } from '../../attendance';
-import { SCHOOL_DAYS, SCHOOL_PERIODS, type AttendanceStatus } from '../../../shared/types';
-import { calculateDateForDay, getArabicDayName, formatArabicDateShort } from '../../../shared/utils/date';
+import {
+  SCHOOL_DAYS,
+  SCHOOL_PERIODS,
+  type AttendanceStatus,
+  type AttendanceRecord,
+  type ClassEnrollment,
+} from '../../../shared/types';
+
+import {
+  calculateDateForDay,
+  getArabicDayName,
+  formatArabicDateShort,
+} from '../../../shared/utils/date';
+
 import { FileText } from 'lucide-react';
+
+/**
+ * Builds the exact StudentWeeklyAttendance structure used by WeeklyReportView
+ * and exportWeeklyAttendance, but for an arbitrary week's records.
+ */
+function buildWeeklyAttendanceRows(
+  enrollments: ClassEnrollment[],
+  records: AttendanceRecord[]
+): StudentWeeklyAttendance[] {
+  // Index records once instead of searching the complete array for every slot.
+  // Keep the first record for a slot, matching the previous Array.find behavior.
+  const recordBySlot = new Map<string, AttendanceRecord>();
+
+  records.forEach((record) => {
+    const key = `${record.enrollmentId}:${record.dayNumber}:${record.periodNumber}`;
+    if (!recordBySlot.has(key)) {
+      recordBySlot.set(key, record);
+    }
+  });
+
+  return enrollments.map((enrollment) => {
+    const slots: Record<
+      number,
+      Record<number, { status: AttendanceStatus; recordId?: number }>
+    > = {};
+
+    let present = 0;
+    let absent = 0;
+    let discontinued = 0;
+    let unmarked = 0;
+
+    SCHOOL_DAYS.forEach((day) => {
+      slots[day.dayNumber] = {};
+
+      SCHOOL_PERIODS.forEach((period) => {
+        const key = `${enrollment.enrollmentId}:${day.dayNumber}:${period}`;
+        const match = recordBySlot.get(key);
+
+        if (match) {
+          slots[day.dayNumber][period] = {
+            status: match.status,
+            recordId: match.attendanceRecordId,
+          };
+
+          if (match.status === 'Present') {
+            present++;
+          } else if (match.status === 'Absent') {
+            absent++;
+          } else if (match.status === 'Discontinued') {
+            discontinued++;
+          } else {
+            unmarked++;
+          }
+        } else {
+          slots[day.dayNumber][period] = { status: 'Unmarked' };
+          unmarked++;
+        }
+      });
+    });
+
+    return {
+      enrollment,
+      slots,
+      summary: {
+        present,
+        absent,
+        discontinued,
+        unmarked,
+      },
+    };
+  });
+}
+
+function getMonthDateRange(month: string): {
+  monthStart: string;
+  monthEnd: string;
+} {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+
+  if (!match) {
+    throw new Error('صيغة الشهر غير صحيحة. اختر شهراً صالحاً.');
+  }
+
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+
+  if (monthNumber < 1 || monthNumber > 12) {
+    throw new Error('الشهر المحدد غير صحيح.');
+  }
+
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+
+  return {
+    monthStart: `${month}-01`,
+    monthEnd: `${month}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+function toDateKey(value: string | Date): string {
+  const dateKey = String(value).trim().slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    throw new Error(`تاريخ أسبوع دراسي غير صالح: ${String(value)}`);
+  }
+
+  const parsed = new Date(`${dateKey}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== dateKey
+  ) {
+    throw new Error(`تاريخ أسبوع دراسي غير صالح: ${String(value)}`);
+  }
+
+  return dateKey;
+}
 
 export function ReportCenterPage() {
   const { user } = useAuth();
@@ -37,16 +170,19 @@ export function ReportCenterPage() {
   });
 
   const handleFilterChange = (updated: Partial<ReportFilterOptions>) => {
-    setFilters((prev) => ({ ...prev, ...updated }));
+    setFilters((previous) => ({ ...previous, ...updated }));
   };
 
-  // Queries
-  const { data: classes = [] } = useQuery({
+  // ---------------------------------------------------------------------------
+  // Reference data
+  // ---------------------------------------------------------------------------
+
+  const { data: classes = [], isLoading: isLoadingClasses } = useQuery({
     queryKey: ['classes'],
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  const { data: weeks = [] } = useQuery({
+  const { data: weeks = [], isLoading: isLoadingWeeks } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
@@ -54,59 +190,89 @@ export function ReportCenterPage() {
   const targetClassId = filters.classId;
   const targetWeekId = filters.weekId;
 
-  // Fetch enrollments for selected class or all classes
-  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery({
+  // ---------------------------------------------------------------------------
+  // Existing selected-class / selected-week queries (daily and weekly views)
+  // ---------------------------------------------------------------------------
+
+  const {
+    data: enrollments = [],
+    isLoading: isLoadingEnrollments,
+  } = useQuery({
     queryKey: ['report_enrollments', targetClassId],
     queryFn: async () => {
       if (targetClassId > 0) {
-        return await schoolDataService.getEnrollmentsByClass(targetClassId);
-      } else {
-        // All classes (for admin)
-        const list = [];
-        for (const c of classes.slice(0, 10)) {
-          const res = await schoolDataService.getEnrollmentsByClass(c.classId);
-          list.push(...res);
-        }
-        return list;
+        return schoolDataService.getEnrollmentsByClass(targetClassId);
       }
+
+      // Keep the existing all-classes preview behavior.
+      const list: ClassEnrollment[] = [];
+      for (const classItem of classes.slice(0, 10)) {
+        const classEnrollments = await schoolDataService.getEnrollmentsByClass(
+          classItem.classId
+        );
+        list.push(...classEnrollments);
+      }
+      return list;
     },
     enabled: classes.length > 0,
   });
 
-  // Fetch attendance records for selected class and week
-  const { data: records = [], isLoading: isLoadingRecords } = useQuery({
+  const {
+    data: records = [],
+    isLoading: isLoadingRecords,
+  } = useQuery({
     queryKey: ['report_records', targetClassId, targetWeekId],
     queryFn: async () => {
       if (targetClassId > 0) {
-        return await schoolDataService.getAttendanceRecords(targetClassId, targetWeekId);
-      } else {
-        const list = [];
-        for (const c of classes.slice(0, 5)) {
-          const res = await schoolDataService.getAttendanceRecords(c.classId, targetWeekId);
-          list.push(...res);
-        }
-        return list;
+        return schoolDataService.getAttendanceRecords(targetClassId, targetWeekId);
       }
+
+      // Keep the existing all-classes preview behavior for the selected week.
+      const list: AttendanceRecord[] = [];
+      for (const classItem of classes.slice(0, 5)) {
+        const classRecords = await schoolDataService.getAttendanceRecords(
+          classItem.classId,
+          targetWeekId
+        );
+        list.push(...classRecords);
+      }
+      return list;
     },
     enabled: targetWeekId > 0 && classes.length > 0,
   });
 
-  // Selected week entity
   const selectedWeek = useMemo(() => {
-    return weeks.find((w) => w.attendanceWeekId === filters.weekId) || weeks[0];
+    return weeks.find((week) => week.attendanceWeekId === filters.weekId) || weeks[0];
   }, [weeks, filters.weekId]);
 
   const selectedClass = useMemo(() => {
-    return classes.find((c) => c.classId === filters.classId);
+    return classes.find((classItem) => classItem.classId === filters.classId);
   }, [classes, filters.classId]);
 
-  const classNameTitle = filters.classId === 0 ? 'جميع فصول المدرسة (30 شعبة)' : selectedClass?.className || 'الشعبة 105';
-  const currentDayName = getArabicDayName(filters.dayNumber);
-  const currentDayDate = selectedWeek ? calculateDateForDay(selectedWeek.startDate, filters.dayNumber) : '';
+  const classNameTitle =
+    filters.classId === 0
+      ? 'جميع الشعب'
+      : selectedClass?.className
+        ? String(selectedClass.className)
+        : selectedClass
+          ? `شعبة ${selectedClass.classId}`
+          : 'شعبة 105';
 
-  // 1. Calculate Daily Report Data
+  const currentDayName = getArabicDayName(filters.dayNumber);
+  const currentDayDate = selectedWeek
+    ? calculateDateForDay(selectedWeek.startDate, filters.dayNumber)
+    : '';
+
+  // ---------------------------------------------------------------------------
+  // Daily report calculations
+  // ---------------------------------------------------------------------------
+
   const dailyAttendanceRows = useMemo(() => {
-    return reportCalculationService.calculateDailyAttendance(enrollments, records, filters.dayNumber);
+    return reportCalculationService.calculateDailyAttendance(
+      enrollments,
+      records,
+      filters.dayNumber
+    );
   }, [enrollments, records, filters.dayNumber]);
 
   const dailyAbsenceRecords = useMemo(() => {
@@ -118,56 +284,130 @@ export function ReportCenterPage() {
     );
   }, [enrollments, records, filters.dayNumber, selectedWeek]);
 
-  // 2. Calculate Weekly Report Data
+  // ---------------------------------------------------------------------------
+  // Weekly report calculations (same shape used for every monthly sheet)
+  // ---------------------------------------------------------------------------
+
   const weeklyAttendances: StudentWeeklyAttendance[] = useMemo(() => {
-    return enrollments.map((en) => {
-      const slots: Record<number, Record<number, { status: AttendanceStatus; recordId?: number }>> = {};
-      let present = 0;
-      let absent = 0;
-      let discontinued = 0;
-      let unmarked = 0;
-
-      SCHOOL_DAYS.forEach((day) => {
-        slots[day.dayNumber] = {};
-        SCHOOL_PERIODS.forEach((p) => {
-          const match = records.find(
-            (r) =>
-              r.enrollmentId === en.enrollmentId &&
-              r.dayNumber === day.dayNumber &&
-              r.periodNumber === p
-          );
-
-          if (match) {
-            slots[day.dayNumber][p] = { status: match.status, recordId: match.attendanceRecordId };
-            if (match.status === 'Present') present++;
-            else if (match.status === 'Absent') absent++;
-            else if (match.status === 'Discontinued') discontinued++;
-          } else {
-            slots[day.dayNumber][p] = { status: 'Unmarked' };
-            unmarked++;
-          }
-        });
-      });
-
-      return {
-        enrollment: en,
-        slots,
-        summary: { present, absent, discontinued, unmarked },
-      };
-    });
+    return buildWeeklyAttendanceRows(enrollments, records);
   }, [enrollments, records]);
 
-  // 3. Calculate Monthly Report Data
+  // ---------------------------------------------------------------------------
+  // Monthly on-screen report calculations
+  // ---------------------------------------------------------------------------
+
   const monthlyData = useMemo(() => {
-    return reportCalculationService.calculateMonthlyReport(enrollments, records, weeks, filters.month);
+    return reportCalculationService.calculateMonthlyReport(
+      enrollments,
+      records,
+      weeks,
+      filters.month
+    );
   }, [enrollments, records, weeks, filters.month]);
 
-  // Export handlers
+  // ---------------------------------------------------------------------------
+  // Monthly Excel export data builder
+  // Fetch all real attendance weeks overlapping the selected calendar month.
+  // For each week, fetch records for every selected class and build the same
+  // StudentWeeklyAttendance structure used by the regular weekly export.
+  // ---------------------------------------------------------------------------
+
+  const buildMonthlyExportWeeks = async (): Promise<MonthlyAttendanceWeekData[]> => {
+    const { monthStart, monthEnd } = getMonthDateRange(filters.month);
+
+    const selectedMonthWeeks = weeks
+      .map((week) => ({
+        week,
+        startDate: toDateKey(week.startDate),
+        endDate: toDateKey(week.endDate),
+      }))
+      .filter(({ startDate, endDate }) => {
+        if (startDate > endDate) {
+          throw new Error(
+            `نطاق الأسبوع غير صحيح: ${startDate} - ${endDate}`
+          );
+        }
+
+        // Include any actual attendance week that overlaps the selected month.
+        return startDate <= monthEnd && endDate >= monthStart;
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    if (selectedMonthWeeks.length === 0) {
+      throw new Error('لا توجد أسابيع دراسية مسجلة ضمن الشهر المحدد.');
+    }
+
+    // When a specific class is selected, export only that class.
+    // When "all classes" is selected, use every class returned by the API.
+    // Do not use the limited slices from the regular preview queries here.
+    const classesToExport =
+      filters.classId > 0
+        ? classes.filter((classItem) => classItem.classId === filters.classId)
+        : classes;
+
+    if (classesToExport.length === 0) {
+      throw new Error('لم يتم العثور على الشعب المطلوبة للتصدير.');
+    }
+
+    // Fetch the enrollments for all selected classes once.
+    const enrollmentGroups = await Promise.all(
+      classesToExport.map(async (classItem) => ({
+        classItem,
+        enrollments: await schoolDataService.getEnrollmentsByClass(
+          classItem.classId
+        ),
+      }))
+    );
+
+    const allMonthlyEnrollments = enrollmentGroups.flatMap(
+      (group) => group.enrollments
+    );
+
+    if (allMonthlyEnrollments.length === 0) {
+      throw new Error('لا يوجد طلاب مسجلون في الشعب المحددة لهذا التقرير.');
+    }
+
+    const monthlyWeeks: MonthlyAttendanceWeekData[] = [];
+
+    // Process weeks in calendar order. Within each week, retrieve each class's
+    // actual records using the existing API method and that week's ID.
+    for (let index = 0; index < selectedMonthWeeks.length; index++) {
+      const selected = selectedMonthWeeks[index];
+
+      const recordsByClass = await Promise.all(
+        enrollmentGroups.map((group) =>
+          schoolDataService.getAttendanceRecords(
+            group.classItem.classId,
+            selected.week.attendanceWeekId
+          )
+        )
+      );
+
+      const weekRecords = recordsByClass.flat();
+
+      monthlyWeeks.push({
+        weekNumber: selected.week.weekNumber ?? index + 1,
+        startDate: selected.startDate,
+        endDate: selected.endDate,
+        attendances: buildWeeklyAttendanceRows(
+          allMonthlyEnrollments,
+          weekRecords
+        ),
+      });
+    }
+
+    return monthlyWeeks;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Excel export handlers
+  // ---------------------------------------------------------------------------
+
   const handleExportExcel = async () => {
     const meta = {
       academicYear: '2026-2027',
       className: classNameTitle,
-      schoolName: schoolName,
+      schoolName,
     };
 
     try {
@@ -190,21 +430,37 @@ export function ReportCenterPage() {
         const weekRange = selectedWeek
           ? `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(selectedWeek.endDate)}`
           : '';
+
         await excelExportService.exportWeeklyAttendance(weeklyAttendances, {
           ...meta,
           weekNumber: selectedWeek?.weekNumber || 1,
           weekRange,
         });
       } else {
-        // Monthly
-        await excelExportService.exportMonthlyReport(monthlyData.summary, monthlyData.detailedAbsences, {
-          ...meta,
-          month: filters.month,
-        });
+        // Monthly export: same weekly attendance layout repeated in one workbook.
+        const monthlyWeeks = await buildMonthlyExportWeeks();
+
+        await excelExportService.exportMonthlyReport(
+          monthlyData.summary,
+          monthlyData.detailedAbsences,
+          {
+            ...meta,
+            month: filters.month,
+            weeks: monthlyWeeks,
+          }
+        );
       }
+
       toast.show('تم تصدير ملف Excel بنجاح', 'success');
-    } catch {
-      toast.show('حدث خطأ أثناء تصدير ملف Excel', 'danger');
+    } catch (error) {
+      console.error('Failed to export attendance report:', error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'حدث خطأ غير متوقع أثناء إنشاء التقرير.';
+
+      toast.show(`تعذر تصدير التقرير: ${message}`, 'danger');
     }
   };
 
@@ -212,7 +468,11 @@ export function ReportCenterPage() {
     window.print();
   };
 
-  const isLoading = isLoadingEnrollments || isLoadingRecords;
+  const isLoading =
+    isLoadingClasses ||
+    isLoadingWeeks ||
+    isLoadingEnrollments ||
+    isLoadingRecords;
 
   return (
     <div className="space-y-6">
@@ -221,7 +481,9 @@ export function ReportCenterPage() {
         <div>
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-[#245B63]" />
-            <h1 className="text-xl font-bold text-[#17252B]">مركز تقارير الحضور والغياب</h1>
+            <h1 className="text-xl font-bold text-[#17252B]">
+              مركز تقارير الحضور والغياب
+            </h1>
           </div>
           <p className="text-xs text-[#5F6B73] mt-1">
             استخراج وتصدير تقارير الحضور والغياب اليومية والأسبوعية والشهرية الرسمية
@@ -229,7 +491,11 @@ export function ReportCenterPage() {
         </div>
 
         {/* Export and Print Menu */}
-        <ReportExportMenu onExportExcel={handleExportExcel} onPrint={handlePrint} isLoading={isLoading} />
+        <ReportExportMenu
+          onExportExcel={handleExportExcel}
+          onPrint={handlePrint}
+          isLoading={isLoading}
+        />
       </div>
 
       {/* Filter Card */}
@@ -257,8 +523,8 @@ export function ReportCenterPage() {
           {filters.periodType === 'daily'
             ? `تقرير الحضور والغياب اليومي (${currentDayName} - ${currentDayDate})`
             : filters.periodType === 'weekly'
-            ? `تقرير الحضور الأسبوعي — الأسبوع ${selectedWeek?.weekNumber}`
-            : `تقرير الحضور الشهري — شهر ${filters.month}`}
+              ? `تقرير الحضور الأسبوعي — الأسبوع ${selectedWeek?.weekNumber}`
+              : `تقرير الحضور الشهري — شهر ${filters.month}`}
         </h3>
         <p className="text-xs text-gray-600 mt-1">
           العام الدراسي: 2026-2027 | {classNameTitle} | تاريخ الطباعة:{' '}
@@ -282,7 +548,7 @@ export function ReportCenterPage() {
           attendances={weeklyAttendances}
           weekStartDate={selectedWeek?.startDate}
           weekNumber={selectedWeek?.weekNumber || 1}
-          classNameTitle={classNameTitle}
+          classNameTitle={classNameTitle || ' '}
           isAllClasses={filters.classId === 0}
         />
       ) : (
@@ -290,10 +556,9 @@ export function ReportCenterPage() {
           summaryRows={monthlyData.summary}
           detailedAbsences={monthlyData.detailedAbsences}
           monthStr={filters.month}
-          classNameTitle={classNameTitle}
+          classNameTitle={classNameTitle || ' '}
         />
       )}
     </div>
   );
 }
-

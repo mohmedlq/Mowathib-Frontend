@@ -58,23 +58,29 @@ export function AdminDashboardPage() {
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  const activeWeek = weeks[0] || { weekNumber: 1, attendanceWeekId: 1 };
+  const activeWeek = weeks[0] || { weekNumber: 11, attendanceWeekId: 11 };
   const pendingRequests = cardRequests.filter((r) => r.status === 'Pending').length;
 
+  // Split classes by grade:
   // Split classes by grade:
   // Grade 1: 101 to 110
   // Grade 2: 201 to 210
   // Grade 3: 301 to 310
+  const getClassNum = (c: { classNumber?: number; className?: string | number; classId: number }) => {
+    const val = Number(c.classNumber ?? c.className ?? c.classId);
+    return Number.isFinite(val) ? val : c.classId;
+  };
+
   const grade1Classes = useMemo(
-    () => classes.filter((c) => c.classId >= 101 && c.classId <= 110),
+    () => classes.filter((c) => getClassNum(c) >= 101 && getClassNum(c) <= 110),
     [classes]
   );
   const grade2Classes = useMemo(
-    () => classes.filter((c) => c.classId >= 201 && c.classId <= 210),
+    () => classes.filter((c) => getClassNum(c) >= 201 && getClassNum(c) <= 210),
     [classes]
   );
   const grade3Classes = useMemo(
-    () => classes.filter((c) => c.classId >= 301 && c.classId <= 310),
+    () => classes.filter((c) => getClassNum(c) >= 301 && getClassNum(c) <= 310),
     [classes]
   );
 
@@ -89,7 +95,7 @@ export function AdminDashboardPage() {
     if (!classSearch.trim()) return list;
     return list.filter(
       (c) =>
-        c.className.toLowerCase().includes(classSearch.toLowerCase()) ||
+        String(c.className ?? c.classId).toLowerCase().includes(classSearch.toLowerCase()) ||
         c.classId.toString().includes(classSearch)
     );
   }, [selectedGradeTab, grade1Classes, grade2Classes, grade3Classes, classSearch]);

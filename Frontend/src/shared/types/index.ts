@@ -14,18 +14,11 @@ export const ATTENDANCE_STATUS_ARABIC: Record<AttendanceStatus, string> = {
 export type CardRequestStatus =
   | 'Pending'
   | 'Approved'
-  | 'Rejected'
-  | 'Printed'
-  | 'Delivered'
-  | 'Cancelled';
-
+  | 'Rejected';
 export const CARD_REQUEST_STATUS_ARABIC: Record<CardRequestStatus, string> = {
   Pending: 'قيد الانتظار',
   Approved: 'تمت الموافقة',
   Rejected: 'مرفوض',
-  Printed: 'تمت الطباعة',
-  Delivered: 'تم التسليم',
-  Cancelled: 'ملغي',
 };
 
 export type UserRole = 'Admin' | 'Representative' | 'Deputy';
@@ -36,7 +29,8 @@ export interface AuthUser {
   role: UserRole;
   fullName?: string;
   classId?: number;
-  className?: string;
+  classNumber?: number;
+  className?: number | string;
   enrollmentId?: number;
   mustChangePassword?: boolean;
   token?: string;
@@ -52,7 +46,8 @@ export interface AcademicYear {
 
 export interface ClassItem {
   classId: number;
-  className: string;
+  classNumber?: number;
+  className: number | string;
   academicYearId: number;
   totalCards: number;
 }
@@ -77,7 +72,8 @@ export interface ClassEnrollment {
   endDate?: string | null;
   isActive: boolean;
   studentName?: string;
-  className?: string;
+  classNumber?: number;
+  className?: number | string;
   academicYearName?: string;
   student?: Student;
 }
@@ -109,7 +105,8 @@ export interface Representative {
   isActive: boolean;
   mustChangePassword: boolean;
   studentName?: string;
-  className?: string;
+  classNumber?: number;
+  className?: number | string;
 }
 
 export interface CardRequest {
@@ -122,7 +119,8 @@ export interface CardRequest {
   statusName?: string;
   studentName?: string;
   representativeUsername?: string;
-  className?: string;
+  classNumber?: number;
+  className?: number | string;
   createdAt?: string;
 }
 

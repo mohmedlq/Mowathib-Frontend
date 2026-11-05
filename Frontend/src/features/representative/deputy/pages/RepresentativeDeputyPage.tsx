@@ -31,8 +31,8 @@ export function RepresentativeDeputyPage() {
   const { user } = useAuth();
   const { toast } = useNotifications();
   const queryClient = useQueryClient();
-  const classId = user?.classId || 105;
-
+  const classId = user?.classId || 0;
+  const className = user?.className || 0;
   // Modals & form state
   const [isChangeModalOpen, setIsChangeModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
@@ -66,7 +66,7 @@ export function RepresentativeDeputyPage() {
   });
 
   // Active Deputy student (_2 username)
-  const deputy = reps.find((r) => r.username === `${classId}_2` && r.isActive);
+  const deputy = reps.find((r) => r.username === `${className}_2` && r.isActive);
 
   // Selected student entity
   const selectedStudent = enrollments.find((e) => e.enrollmentId === selectedStudentId);
@@ -109,7 +109,7 @@ export function RepresentativeDeputyPage() {
         await deactivateMutation.mutateAsync(deputy.representativeId);
       }
 
-      const assignedUsername = `${classId}_2`;
+      const assignedUsername = `${className}_2`;
 
       // 2. Create the new deputy record with the generated secure password
       await createMutation.mutateAsync({

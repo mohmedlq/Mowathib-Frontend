@@ -13,11 +13,9 @@ import { AttendanceProgressSummary } from './AttendanceProgressSummary';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
 import { Search, CheckCircle2, ChevronRight, ChevronLeft, Save, AlertTriangle } from 'lucide-react';
 import { cn } from '../../../shared/utils/cn';
-import { RepresentativeBadge } from '../../../shared/components/ui/RepresentativeBadge';
 
 export interface QuickAttendancePanelProps {
-  classNameTitle: string;
-  academicYearName: string;
+  classNameTitle: number|string;
   weekNumber: number;
   selectedDay: number;
   onSelectDay: (day: number) => void;
@@ -35,7 +33,6 @@ export interface QuickAttendancePanelProps {
 
 export function QuickAttendancePanel({
   classNameTitle,
-  academicYearName,
   weekNumber,
   selectedDay,
   onSelectDay,
@@ -49,10 +46,11 @@ export function QuickAttendancePanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [isConfirmBulkOpen, setIsConfirmBulkOpen] = useState(false);
 
-  const { data: reps = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(true),
+  const { data: activeYear } = useQuery({
+    queryKey: ['active_academic_year'],
+    queryFn: () => schoolDataService.getActiveAcademicYear(),
   });
+  const academicYearName = activeYear?.yearName || '2026-2027';
 
   // Local draft status for the currently selected slot (enrollmentId -> AttendanceStatus)
   const [localStatuses, setLocalStatuses] = useState<Record<number, AttendanceStatus>>({});
@@ -376,18 +374,6 @@ export function QuickAttendancePanel({
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-[#17252B]">{en.studentName}</span>
-                        {(() => {
-                          const repMatch = reps.find((r) => r.enrollmentId === en.enrollmentId && r.isActive);
-                          const isRep = en.isRepresentative || !!repMatch;
-                          if (!isRep) return null;
-                          return (
-                            <RepresentativeBadge
-                              enrollmentId={en.enrollmentId}
-                              role={repMatch?.role}
-                              className="text-[10px]"
-                            />
-                          );
-                        })()}
                       </div>
                       <span className="text-[11px] text-[#5F6B73] font-mono">
                         رقم الهوية: {en.student?.nationalId}

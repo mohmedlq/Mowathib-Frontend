@@ -8,11 +8,10 @@ import {
   useAttendanceMatrix,
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
-import { RepresentativeBadge } from '../../../../shared/components/ui/RepresentativeBadge';
 
 export function RepresentativeAttendancePage() {
   const { user } = useAuth();
-  const classId = user?.classId || 105;
+  const classId = user?.classId || 0;
 
   const [selectedWeekId, setSelectedWeekId] = useState<number>(1);
   const [selectedDay, setSelectedDay] = useState<number>(1);
@@ -56,7 +55,6 @@ export function RepresentativeAttendancePage() {
           <div className="px-3 py-2 rounded-lg bg-[#E8F1F1] border border-[#245B63]/20 text-xs flex items-center gap-2 self-start sm:self-auto sm:mt-5">
             <span className="text-[#5F6B73]">الشعبة:</span>
             <span className="font-bold text-[#245B63]">{user?.className || `شعبة ${classId}`}</span>
-            <RepresentativeBadge role={user?.role} />
           </div>
         </div>
       </div>
@@ -67,7 +65,6 @@ export function RepresentativeAttendancePage() {
       ) : (
         <QuickAttendancePanel
           classNameTitle={user?.className || `شعبة ${classId}`}
-          academicYearName="2026-2027"
           weekNumber={currentWeek?.weekNumber || 1}
           selectedDay={selectedDay}
           onSelectDay={setSelectedDay}

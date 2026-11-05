@@ -31,14 +31,14 @@ export function RepresentativeCardRequestsPage() {
   });
 
   const myRequests = requests.filter(
-    (r) => r.representativeUsername === user?.username || r.className?.includes(String(classId))
+    (r) => r.representativeUsername === user?.username || r.className?.toString()?.includes(String(classId))
   );
 
   const createRequestMutation = useMutation({
     mutationFn: async () => {
       return await schoolDataService.createCardRequest({
         enrollmentId: selectedEnrollmentId || enrollments[0]?.enrollmentId || 1,
-        representativeId: user?.id || 1,
+        representativeId: user?.id || 0,
         reason,
         cardType,
       });

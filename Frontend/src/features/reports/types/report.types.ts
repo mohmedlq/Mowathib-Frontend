@@ -18,7 +18,7 @@ export interface DailyAttendanceRow {
   enrollmentId: number;
   nationalId: string;
   studentName: string;
-  className: string;
+  className: number;
   periods: Record<number, AttendanceStatus>;
   presentCount: number;
   absentCount: number;
@@ -30,7 +30,7 @@ export interface DailyAbsenceRecord {
   enrollmentId: number;
   nationalId: string;
   studentName: string;
-  className: string;
+  className: number;
   date: string;
   dayName: string;
   periodNumber: SchoolPeriod;
@@ -40,7 +40,7 @@ export interface MonthlyStudentSummaryRow {
   enrollmentId: number;
   nationalId: string;
   studentName: string;
-  className: string;
+  className: number;
   totalExpected: number;
   presentCount: number;
   absentCount: number;
@@ -53,7 +53,7 @@ export interface MonthlyDetailedAbsenceRow {
   enrollmentId: number;
   nationalId: string;
   studentName: string;
-  className: string;
+  className: number;
   date: string;
   dayName: string;
   periodNumber: number;

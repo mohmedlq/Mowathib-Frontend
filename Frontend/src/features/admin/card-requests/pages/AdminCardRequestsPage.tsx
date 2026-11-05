@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
-import { FileQuestion, CheckCircle2, XCircle, Printer } from 'lucide-react';
+import { FileQuestion, CheckCircle2, XCircle } from 'lucide-react';
 import { CardRequestBadge } from '../../../../shared/components/ui/Badge';
 import { useNotifications } from '../../../notifications';
 import type { CardRequestStatus } from '../../../../shared/types';
@@ -60,10 +60,8 @@ export function AdminCardRequestsPage() {
             className="h-9.5 px-3 bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg text-xs font-medium text-[#17252B] outline-none cursor-pointer hover:border-[#245B63] transition-colors"
           >
             <option value="all">جميع الحالات ({requests.length})</option>
-            <option value="Pending">قيد الانتظار (جديدة)</option>
+            <option value="Pending">قيد الانتظار</option>
             <option value="Approved">تمت الموافقة</option>
-            <option value="Printed">تمت الطباعة</option>
-            <option value="Delivered">تم التسليم</option>
             <option value="Rejected">مرفوضة</option>
           </select>
         </div>
@@ -137,38 +135,6 @@ export function AdminCardRequestsPage() {
                           </>
                         )}
 
-                        {req.status === 'Approved' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateStatusMutation.mutate({ requestId: req.requestId, status: 'Printed' })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-[#E8F1F1] text-[#245B63] border border-[#CDE0E2] hover:bg-[#D8E8E9] transition-colors cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>تأكيد الطباعة</span>
-                          </button>
-                        )}
-
-                        {req.status === 'Printed' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateStatusMutation.mutate({ requestId: req.requestId, status: 'Delivered' })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-[#E8F5EC] text-[#176B3A] border border-[#B7DEC5] hover:bg-[#D7EEDB] transition-colors cursor-pointer"
-                          >
-                            <span>تسليم للعريف</span>
-                          </button>
-                        )}
-
-                        {req.status === 'Delivered' && (
-                          <span className="text-[11px] text-[#176B3A] font-bold">مكتمل ومسلّم</span>
-                        )}
-
-                        {req.status === 'Rejected' && (
-                          <span className="text-[11px] text-[#A61B1B] font-bold">مرفوض</span>
-                        )}
                       </div>
                     </td>
                   </tr>

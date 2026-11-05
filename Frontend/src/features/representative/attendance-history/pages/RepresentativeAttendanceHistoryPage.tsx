@@ -10,12 +10,13 @@ import {
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { History } from 'lucide-react';
+import { currentWeek } from '@/shared/services/schoolSettingsService';
 
 export function RepresentativeAttendanceHistoryPage() {
   const { user } = useAuth();
-  const classId = user?.classId || 105;
+  const classId = user?.classId ||0;
 
-  const [selectedWeekId, setSelectedWeekId] = useState<number>(1);
+  const [selectedWeekId, setSelectedWeekId] = useState<number>(currentWeek);
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
@@ -60,7 +61,7 @@ export function RepresentativeAttendanceHistoryPage() {
         absentCount={overallSummary.absent}
         discontinuedCount={overallSummary.discontinued}
         unmarkedCount={overallSummary.unmarked}
-        label={`إجمالي رصد الأسبوع ${selectedWeek?.weekNumber || 1}`}
+        label={`إجمالي رصد الأسبوع ${selectedWeek?.weekNumber || 0}`}
       />
 
       {/* Main Table */}

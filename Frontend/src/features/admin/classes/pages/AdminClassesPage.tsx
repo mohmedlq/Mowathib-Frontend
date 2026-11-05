@@ -25,7 +25,7 @@ export function AdminClassesPage() {
       if (selectedGrade === 1 && !(c.classId >= 101 && c.classId <= 110)) return false;
       if (selectedGrade === 2 && !(c.classId >= 201 && c.classId <= 210)) return false;
       if (selectedGrade === 3 && !(c.classId >= 301 && c.classId <= 310)) return false;
-      if (search.trim() && !c.className.includes(search) && !c.classId.toString().includes(search)) return false;
+      if (search.trim() && !c.className.toString().includes(search) && !c.classId.toString().includes(search)) return false;
       return true;
     });
   }, [classes, selectedGrade, search]);

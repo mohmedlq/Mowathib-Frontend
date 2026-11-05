@@ -7,7 +7,6 @@ export const loginSchema = z.object({
 
 export const changePasswordSchema = z
   .object({
-    currentPassword: z.string().min(1, 'كلمة المرور الحالية مطلوبة'),
     newPassword: z.string().min(6, 'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف'),
     confirmPassword: z.string().min(1, 'تأكيد كلمة المرور مطلوب'),
   })

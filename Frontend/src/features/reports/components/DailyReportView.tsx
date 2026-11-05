@@ -1,7 +1,6 @@
 import type { DailyAttendanceRow, DailyAbsenceRecord } from '../types/report.types';
 import { SCHOOL_PERIODS, type AttendanceStatus } from '../../../shared/types';
 import { PeriodStatusBox } from '../../attendance';
-import { RepresentativeBadge } from '../../../shared/components/ui/RepresentativeBadge';
 import { AttendanceLegend } from '../../attendance';
 
 export interface DailyReportViewProps {
@@ -120,10 +119,7 @@ export function DailyReportView({
                       {row.nationalId}
                     </td>
                     <td className="px-4 py-2.5 font-medium text-[#17252B] sticky right-28 bg-inherit border-l border-[#DCE3E6]">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span className="truncate">{row.studentName}</span>
-                        <RepresentativeBadge enrollmentId={row.enrollmentId} />
-                      </div>
+                      <span className="truncate">{row.studentName}</span>
                     </td>
                     <td className="px-3 py-2.5 text-[#5F6B73] border-l border-[#DCE3E6]">{row.className}</td>
                     {SCHOOL_PERIODS.map((p) => {

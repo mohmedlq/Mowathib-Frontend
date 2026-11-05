@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 const STORAGE_KEY = 'mowathib_school_settings_v1';
-export const DEFAULT_SCHOOL_NAME = 'مدرسة التميز الثانوية للبنين';
+export const DEFAULT_SCHOOL_NAME = 'مدرسةالامير عبدالمجيد بن عبدالعزيزالثانوية';
 const EVENT_NAME = 'mowathib_school_name_changed';
 
 export interface SchoolSettings {
@@ -95,3 +95,5 @@ export function useSchoolSettings() {
   };
 }
 
+export const currentWeek=11
+export const totalWeeks=18;

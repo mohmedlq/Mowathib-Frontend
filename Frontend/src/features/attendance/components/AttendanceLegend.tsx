@@ -1,6 +1,5 @@
 import { ATTENDANCE_STATUS_ARABIC, type AttendanceStatus } from '../../../shared/types';
 import { cn } from '../../../shared/utils/cn';
-
 export function AttendanceLegend({ className }: { className?: string }) {
   const statuses: AttendanceStatus[] = ['Present', 'Absent', 'Discontinued', 'Unmarked'];
 

@@ -57,10 +57,7 @@ export function CardRequestBadge({ status, size = 'sm' }: { status: CardRequestS
   const variantMap: Record<CardRequestStatus, BadgeProps['variant']> = {
     Pending: 'warning',
     Approved: 'present',
-    Printed: 'info',
-    Delivered: 'present',
-    Rejected: 'danger',
-    Cancelled: 'unmarked',
+    Rejected: 'unmarked',
   };
 
   return (

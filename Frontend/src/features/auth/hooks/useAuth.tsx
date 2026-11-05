@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { AuthUser } from '../../../shared/types';
 import type { AuthContextType, LoginCredentials } from '../types/auth.types';
 import { authApi } from '../api/authApi';
-
+import { schoolDataService } from '../../../shared/services/schoolDataService';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'mowathib_auth_user';
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: res.adminId,
           username: res.username,
           role: 'Admin',
-          fullName: 'مدير النظام',
+          fullName: 'مدير مساعد بن مبشر الشهري',
         };
         setUser(authUser);
       } else {
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const changePassword = async (newPassword: string, _currentPassword?: string) => {
+  const changePassword = async (newPassword: string) => {
     if (!user) return;
     setIsLoading(true);
     try {
@@ -101,7 +101,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('mowathib_token');
     window.location.href = '/';
   };
-
+  const activeAcademicYear=async():Promise<string>=>{
+    return(await schoolDataService.getActiveAcademicYear()).yearName;
+  }
   return (
     <AuthContext.Provider
       value={{
@@ -111,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginRepresentative,
         changePassword,
         logout,
+       activeAcademicYear,
       }}
     >
       {children}

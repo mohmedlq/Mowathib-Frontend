@@ -28,7 +28,7 @@ export interface AuthContextType {
     role: UserRole;
     fullName?: string;
     classId?: number;
-    className?: string;
+    className?: number | string;
     enrollmentId?: number;
     mustChangePassword?: boolean;
     token?: string;
@@ -36,7 +36,8 @@ export interface AuthContextType {
   isLoading: boolean;
   loginAdmin: (credentials: LoginCredentials) => Promise<void>;
   loginRepresentative: (credentials: LoginCredentials) => Promise<void>;
-  changePassword: (newPassword: string, currentPassword?: string) => Promise<void>;
+  changePassword: (newPassword: string) => Promise<void>;
   logout: () => void;
+  activeAcademicYear:()=>Promise<string>;
 }
 

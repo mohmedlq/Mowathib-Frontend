@@ -54,17 +54,17 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
   // Helper to dynamically filter classes by stage
   const getClassesForStage = (stageNumber: 1 | 2 | 3): ClassItem[] => {
     return classes.filter((c) => {
-      const cid = c.classId;
-      const cname = c.className || '';
+      const cnum = Number(c.classNumber ?? c.className ?? c.classId);
+      const cstr = String(c.className ?? c.classNumber ?? c.classId);
 
       if (stageNumber === 1) {
-        return (cid >= 100 && cid < 200) || cname.includes('الأول') || /^1\d{2}/.test(cname);
+        return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
       }
       if (stageNumber === 2) {
-        return (cid >= 200 && cid < 300) || cname.includes('الثاني') || /^2\d{2}/.test(cname);
+        return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
       }
       if (stageNumber === 3) {
-        return (cid >= 300 && cid < 400) || cname.includes('الثالث') || /^3\d{2}/.test(cname);
+        return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
       }
       return false;
     });

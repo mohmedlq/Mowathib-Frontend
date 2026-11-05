@@ -9,7 +9,6 @@ export function RepresentativeProfilePage() {
   const { user, changePassword } = useAuth();
   const { toast } = useNotifications();
 
-  const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [isChanging, setIsChanging] = useState(false);
@@ -27,13 +26,12 @@ export function RepresentativeProfilePage() {
 
     setIsChanging(true);
     try {
-      await changePassword(newPass, currentPass);
+      await changePassword(newPass);
       toast.show('تم تحديث كلمة المرور الخاصة بك بنجاح', 'success');
-      setCurrentPass('');
       setNewPass('');
       setConfirmPass('');
     } catch {
-      toast.show('فشل تحديث كلمة المرور، يرجى التأكد من كلمة المرور الحالية', 'danger');
+      toast.show('فشل تحديث كلمة المرور، يرجى المحاولة مرة أخرى', 'danger');
     } finally {
       setIsChanging(false);
     }
@@ -97,14 +95,7 @@ export function RepresentativeProfilePage() {
           </div>
 
           <form onSubmit={handleSubmitPassword} className="space-y-3.5">
-            <Input
-              type="password"
-              label="كلمة المرور الحالية"
-              placeholder="••••••••"
-              value={currentPass}
-              onChange={(e) => setCurrentPass(e.target.value)}
-              required
-            />
+         
 
             <Input
               type="password"

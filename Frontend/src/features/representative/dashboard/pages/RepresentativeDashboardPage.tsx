@@ -45,7 +45,7 @@ export function RepresentativeDashboardPage() {
               مرحباً بك، {user?.fullName || user?.username}
             </h1>
             <span className="text-xs px-2.5 py-0.5 rounded-md bg-[#E8F1F1] text-[#245B63] font-bold border border-[#CDE0E2]">
-              {user?.role === 'Representative' ? 'عريف الصف الأساسي' : 'نائب عريف الصف'}
+              {user?.role.toLowerCase() === 'Representative'.toLowerCase() ? 'عريف الصف الأساسي' : 'نائب عريف الصف'}
             </span>
           </div>
           <p className="text-xs text-[#5F6B73]">

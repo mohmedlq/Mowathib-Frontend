@@ -53,15 +53,15 @@
 
   /* Attendance Status Colors */
   --status-present-bg: #e8f5ec;
-  --status-present-text: #176b3a;
+  --status-present-text: #077133;
   --status-present-border: #b7dec5;
 
   --status-absent-bg: #fdecec;
-  --status-absent-text: #a61b1b;
+  --status-absent-text: #970000;
   --status-absent-border: #f1c3c3;
 
   --status-unmarked-bg: #f1f3f5;
-  --status-unmarked-text: #59636e;
+  --status-unmarked-text: #2e2f30;
   --status-unmarked-border: #d9dee3;
 
   --status-discontinued-bg: #fff4da;

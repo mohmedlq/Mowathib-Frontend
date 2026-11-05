@@ -42,19 +42,47 @@ export const schoolDataService = {
   // CLASSES (Connected to ClassesController)
   // ==========================================
   async getClasses(academicYearId?: number): Promise<ClassItem[]> {
-    return await apiClient.get<ClassItem[]>('/Classes', { academicYearId });
+    const raw = await apiClient.get<any[]>('/Classes', { academicYearId });
+    return (raw || []).map((c) => {
+      const num = c.classNumber ?? c.classId;
+      return {
+        classId: c.classId,
+        classNumber: num,
+        className: c.className ?? num,
+        academicYearId: c.academicYearId,
+        totalCards: c.totalCards ?? 3,
+      };
+    });
   },
 
   async getClassById(classId: number): Promise<ClassItem> {
-    return await apiClient.get<ClassItem>(`/Classes/${classId}`);
+    const c = await apiClient.get<any>(`/Classes/${classId}`);
+    const num = c?.classNumber ?? c?.classId ?? classId;
+    return {
+      classId: c?.classId ?? classId,
+      classNumber: num,
+      className: c?.className ?? num,
+      academicYearId: c?.academicYearId ?? 1,
+      totalCards: c?.totalCards ?? 3,
+    };
   },
 
-  async createClass(data: { className: string; academicYearId: number; totalCards: number }): Promise<ClassItem> {
-    return await apiClient.post<ClassItem>('/Classes', data);
+  async createClass(data: { className: string | number; classNumber?: number; academicYearId: number; totalCards: number }): Promise<ClassItem> {
+    const num = Number(data.classNumber ?? data.className);
+    return await apiClient.post<ClassItem>('/Classes', {
+      classNumber: num,
+      academicYearId: data.academicYearId,
+      totalCards: data.totalCards,
+    });
   },
 
-  async updateClass(classId: number, data: { className: string; academicYearId: number; totalCards: number }): Promise<void> {
-    await apiClient.put(`/Classes/${classId}`, data);
+  async updateClass(classId: number, data: { className: string | number; classNumber?: number; academicYearId: number; totalCards: number }): Promise<void> {
+    const num = Number(data.classNumber ?? data.className);
+    await apiClient.put(`/Classes/${classId}`, {
+      classNumber: num,
+      academicYearId: data.academicYearId,
+      totalCards: data.totalCards,
+    });
   },
 
   // ==========================================
@@ -77,14 +105,16 @@ export const schoolDataService = {
   // STUDENTS & ENROLLMENTS (Connected to StudentsController & ClassEnrollmentsController)
   // ==========================================
   async getEnrollmentsByClass(classId: number, academicYearId: number = 1): Promise<ClassEnrollment[]> {
-    const enrollments = await apiClient.get<ClassEnrollment[]>('/ClassEnrollments/active-by-class', {
+    const enrollments = await apiClient.get<any[]>('/ClassEnrollments/active-by-class', {
       classId,
       academicYearId,
     });
 
-    // Populate student field if not populated directly
-    return enrollments.map((e) => ({
+    // Populate student field if not populated directly, and map className
+    return (enrollments || []).map((e) => ({
       ...e,
+      classNumber: e.classNumber,
+      className: e.className ?? e.classNumber ?? '',
       student: e.student || {
         studentId: e.studentId,
         firstName: '',
@@ -202,9 +232,8 @@ export const schoolDataService = {
       }
     }
   },
-  // إضافة هذه الدالة لتعطيل حساب العريف/النائب
+  
   async deactivateRepresentative(id: number): Promise<void> {
-    // نفترض أن الباك-إند يدعم هذا المسار، أو يمكنك تعديله حسب مسار الـ API الفعلي لديك
     await apiClient.put(`/Representatives/deActive/${id}`);
   },
 
@@ -228,6 +257,19 @@ export const schoolDataService = {
       mustChangePassword: rep.mustChangePassword ?? true,
     });
   },
+
+  async updateStudent(
+  studentId: number,
+  studentData: {
+    firstName: string;
+    secondName: string;
+    thirdName: string;
+    lastName: string;
+    nationalId: string;
+  }
+): Promise<void> {
+  await apiClient.put(`/Students/${studentId}`, studentData);
+},
 
   // ==========================================
   // CARD REQUESTS (Connected to CardRequestsController)
