@@ -152,7 +152,9 @@ export function AdminRepresentativesPage() {
                     <td className="px-4 py-3 font-bold text-[#17252B]">
                       {r.studentName || 'طالب معين'}
                     </td>
-                    <td className="px-4 py-3 text-[#5F6B73] font-mono">{r.className}</td>
+                    <td className="px-4 py-3 text-[#5F6B73] font-bold">
+                      {r.className || (r.classNumber ? `شعبة ${r.classNumber}` : (r.classId ? `شعبة ${r.classId}` : '—'))}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold border ${

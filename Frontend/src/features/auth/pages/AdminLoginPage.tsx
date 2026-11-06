@@ -72,6 +72,8 @@ export function AdminLoginPage() {
               rightIcon={<User className="w-4 h-4" />}
               error={errors.username?.message}
               autoComplete="username"
+              dir="ltr"
+              className="text-left font-mono"
               {...register('username')}
             />
 
@@ -82,6 +84,8 @@ export function AdminLoginPage() {
               rightIcon={<Lock className="w-4 h-4" />}
               error={errors.password?.message}
               autoComplete="current-password"
+              dir="ltr"
+              className="text-left font-mono"
               {...register('password')}
             />
 

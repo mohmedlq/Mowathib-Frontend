@@ -174,7 +174,7 @@ export function AdminAcademicYearsPage() {
                     {formatArabicDateShort(w.endDate)}
                   </td>
                   <td className="px-4 py-3 text-center font-mono text-[#17252B]">5 أيام</td>
-                  <td className="px-4 py-3 text-center font-mono font-bold text-[#17252B]">35 حصة</td>
+                  <td className="px-4 py-3 text-center font-mono font-bold text-[#17252B]">33 حصة</td>
                   <td className="px-4 py-3 text-center">
                     <span className="inline-flex items-center gap-1 text-[11px] text-[#176B3A] font-semibold bg-[#E8F5EC] px-2 py-0.5 rounded-full border border-[#B7DEC5]">
                       <CheckCircle2 className="w-3 h-3" />

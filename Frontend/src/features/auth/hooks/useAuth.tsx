@@ -65,13 +65,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const role = representative.role === 'Deputy' ? 'Deputy' : 'Representative';
+      const rawClassNum = representative.classNumber || enrollment?.classNumber;
+      const classNumber = typeof rawClassNum === 'number' ? rawClassNum : (rawClassNum ? parseInt(String(rawClassNum), 10) : undefined);
+      const className =
+        (typeof representative.className === 'string' && representative.className.trim()) ||
+        (typeof enrollment?.className === 'string' && enrollment.className.trim()) ||
+        (classNumber ? `شعبة ${classNumber}` : undefined);
+
       const authUser: AuthUser = {
         id: representative.representativeId,
         username: representative.username,
         role,
         fullName: enrollment?.studentName || representative.studentName || representative.username,
-        classId: enrollment?.classId,
-        className: enrollment?.className,
+        classId: enrollment?.classId || classNumber,
+        classNumber,
+        className,
         enrollmentId: representative.enrollmentId,
         mustChangePassword: representative.mustChangePassword,
       };

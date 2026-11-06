@@ -19,21 +19,25 @@ export function AdminClassesPage() {
     queryKey: ['representatives'],
     queryFn: () => schoolDataService.getRepresentatives(),
   });
+const filteredClasses = useMemo(() => {
+  return classes.filter((c) => {
+    if (selectedGrade === 1 && !(c.classNumber >= 101 && c.classNumber <= 110)) return false;
+    if (selectedGrade === 2 && !(c.classNumber >= 201 && c.classNumber <= 210)) return false;
+    if (selectedGrade === 3 && !(c.classNumber >= 301 && c.classNumber <= 310)) return false;
 
-  const filteredClasses = useMemo(() => {
-    return classes.filter((c) => {
-      if (selectedGrade === 1 && !(c.classId >= 101 && c.classId <= 110)) return false;
-      if (selectedGrade === 2 && !(c.classId >= 201 && c.classId <= 210)) return false;
-      if (selectedGrade === 3 && !(c.classId >= 301 && c.classId <= 310)) return false;
-      if (search.trim() && !c.className.toString().includes(search) && !c.classId.toString().includes(search)) return false;
-      return true;
-    });
-  }, [classes, selectedGrade, search]);
+    if (
+      search.trim() &&
+      !c.className.toString().includes(search) &&
+      !c.classNumber.toString().includes(search)
+    ) return false;
 
+    return true;
+  });
+}, [classes, selectedGrade, search]);
   const getGradeName = (classId: number) => {
-    if (classId >= 101 && classId <= 110) return 'الأول الثانوي';
+    if (classId >= 101 && classId <= 109) return 'الأول الثانوي';
     if (classId >= 201 && classId <= 210) return 'الثاني الثانوي';
-    if (classId >= 301 && classId <= 310) return 'الثالث الثانوي';
+    if (classId >= 301 && classId <= 309) return 'الثالث الثانوي';
     return 'شعبة دراسية';
   };
 
@@ -49,7 +53,7 @@ export function AdminClassesPage() {
             <div>
               <h1 className="text-xl font-bold text-[#17252B]">إدارة الفصول والشعب الدراسية</h1>
               <p className="text-xs text-[#5F6B73] mt-0.5">
-                استعراض الشعب الدراسية الـ 30، بطاقات الاستئذان المخصصة، والعرفاء المعتمدين
+                استعراض الشعب الدراسية الـ {classes.length}، بطاقات الاستئذان المخصصة، والعرفاء المعتمدين
               </p>
             </div>
           </div>
@@ -83,7 +87,7 @@ export function AdminClassesPage() {
                 : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
             }`}
           >
-            الأول الثانوي (101-110)
+            الأول الثانوي (101-109)
           </button>
           <button
             type="button"
@@ -105,7 +109,7 @@ export function AdminClassesPage() {
                 : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
             }`}
           >
-            الثالث الثانوي (301-310)
+            الثالث الثانوي (301-309)
           </button>
         </div>
 

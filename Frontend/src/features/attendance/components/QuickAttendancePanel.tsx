@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import type {
@@ -7,7 +7,12 @@ import type {
   AttendanceStatus,
   BackendAttendanceStatus,
 } from '../../../shared/types';
-import { SCHOOL_DAYS, SCHOOL_PERIODS } from '../../../shared/types';
+import {
+  SCHOOL_DAYS,
+  getPeriodsForDay,
+  getPeriodsCountForDay,
+  isValidPeriodForDay,
+} from '../../../shared/types';
 import { Button } from '../../../shared/components/ui/Button';
 import { AttendanceProgressSummary } from './AttendanceProgressSummary';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
@@ -55,6 +60,17 @@ export function QuickAttendancePanel({
   // Local draft status for the currently selected slot (enrollmentId -> AttendanceStatus)
   const [localStatuses, setLocalStatuses] = useState<Record<number, AttendanceStatus>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Periods available for currently selected day
+  const availablePeriods = useMemo(() => getPeriodsForDay(selectedDay), [selectedDay]);
+  const maxPeriods = availablePeriods.length;
+
+  // Auto-clamp period if selectedPeriod exceeds valid period count for the day (e.g. Wednesday/Thursday has max 6)
+  useEffect(() => {
+    if (selectedPeriod > maxPeriods) {
+      onSelectPeriod(maxPeriods);
+    }
+  }, [selectedPeriod, maxPeriods, onSelectPeriod]);
 
   // Synchronize slot statuses when day or period changes
   const slotMap = useMemo(() => {
@@ -141,6 +157,10 @@ export function QuickAttendancePanel({
 
   // Save changes to backend
   const handleSave = async () => {
+    if (!isValidPeriodForDay(selectedDay, selectedPeriod)) {
+      return;
+    }
+
     const changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }> = [];
 
     enrollments.forEach((e) => {
@@ -160,7 +180,7 @@ export function QuickAttendancePanel({
 
   // Quick next period navigation
   const goToNextPeriod = () => {
-    if (selectedPeriod < 7) {
+    if (selectedPeriod < maxPeriods) {
       onSelectPeriod(selectedPeriod + 1);
       setHasUnsavedChanges(false);
       setLocalStatuses({});
@@ -248,6 +268,10 @@ export function QuickAttendancePanel({
                   key={day.dayNumber}
                   type="button"
                   onClick={() => {
+                    const newMax = getPeriodsCountForDay(day.dayNumber);
+                    if (selectedPeriod > newMax) {
+                      onSelectPeriod(newMax);
+                    }
                     onSelectDay(day.dayNumber);
                     setHasUnsavedChanges(false);
                     setLocalStatuses({});
@@ -270,7 +294,7 @@ export function QuickAttendancePanel({
         <div className="pt-2 border-t border-[#EEF2F3] flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
             <span className="text-[11px] font-bold text-[#5F6B73] ml-2 shrink-0">الحصص:</span>
-            {SCHOOL_PERIODS.map((period) => {
+            {availablePeriods.map((period) => {
               const isSelected = period === selectedPeriod;
               return (
                 <button
@@ -309,7 +333,7 @@ export function QuickAttendancePanel({
               type="button"
               variant="secondary"
               size="sm"
-              disabled={selectedPeriod >= 7}
+              disabled={selectedPeriod >= maxPeriods}
               onClick={goToNextPeriod}
             >
               <span>الحصة التالية</span>

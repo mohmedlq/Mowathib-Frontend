@@ -265,7 +265,7 @@ const handleEditStudent = (
             <GraduationCap className="w-5 h-5 text-[#245B63]" />
 
             <h1 className="text-xl font-bold text-[#17252B]">
-              قائمة طلاب {user?.className || `شعبة ${classId}`}
+              قائمة طلاب {user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : `شعبة ${classId}`)}
             </h1>
           </div>
 
@@ -402,7 +402,7 @@ const handleEditStudent = (
         title={
           editingStudentId !== null
             ? 'تعديل بيانات الطالب'
-            : `إضافة طالب إلى ${user?.className || `شعبة ${classId}`}`
+            : `إضافة طالب إلى ${user?.classNumber || `شعبة ${classId}`}`
         }
         description={
           editingStudentId !== null

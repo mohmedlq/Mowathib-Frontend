@@ -1,5 +1,5 @@
 import type { DailyAttendanceRow, DailyAbsenceRecord } from '../types/report.types';
-import { SCHOOL_PERIODS, type AttendanceStatus } from '../../../shared/types';
+import { SCHOOL_DAYS, getPeriodsForDay, type AttendanceStatus } from '../../../shared/types';
 import { PeriodStatusBox } from '../../attendance';
 import { AttendanceLegend } from '../../attendance';
 
@@ -9,6 +9,7 @@ export interface DailyReportViewProps {
   isAbsenceOnly: boolean;
   dayName: string;
   dateStr: string;
+  dayNumber?: number;
 }
 
 export function DailyReportView({
@@ -17,7 +18,10 @@ export function DailyReportView({
   isAbsenceOnly,
   dayName,
   dateStr,
+  dayNumber: propDayNumber,
 }: DailyReportViewProps) {
+  const dayNumber = propDayNumber ?? (SCHOOL_DAYS.find((d) => d.nameAr === dayName)?.dayNumber ?? 1);
+  const periods = getPeriodsForDay(dayNumber);
   if (isAbsenceOnly) {
     return (
       <div className="space-y-4">
@@ -95,7 +99,7 @@ export function DailyReportView({
                   اسم الطالب
                 </th>
                 <th className="px-3 py-3 font-bold border-l border-[#DCE3E6]">الشعبة</th>
-                {SCHOOL_PERIODS.map((p) => (
+                {periods.map((p) => (
                   <th key={p} className="px-2 py-3 text-center font-bold border-l border-[#DCE3E6] w-12">
                     ح {p}
                   </th>
@@ -108,7 +112,7 @@ export function DailyReportView({
             <tbody className="divide-y divide-[#DCE3E6]">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-6 py-12 text-center text-xs text-[#89949A]">
+                  <td colSpan={6 + periods.length} className="px-6 py-12 text-center text-xs text-[#89949A]">
                     لا توجد بيانات متاحة لهذا اليوم
                   </td>
                 </tr>
@@ -122,7 +126,7 @@ export function DailyReportView({
                       <span className="truncate">{row.studentName}</span>
                     </td>
                     <td className="px-3 py-2.5 text-[#5F6B73] border-l border-[#DCE3E6]">{row.className}</td>
-                    {SCHOOL_PERIODS.map((p) => {
+                    {periods.map((p) => {
                       const st: AttendanceStatus = row.periods[p] || 'Unmarked';
                       return (
                         <td key={p} className="px-2 py-2 text-center border-l border-[#DCE3E6]">

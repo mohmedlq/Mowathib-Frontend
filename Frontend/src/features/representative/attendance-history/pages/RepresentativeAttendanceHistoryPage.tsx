@@ -41,7 +41,7 @@ export function RepresentativeAttendanceHistoryPage() {
             <h1 className="text-xl font-bold text-[#17252B]">سجل الحضور الأسبوعي للشعبة</h1>
           </div>
           <p className="text-xs text-[#5F6B73] mt-1">
-            مراجعة جدول الحضور الكامل لـ <strong className="text-[#17252B]">{user?.className || `شعبة ${classId}`}</strong> خلال الأسابيع الدراسية
+            مراجعة جدول الحضور الكامل لـ{user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'الشعبة')} خلال الأسابيع الدراسية
           </p>
         </div>
 

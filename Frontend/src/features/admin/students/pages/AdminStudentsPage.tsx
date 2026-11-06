@@ -42,12 +42,10 @@ export function AdminStudentsPage() {
       if (selectedClassId > 0) {
         return await schoolDataService.getEnrollmentsByClass(selectedClassId);
       } else {
-        const list = [];
-        for (const c of classes.slice(0, 10)) {
-          const res = await schoolDataService.getEnrollmentsByClass(c.classId);
-          list.push(...res);
-        }
-        return list;
+        const results = await Promise.all(
+          classes.slice(0, 10).map((c) => schoolDataService.getEnrollmentsByClass(c.classId).catch(() => []))
+        );
+        return results.flat();
       }
     },
     enabled: classes.length > 0,

@@ -1,6 +1,6 @@
 import { PeriodStatusBox } from './PeriodStatusBox';
 import type { AttendanceStatus } from '../../../shared/types';
-import { SCHOOL_PERIODS } from '../../../shared/types';
+import { getPeriodsForDay } from '../../../shared/types';
 
 export interface AttendanceDayCellProps {
   dayNumber: number;
@@ -10,14 +10,16 @@ export interface AttendanceDayCellProps {
 }
 
 export function AttendanceDayCell({
-  dayNumber: _dayNumber,
+  dayNumber,
   periodStatuses,
   onPeriodClick,
   interactive = false,
 }: AttendanceDayCellProps) {
+  const periods = getPeriodsForDay(dayNumber);
+
   return (
     <div className="flex items-center justify-center gap-1 py-1">
-      {SCHOOL_PERIODS.map((period) => {
+      {periods.map((period) => {
         const slot = periodStatuses[period];
         const status: AttendanceStatus = slot ? slot.status : 'Unmarked';
 

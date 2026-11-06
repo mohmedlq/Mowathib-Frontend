@@ -58,6 +58,8 @@ export function ChangePasswordModal({ isOpen }: { isOpen: boolean }) {
           placeholder="أدخل 6 أحرف على الأقل"
           rightIcon={<Lock className="w-4 h-4" />}
           error={errors.newPassword?.message}
+          dir="ltr"
+          className="text-left font-mono"
           {...register('newPassword')}
         />
 
@@ -67,6 +69,8 @@ export function ChangePasswordModal({ isOpen }: { isOpen: boolean }) {
           placeholder="أعد إدخال كلمة المرور الجديدة"
           rightIcon={<Lock className="w-4 h-4" />}
           error={errors.confirmPassword?.message}
+          dir="ltr"
+          className="text-left font-mono"
           {...register('confirmPassword')}
         />
 

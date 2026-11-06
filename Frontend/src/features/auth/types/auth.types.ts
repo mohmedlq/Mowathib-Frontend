@@ -16,8 +16,13 @@ export interface RepresentativeLoginResponse {
   representativeId: number;
   username: string;
   role: string;
-  isAuthenticated: boolean;
-  mustChangePassword: boolean;
+  fullName?: string;
+  classId?: number;
+  classNumber?: number;
+  className?: string;
+  enrollmentId?: number;
+  isAuthenticated?: boolean;
+  mustChangePassword?: boolean;
   message?: string;
 }
 
@@ -28,7 +33,8 @@ export interface AuthContextType {
     role: UserRole;
     fullName?: string;
     classId?: number;
-    className?: number | string;
+    classNumber?: string | number | undefined;
+    className?: string;
     enrollmentId?: number;
     mustChangePassword?: boolean;
     token?: string;

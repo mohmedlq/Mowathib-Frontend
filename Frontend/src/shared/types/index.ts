@@ -30,10 +30,9 @@ export interface AuthUser {
   fullName?: string;
   classId?: number;
   classNumber?: number;
-  className?: number | string;
+  className?: string;
   enrollmentId?: number;
   mustChangePassword?: boolean;
-  token?: string;
 }
 
 export interface AcademicYear {
@@ -46,7 +45,7 @@ export interface AcademicYear {
 
 export interface ClassItem {
   classId: number;
-  classNumber?: number;
+  classNumber: number;
   className: number | string;
   academicYearId: number;
   totalCards: number;
@@ -105,6 +104,7 @@ export interface Representative {
   isActive: boolean;
   mustChangePassword: boolean;
   studentName?: string;
+  classId?: number;
   classNumber?: number;
   className?: number | string;
 }
@@ -140,6 +140,30 @@ export const SCHOOL_DAYS: SchoolDay[] = [
 
 export const SCHOOL_PERIODS = [1, 2, 3, 4, 5, 6, 7] as const;
 export type SchoolPeriod = (typeof SCHOOL_PERIODS)[number];
+
+export const PERIODS_PER_DAY: Record<number, number> = {
+  1: 7, // Sunday (الأحد)
+  2: 7, // Monday (الاثنين)
+  3: 7, // Tuesday (الثلاثاء)
+  4: 6, // Wednesday (الأربعاء)
+  5: 6, // Thursday (الخميس)
+};
+
+export const TOTAL_WEEKLY_PERIODS = 33; // 7 + 7 + 7 + 6 + 6
+
+export function getPeriodsCountForDay(dayNumber: number): number {
+  return PERIODS_PER_DAY[dayNumber] ?? 7;
+}
+
+export function getPeriodsForDay(dayNumber: number): number[] {
+  const count = getPeriodsCountForDay(dayNumber);
+  return Array.from({ length: count }, (_, i) => i + 1);
+}
+
+export function isValidPeriodForDay(dayNumber: number, periodNumber: number): boolean {
+  const max = getPeriodsCountForDay(dayNumber);
+  return periodNumber >= 1 && periodNumber <= max;
+}
 
 export interface NotificationItem {
   id: string;

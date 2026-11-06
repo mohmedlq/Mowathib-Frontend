@@ -5,7 +5,6 @@ import { NotificationBell } from '../../features/notifications';
 import { ChangePasswordModal } from '../../features/auth';
 import {
   LayoutDashboard,
-  CalendarCheck,
   History,
   GraduationCap,
   UserCheck,
@@ -24,8 +23,7 @@ export function RepresentativeLayout() {
   const isMainRep = user?.role === 'Representative';
 
   const navItems = [
-    { to: '/representative/dashboard', label: 'شعبتي (لوحة الصف)', icon: LayoutDashboard },
-    { to: '/representative/attendance', label: 'تسجيل الحضور اليومي', icon: CalendarCheck },
+    { to: '/representative/dashboard', label: 'الرئيسية ورصد الحضور', icon: LayoutDashboard },
     { to: '/representative/attendance-history', label: 'سجل الحضور الأسبوعي', icon: History },
     { to: '/representative/students', label: 'قائمة طلاب الشعبة', icon: GraduationCap },
     ...(isMainRep ? [{ to: '/representative/deputy', label: 'إدارة نائب العريف', icon: UserCheck }] : []),
@@ -47,7 +45,7 @@ export function RepresentativeLayout() {
             </div>
             <div>
               <span className="font-bold text-[#17252B] text-base block leading-tight tracking-tight">بوابة العريف</span>
-              <span className="text-[10px] text-[#245B63] font-bold">{user?.className || 'شعبة الفصل'}</span>
+              <span className="text-[10px] text-[#245B63] font-bold">{user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'شعبة الفصل')}</span>
             </div>
           </div>
         </div>
@@ -164,7 +162,7 @@ export function RepresentativeLayout() {
             </button>
             <div className="flex items-center gap-2.5">
               <span className="text-xs font-bold text-[#245B63] bg-[#E8F1F1] px-2.5 py-1 rounded-md border border-[#CDE0E2]">
-                {user?.className || 'الشعبة 105'}
+                {user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'شعبة 105')}
               </span>
               <span className="text-xs text-[#89949A] hidden sm:inline">|</span>
               <span className="text-xs text-[#5F6B73] hidden sm:inline font-medium">

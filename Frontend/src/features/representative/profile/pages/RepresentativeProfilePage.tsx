@@ -70,7 +70,7 @@ export function RepresentativeProfilePage() {
 
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] border border-[#DCE3E6]/60">
               <span className="text-[#5F6B73]">الشعبة المسندة:</span>
-              <span className="font-bold text-[#17252B]">{user?.className || 'شعبة 105'}</span>
+              <span className="font-bold text-[#17252B]">{user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'شعبة 105')}</span>
             </div>
 
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] border border-[#DCE3E6]/60">
@@ -101,6 +101,8 @@ export function RepresentativeProfilePage() {
               type="password"
               label="كلمة المرور الجديدة"
               placeholder="6 أحرف على الأقل"
+              dir="ltr"
+              className="text-left font-mono"
               value={newPass}
               onChange={(e) => setNewPass(e.target.value)}
               required
@@ -110,6 +112,8 @@ export function RepresentativeProfilePage() {
               type="password"
               label="تأكيد كلمة المرور الجديدة"
               placeholder="أعد إدخال كلمة المرور الجديدة"
+              dir="ltr"
+              className="text-left font-mono"
               value={confirmPass}
               onChange={(e) => setConfirmPass(e.target.value)}
               required

@@ -18,33 +18,47 @@ export const authApi = {
     enrollment?: ClassEnrollment;
   }> {
     const loginResult = await apiClient.post<RepresentativeLoginResponse>('/Representatives/login', {
-      username: credentials.username,
-      password: credentials.password,
+      username: credentials.username.trim(),
+      password: credentials.password.trim(),
     });
 
-    if (!loginResult.isAuthenticated) {
-      throw new Error(loginResult.message || 'بيانات الدخول غير صحيحة');
+    if (!loginResult || (loginResult.isAuthenticated === false && !loginResult.representativeId)) {
+      throw new Error(loginResult?.message || 'بيانات الدخول غير صحيحة');
     }
 
-    // Fetch full representative profile from backend
-    const repProfile = await apiClient.get<Representative>(
-      `/Representatives/${loginResult.representativeId}`
-    );
+    const classNumber = loginResult.classNumber ?? (loginResult.classId ? loginResult.classId : undefined);
+    const className = loginResult.className || (classNumber ? `شعبة ${classNumber}` : undefined);
 
-    let enrollment: ClassEnrollment | undefined;
-    if (repProfile.enrollmentId) {
-      try {
-        enrollment = await apiClient.get<ClassEnrollment>(`/ClassEnrollments/${repProfile.enrollmentId}`);
-      } catch {
-        // Enrollment details optional if not assigned yet
-      }
-    }
+    const representative: Representative = {
+      representativeId: loginResult.representativeId,
+      enrollmentId: loginResult.enrollmentId || 0,
+      username: loginResult.username,
+      phoneNumber: '',
+      role: loginResult.role || 'Representative',
+      isActive: true,
+      mustChangePassword: Boolean(loginResult.mustChangePassword),
+      studentName: loginResult.fullName,
+      classNumber,
+      className,
+    };
+
+    const enrollment: ClassEnrollment | undefined = loginResult.enrollmentId
+      ? {
+          enrollmentId: loginResult.enrollmentId,
+          studentId: 0,
+          classId: loginResult.classId || (typeof classNumber === 'number' ? classNumber : 0),
+          academicYearId: 1,
+          isRepresentative: loginResult.role === 'Representative',
+          startDate: '',
+          isActive: true,
+          studentName: loginResult.fullName,
+          classNumber,
+          className,
+        }
+      : undefined;
 
     return {
-      representative: {
-        ...repProfile,
-        mustChangePassword: loginResult.mustChangePassword ?? repProfile.mustChangePassword,
-      },
+      representative,
       enrollment,
     };
   },

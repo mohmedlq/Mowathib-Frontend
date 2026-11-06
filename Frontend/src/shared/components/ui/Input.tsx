@@ -10,8 +10,9 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, label, error, helperText, leftIcon, rightIcon, id, disabled, ...props }, ref) => {
+  ({ className, label, error, helperText, leftIcon, rightIcon, id, disabled, dir, ...props }, ref) => {
     const inputId = id || (label ? label.replace(/\s+/g, '_') : undefined);
+    const effectiveDir = dir || (props.type === 'password' || props.type === 'email' ? 'ltr' : undefined);
 
     return (
       <div className="w-full text-right">
@@ -27,11 +28,13 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             id={inputId}
             ref={ref}
+            dir={effectiveDir}
             disabled={disabled}
             className={cn(
               'w-full h-10 px-3 py-2 bg-white text-[#17252B] placeholder-[#89949A] text-sm rounded-lg border border-[#DCE3E6] transition-all outline-none',
               'focus:border-[#245B63] focus:ring-2 focus:ring-[#245B63]/15',
               'disabled:bg-[#EEF2F3] disabled:text-[#89949A] disabled:cursor-not-allowed',
+              effectiveDir === 'ltr' && 'text-left font-mono',
               error && 'border-[#A61B1B] focus:border-[#A61B1B] focus:ring-[#A61B1B]/15',
               rightIcon && 'pr-9',
               leftIcon && 'pl-9',

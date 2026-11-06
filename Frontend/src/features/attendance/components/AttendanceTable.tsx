@@ -1,7 +1,7 @@
 
 import { useMemo, useState } from 'react';
 import type { StudentWeeklyAttendance } from '../types/attendance.types';
-import { SCHOOL_DAYS, type AttendanceStatus } from '../../../shared/types';
+import { SCHOOL_DAYS, getPeriodsForDay, type AttendanceStatus } from '../../../shared/types';
 import { AttendanceDayCell } from './AttendanceDayCell';
 import { AttendanceLegend } from './AttendanceLegend';
 import { Search, Filter } from 'lucide-react';
@@ -135,9 +135,9 @@ export function AttendanceTable({
                         </span>
                       )}
 
-                      <div className="flex items-center justify-center gap-1.5 mt-1 text-[9px] text-[#89949A] font-mono">
-                        {[1, 2, 3, 4, 5, 6, 7].map((period) => (
-                          <span key={period}>{period}</span>
+                      <div className="flex items-center justify-center gap-1 mt-1 text-[9px] text-[#89949A] font-mono">
+                        {getPeriodsForDay(day.dayNumber).map((period) => (
+                          <span key={period} className="w-5 text-center">{period}</span>
                         ))}
                       </div>
                     </div>

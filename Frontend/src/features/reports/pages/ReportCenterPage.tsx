@@ -22,7 +22,7 @@ import type { ReportFilterOptions } from '../types/report.types';
 import type { StudentWeeklyAttendance } from '../../attendance';
 import {
   SCHOOL_DAYS,
-  SCHOOL_PERIODS,
+  getPeriodsForDay,
   type AttendanceStatus,
   type AttendanceRecord,
   type ClassEnrollment,
@@ -69,7 +69,7 @@ function buildWeeklyAttendanceRows(
     SCHOOL_DAYS.forEach((day) => {
       slots[day.dayNumber] = {};
 
-      SCHOOL_PERIODS.forEach((period) => {
+      getPeriodsForDay(day.dayNumber).forEach((period) => {
         const key = `${enrollment.enrollmentId}:${day.dayNumber}:${period}`;
         const match = recordBySlot.get(key);
 
@@ -542,6 +542,7 @@ export function ReportCenterPage() {
           isAbsenceOnly={filters.reportKind === 'absence'}
           dayName={currentDayName}
           dateStr={currentDayDate}
+          dayNumber={filters.dayNumber}
         />
       ) : filters.periodType === 'weekly' ? (
         <WeeklyReportView

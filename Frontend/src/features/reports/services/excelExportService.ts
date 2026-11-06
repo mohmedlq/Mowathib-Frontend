@@ -14,7 +14,9 @@ import type { StudentWeeklyAttendance } from '../../attendance';
 
 import {
   SCHOOL_DAYS,
-  SCHOOL_PERIODS,
+  getPeriodsForDay,
+  getPeriodsCountForDay,
+  TOTAL_WEEKLY_PERIODS,
   type AttendanceStatus,
   type ClassItem,
   type ClassEnrollment,
@@ -131,8 +133,16 @@ export const excelExportService = {
       ],
     });
 
+    const dayObj = SCHOOL_DAYS.find(
+      (d) => d.nameAr === meta.dayName || d.dayNumber === (meta as any).dayNumber
+    );
+    const dayNum = dayObj?.dayNumber ?? 1;
+    const dayPeriods = getPeriodsForDay(dayNum);
+    const periodsCount = dayPeriods.length;
+    const totalCols = 2 + periodsCount + 3;
+
     // Title
-    worksheet.mergeCells('A1:L1');
+    worksheet.mergeCells(1, 1, 1, totalCols);
 
     const titleCell = worksheet.getCell('A1');
 
@@ -161,7 +171,7 @@ export const excelExportService = {
     worksheet.getRow(1).height = 30;
 
     // Metadata
-    worksheet.mergeCells('A2:L2');
+    worksheet.mergeCells(2, 1, 2, totalCols);
 
     const metaCell = worksheet.getCell('A2');
 
@@ -196,13 +206,7 @@ export const excelExportService = {
     const headers = [
       'رقم الهوية',
       'اسم الطالب',
-      'الحصة 1',
-      'الحصة 2',
-      'الحصة 3',
-      'الحصة 4',
-      'الحصة 5',
-      'الحصة 6',
-      'الحصة 7',
+      ...dayPeriods.map((p) => `الحصة ${p}`),
       'حاضر',
       'غائب',
       'منقطع',
@@ -240,13 +244,7 @@ export const excelExportService = {
       const rowValues = [
         row.nationalId,
         row.studentName,
-        getStatusStyle(row.periods[1]).label,
-        getStatusStyle(row.periods[2]).label,
-        getStatusStyle(row.periods[3]).label,
-        getStatusStyle(row.periods[4]).label,
-        getStatusStyle(row.periods[5]).label,
-        getStatusStyle(row.periods[6]).label,
-        getStatusStyle(row.periods[7]).label,
+        ...dayPeriods.map((p) => getStatusStyle(row.periods[p]).label),
         row.presentCount,
         row.absentCount,
         row.discontinuedCount,
@@ -282,10 +280,10 @@ export const excelExportService = {
       nameCell.border = BORDER_THIN;
 
       // Period styling
-      for (let p = 1; p <= 7; p++) {
-
-        const cell = r.getCell(p + 2);
-        const style = getStatusStyle(row.periods[p]);
+      for (let pIdx = 1; pIdx <= periodsCount; pIdx++) {
+        const pNum = dayPeriods[pIdx - 1];
+        const cell = r.getCell(pIdx + 2);
+        const style = getStatusStyle(row.periods[pNum]);
 
         cell.fill = {
           type: 'pattern',
@@ -309,7 +307,7 @@ export const excelExportService = {
       }
 
       // Totals
-      for (let c = 10; c <= 12; c++) {
+      for (let c = 2 + periodsCount + 1; c <= totalCols; c++) {
 
         const cell = r.getCell(c);
 
@@ -340,18 +338,18 @@ export const excelExportService = {
     worksheet.getColumn(1).width = 16;
     worksheet.getColumn(2).width = 28;
 
-    for (let i = 3; i <= 9; i++) {
+    for (let i = 3; i <= 2 + periodsCount; i++) {
       worksheet.getColumn(i).width = 12;
     }
 
-    worksheet.getColumn(10).width = 10;
-    worksheet.getColumn(11).width = 10;
-    worksheet.getColumn(12).width = 10;
+    for (let i = 2 + periodsCount + 1; i <= totalCols; i++) {
+      worksheet.getColumn(i).width = 10;
+    }
 
     // Auto Filter
     worksheet.autoFilter = {
       from: { row: 4, column: 1 },
-      to: { row: 4 + data.length, column: 12 },
+      to: { row: 4 + data.length, column: totalCols },
     };
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -394,7 +392,7 @@ export const excelExportService = {
     });
 
     // Main Title
-    worksheet.mergeCells('A1:AK1');
+    worksheet.mergeCells(1, 1, 1, 35);
 
     const titleCell = worksheet.getCell('A1');
 
@@ -423,7 +421,7 @@ export const excelExportService = {
     worksheet.getRow(1).height = 30;
 
     // Metadata
-    worksheet.mergeCells('A2:AK2');
+    worksheet.mergeCells(2, 1, 2, 35);
 
     const metaCell = worksheet.getCell('A2');
 
@@ -459,13 +457,19 @@ export const excelExportService = {
     worksheet.mergeCells('B4:B5');
     worksheet.getCell('B4').value = 'اسم الطالب';
 
-    const dayHeaders = [
-      { name: 'الأحد', startCol: 3, endCol: 9 },
-      { name: 'الاثنين', startCol: 10, endCol: 16 },
-      { name: 'الثلاثاء', startCol: 17, endCol: 23 },
-      { name: 'الأربعاء', startCol: 24, endCol: 30 },
-      { name: 'الخميس', startCol: 31, endCol: 37 },
-    ];
+    let currentStartCol = 3;
+    const dayHeaders = SCHOOL_DAYS.map((day) => {
+      const count = getPeriodsCountForDay(day.dayNumber);
+      const startCol = currentStartCol;
+      const endCol = currentStartCol + count - 1;
+      currentStartCol += count;
+      return {
+        name: day.nameAr,
+        startCol,
+        endCol,
+        periodCount: count,
+      };
+    });
 
     // Day Headers
     dayHeaders.forEach((dh) => {
@@ -505,7 +509,7 @@ export const excelExportService = {
 
     dayHeaders.forEach((dh) => {
 
-      for (let p = 1; p <= 7; p++) {
+      for (let p = 1; p <= dh.periodCount; p++) {
 
         const col = dh.startCol + (p - 1);
         const cell = r5.getCell(col);
@@ -570,7 +574,7 @@ export const excelExportService = {
 
       SCHOOL_DAYS.forEach((day) => {
 
-        SCHOOL_PERIODS.forEach((p) => {
+        getPeriodsForDay(day.dayNumber).forEach((p) => {
 
           const slot = item.slots[day.dayNumber]?.[p];
           const st = slot ? slot.status : 'Unmarked';
@@ -610,7 +614,7 @@ export const excelExportService = {
 
       SCHOOL_DAYS.forEach((day) => {
 
-        SCHOOL_PERIODS.forEach((p) => {
+        getPeriodsForDay(day.dayNumber).forEach((p) => {
 
           const cell = r.getCell(colIdx);
           const slot = item.slots[day.dayNumber]?.[p];
@@ -647,14 +651,14 @@ export const excelExportService = {
     worksheet.getColumn(1).width = 16;
     worksheet.getColumn(2).width = 28;
 
-    for (let i = 3; i <= 37; i++) {
+    for (let i = 3; i <= 35; i++) {
       worksheet.getColumn(i).width = 7.5;
     }
 
     // Auto Filter
     worksheet.autoFilter = {
       from: { row: 5, column: 1 },
-      to: { row: 5 + attendances.length, column: 37 },
+      to: { row: 5 + attendances.length, column: 35 },
     };
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -795,10 +799,7 @@ export const excelExportService = {
     const schoolName =
       meta.schoolName || schoolSettingsService.getSchoolName();
 
-    const periodsPerDay = SCHOOL_PERIODS.length;
-    const dayCount = SCHOOL_DAYS.length;
-
-    const lastColumn = 2 + dayCount * periodsPerDay;
+    const lastColumn = 2 + TOTAL_WEEKLY_PERIODS;
 
     // Create one weekly-style worksheet per actual attendance week
     selectedWeeks.forEach(({ week, startDate, endDate }, index) => {
@@ -920,11 +921,19 @@ export const excelExportService = {
       // DAY HEADERS
       // ==========================================
 
-      const dayHeaders = SCHOOL_DAYS.map((day, dayIndex) => ({
-        name: day.nameAr,
-        startCol: 3 + dayIndex * periodsPerDay,
-        endCol: 3 + dayIndex * periodsPerDay + periodsPerDay - 1,
-      }));
+      let currentStartCol = 3;
+      const dayHeaders = SCHOOL_DAYS.map((day) => {
+        const count = getPeriodsCountForDay(day.dayNumber);
+        const startCol = currentStartCol;
+        const endCol = currentStartCol + count - 1;
+        currentStartCol += count;
+        return {
+          name: day.nameAr,
+          startCol,
+          endCol,
+          periodCount: count,
+        };
+      });
 
       dayHeaders.forEach((dayHeader) => {
 
@@ -970,17 +979,17 @@ export const excelExportService = {
       dayHeaders.forEach((dayHeader) => {
 
         for (
-          let periodIndex = 0;
-          periodIndex < periodsPerDay;
+          let periodIndex = 1;
+          periodIndex <= dayHeader.periodCount;
           periodIndex++
         ) {
 
           const cell = worksheet.getCell(
             5,
-            dayHeader.startCol + periodIndex
+            dayHeader.startCol + (periodIndex - 1)
           );
 
-          cell.value = `ح ${SCHOOL_PERIODS[periodIndex]}`;
+          cell.value = `ح ${periodIndex}`;
 
           cell.font = {
             name: 'Arial',
@@ -1032,7 +1041,7 @@ export const excelExportService = {
 
       // ==========================================
       // STUDENT ATTENDANCE DATA
-      // Same 35 attendance cells as weekly report
+      // Same attendance cells as weekly report
       // ==========================================
 
       attendances.forEach((item) => {
@@ -1046,7 +1055,7 @@ export const excelExportService = {
 
         SCHOOL_DAYS.forEach((day) => {
 
-          SCHOOL_PERIODS.forEach((period) => {
+          getPeriodsForDay(day.dayNumber).forEach((period) => {
 
             const slot = item.slots[day.dayNumber]?.[period];
 
@@ -1500,7 +1509,7 @@ export const excelExportService = {
 
         SCHOOL_DAYS.forEach((day) => {
 
-          SCHOOL_PERIODS.forEach((p) => {
+          getPeriodsForDay(day.dayNumber).forEach((p) => {
 
             const match = c.records.find(
               (r) =>
@@ -2026,11 +2035,11 @@ export const excelExportService = {
       classSheet.getCell('B4').value = 'اسم الطالب';
 
       const dayColumnRanges = [
-        { name: 'الأحد', startCol: 3, endCol: 9 },
-        { name: 'الاثنين', startCol: 10, endCol: 16 },
-        { name: 'الثلاثاء', startCol: 17, endCol: 23 },
-        { name: 'الأربعاء', startCol: 24, endCol: 30 },
-        { name: 'الخميس', startCol: 31, endCol: 37 },
+        { name: 'الأحد', startCol: 3, endCol: 9, count: 7 },
+        { name: 'الاثنين', startCol: 10, endCol: 16, count: 7 },
+        { name: 'الثلاثاء', startCol: 17, endCol: 23, count: 7 },
+        { name: 'الأربعاء', startCol: 24, endCol: 29, count: 6 },
+        { name: 'الخميس', startCol: 30, endCol: 35, count: 6 },
       ];
 
       dayColumnRanges.forEach((dh) => {
@@ -2068,16 +2077,16 @@ export const excelExportService = {
       });
 
       // Totals Headers
+      classSheet.mergeCells('AJ4:AJ5');
+      classSheet.getCell('AJ4').value = 'حاضر';
+
+      classSheet.mergeCells('AK4:AK5');
+      classSheet.getCell('AK4').value = 'غائب';
+
       classSheet.mergeCells('AL4:AL5');
-      classSheet.getCell('AL4').value = 'حاضر';
+      classSheet.getCell('AL4').value = 'النسبة %';
 
-      classSheet.mergeCells('AM4:AM5');
-      classSheet.getCell('AM4').value = 'غائب';
-
-      classSheet.mergeCells('AN4:AN5');
-      classSheet.getCell('AN4').value = 'النسبة %';
-
-      ['A4', 'B4', 'AL4', 'AM4', 'AN4'].forEach((addr) => {
+      ['A4', 'B4', 'AJ4', 'AK4', 'AL4'].forEach((addr) => {
 
         const c = classSheet.getCell(addr);
 
@@ -2109,7 +2118,7 @@ export const excelExportService = {
 
       dayColumnRanges.forEach((dh) => {
 
-        for (let p = 1; p <= 7; p++) {
+        for (let p = 1; p <= dh.count; p++) {
 
           const colIndex = dh.startCol + p - 1;
 
@@ -2155,7 +2164,7 @@ export const excelExportService = {
 
         SCHOOL_DAYS.forEach((day) => {
 
-          SCHOOL_PERIODS.forEach((p) => {
+          getPeriodsForDay(day.dayNumber).forEach((p) => {
 
             const match = classData.records.find(
               (r) =>
@@ -2238,7 +2247,7 @@ export const excelExportService = {
               color: { argb: 'FF17252B' },
             };
 
-          } else if (colNum >= 3 && colNum <= 37) {
+          } else if (colNum >= 3 && colNum <= 35) {
 
             const val = cell.value?.toString();
 
@@ -2296,7 +2305,7 @@ export const excelExportService = {
               };
             }
 
-          } else if (colNum === 38) {
+          } else if (colNum === 36) {
 
             cell.font = {
               name: 'Arial',
@@ -2305,7 +2314,7 @@ export const excelExportService = {
               color: { argb: 'FF176B3A' },
             };
 
-          } else if (colNum === 39) {
+          } else if (colNum === 37) {
 
             cell.font = {
               name: 'Arial',
@@ -2314,7 +2323,7 @@ export const excelExportService = {
               color: { argb: 'FFA61B1B' },
             };
 
-          } else if (colNum === 40) {
+          } else if (colNum === 38) {
 
             cell.font = {
               name: 'Arial',
@@ -2326,7 +2335,7 @@ export const excelExportService = {
 
           if (
             eIdx % 2 === 1 &&
-            (colNum <= 2 || colNum >= 38)
+            (colNum <= 2 || colNum >= 36)
           ) {
 
             cell.fill = {
@@ -2352,7 +2361,7 @@ export const excelExportService = {
         `${classData.enrollments.length} طالب`,
       ];
 
-      for (let i = 0; i < 35; i++) {
+      for (let i = 0; i < TOTAL_WEEKLY_PERIODS; i++) {
         classSummaryValues.push('—');
       }
 
@@ -2391,19 +2400,19 @@ export const excelExportService = {
       classSheet.getColumn(1).width = 15;
       classSheet.getColumn(2).width = 28;
 
-      for (let c = 3; c <= 37; c++) {
+      for (let c = 3; c <= 35; c++) {
         classSheet.getColumn(c).width = 4.2;
       }
 
+      classSheet.getColumn(36).width = 12;
+      classSheet.getColumn(37).width = 12;
       classSheet.getColumn(38).width = 12;
-      classSheet.getColumn(39).width = 12;
-      classSheet.getColumn(40).width = 12;
 
       classSheet.autoFilter = {
         from: { row: 5, column: 1 },
         to: {
           row: 5 + classData.enrollments.length,
-          column: 40,
+          column: 38,
         },
       };
     });
@@ -2734,7 +2743,7 @@ export const excelExportService = {
       const cname = String(cd.classItem.className || cd.classItem.classId);
       const totalStudents = cd.enrollments.length;
       const absentSlots = cd.records.filter((r) => r.status === 'Absent').length;
-      const totalExpected = totalStudents * 35;
+      const totalExpected = totalStudents * TOTAL_WEEKLY_PERIODS;
       const rate = totalExpected > 0 ? ((totalExpected - absentSlots) / totalExpected) * 100 : 100;
 
       const row = summarySheet.addRow([

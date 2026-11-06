@@ -28,10 +28,10 @@ export function AdminDashboardPage() {
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  // 2. Fetch Students
-  const { data: students = [] } = useQuery({
-    queryKey: ['students'],
-    queryFn: () => schoolDataService.getAllStudents(),
+  // 2. Fetch Students Count (Fast aggregation instead of downloading full student table)
+  const { data: studentsCount = 0 } = useQuery({
+    queryKey: ['students_count'],
+    queryFn: () => schoolDataService.getStudentsCount(),
   });
 
   // 3. Fetch Representatives
@@ -50,11 +50,12 @@ export function AdminDashboardPage() {
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
     queryFn: () => schoolDataService.getActiveAcademicYear(),
+    staleTime: 1000 * 60 * 10,
   });
 
   // 6. Fetch Attendance Weeks
   const { data: weeks = [] } = useQuery({
-    queryKey: ['attendance_weeks'],
+    queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
@@ -152,7 +153,7 @@ export function AdminDashboardPage() {
         {/* Total Students */}
         <AdminStatsCard
           title="إجمالي الطلاب المقيدين"
-          value={students.length > 0 ? students.length : 350}
+          value={studentsCount > 0 ? studentsCount : 350}
           subtitle="في السجلات الرسمية"
           icon={<Users className="w-5 h-5" />}
           badge={{ text: 'جميعهم بقيد نشط', variant: 'success' }}

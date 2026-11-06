@@ -46,7 +46,7 @@ export function AttendanceClassSelector({
           <optgroup label="الصف الأول الثانوي (101 - 109)">
             {grade1.map((c) => (
               <option key={c.classId} value={c.classId}>
-                شعبة {c.className} — الصف الأول الثانوي
+                 {c.className} — الصف الأول الثانوي
               </option>
             ))}
           </optgroup>
@@ -56,7 +56,7 @@ export function AttendanceClassSelector({
           <optgroup label="الصف الثاني الثانوي (201 - 210)">
             {grade2.map((c) => (
               <option key={c.classId} value={c.classId}>
-                شعبة {c.className} — الصف الثاني الثانوي
+                 {c.className} — الصف الثاني الثانوي
               </option>
             ))}
           </optgroup>
@@ -66,7 +66,7 @@ export function AttendanceClassSelector({
           <optgroup label="الصف الثالث الثانوي (301 - 309)">
             {grade3.map((c) => (
               <option key={c.classId} value={c.classId}>
-                شعبة {c.className} — الصف الثالث الثانوي
+                 {c.className} — الصف الثالث الثانوي
               </option>
             ))}
           </optgroup>

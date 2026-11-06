@@ -237,7 +237,7 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
         <span className="flex items-center gap-1.5">
           <Download className="w-4 h-4 shrink-0" />
           <span>
-            <strong>تصدير آلي شامل:</strong> المصنف يضم ورقة مقارنة تحليلية ومخطط حضور كامل لجميع حصص الأسبوع الـ 35 لكل شعبة بالمرحلة بصيغة متوافقة مع الطباعة والتقارير الوزارية.
+            <strong>تصدير آلي شامل:</strong> المصنف يضم ورقة مقارنة تحليلية ومخطط حضور كامل لجميع حصص الأسبوع الـ 33 لكل شعبة بالمرحلة بصيغة متوافقة مع الطباعة والتقارير الوزارية.
           </span>
         </span>
       </div>

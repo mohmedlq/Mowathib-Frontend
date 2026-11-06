@@ -1,4 +1,5 @@
 import { apiClient } from '../lib/apiClient';
+import { isValidPeriodForDay } from '../types';
 import type {
   AcademicYear,
   ClassItem,
@@ -131,6 +132,16 @@ export const schoolDataService = {
     return await apiClient.get<Student[]>('/Students', { search });
   },
 
+  async getStudentsCount(): Promise<number> {
+    try {
+      const res = await apiClient.get<number>('/Students/count');
+      if (typeof res === 'number') return res;
+      return 0;
+    } catch {
+      return 0;
+    }
+  },
+
   async createStudent(
     studentData: {
       firstName: string;
@@ -201,6 +212,9 @@ export const schoolDataService = {
     periodNumber: number;
     records: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>;
   }): Promise<number> {
+    if (!isValidPeriodForDay(data.dayNumber, data.periodNumber)) {
+      throw new Error(`الحصة ${data.periodNumber} غير متاحة في هذا اليوم.`);
+    }
     return await apiClient.post<number>('/AttendanceRecords/bulk', data);
   },
 

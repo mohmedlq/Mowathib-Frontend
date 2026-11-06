@@ -15,7 +15,7 @@ import { CalendarCheck, Eye, Edit3 } from 'lucide-react';
 export function AdminAttendancePage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const initialClassId = Number(searchParams.get('classId')) || 105;
+  const initialClassId = Number(searchParams.get('classId'));
 
   const [selectedClassId, setSelectedClassId] =
     useState<number>(initialClassId);

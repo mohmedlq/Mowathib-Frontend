@@ -14,7 +14,8 @@ import type {
 
 import {
   SCHOOL_DAYS,
-  SCHOOL_PERIODS,
+  getPeriodsForDay,
+  getPeriodsCountForDay,
   type AttendanceStatus,
   type SchoolPeriod,
 } from '../../../shared/types';
@@ -55,7 +56,7 @@ export const reportCalculationService = {
       let discontinuedCount = 0;
       let unmarkedCount = 0;
 
-      SCHOOL_PERIODS.forEach((p) => {
+      getPeriodsForDay(dayNumber).forEach((p) => {
         const match = records.find(
           (r) =>
             r.enrollmentId === en.enrollmentId &&
@@ -115,7 +116,7 @@ export const reportCalculationService = {
 
     enrollments.forEach((en) => {
 
-      SCHOOL_PERIODS.forEach((p) => {
+      getPeriodsForDay(dayNumber).forEach((p) => {
         const match = records.find(
           (r) =>
             r.enrollmentId === en.enrollmentId &&
@@ -189,11 +190,10 @@ export const reportCalculationService = {
 
     });
 
-    // Number of school periods per day
-    const expectedPeriodsPerDay = 7;
-
-    const totalExpectedSlots =
-      validSlotsInMonth.length * expectedPeriodsPerDay;
+    const totalExpectedSlots = validSlotsInMonth.reduce(
+      (acc, slot) => acc + getPeriodsCountForDay(slot.dayNumber),
+      0
+    );
 
     const summary: MonthlyStudentSummaryRow[] = [];
 
@@ -210,7 +210,7 @@ export const reportCalculationService = {
 
       validSlotsInMonth.forEach((slot) => {
 
-        SCHOOL_PERIODS.forEach((p) => {
+        getPeriodsForDay(slot.dayNumber).forEach((p) => {
 
           const match = allRecords.find(
             (r) =>

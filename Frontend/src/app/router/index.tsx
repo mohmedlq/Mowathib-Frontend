@@ -26,7 +26,6 @@ import { ReportCenterPage } from '../../features/reports';
 // Representative Pages
 import {
   RepresentativeDashboardPage,
-  RepresentativeAttendancePage,
   RepresentativeAttendanceHistoryPage,
   RepresentativeStudentsPage,
   RepresentativeDeputyPage,
@@ -119,7 +118,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/representative/dashboard" replace /> },
       { path: 'dashboard', element: <RepresentativeDashboardPage /> },
-      { path: 'attendance', element: <RepresentativeAttendancePage /> },
+      { path: 'attendance', element: <Navigate to="/representative/dashboard" replace /> },
       { path: 'attendance-history', element: <RepresentativeAttendanceHistoryPage /> },
       { path: 'students', element: <RepresentativeStudentsPage /> },
       { path: 'deputy', element: <RepresentativeDeputyPage /> },
