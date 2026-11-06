@@ -1,9 +1,0 @@
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\bin\Debug\net9.0\Mowathib.Domain.dll
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.AssemblyInfoInputs.cache
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.AssemblyInfo.cs
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.csproj.CoreCompileInputs.cache
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.sourcelink.json
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.dll
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\refint\Mowathib.Domain.dll
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Domain.pdb

@@ -1,3 +1,0 @@
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Application.dll
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\refint\Mowathib.Application.dll
-C:\Users\MOHMED\OneDrive\Desktop\Mowathib-Frontend\obj\Debug\net9.0\Mowathib.Application.pdb
