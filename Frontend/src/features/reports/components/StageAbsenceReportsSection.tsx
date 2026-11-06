@@ -177,18 +177,30 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
         ? `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(selectedWeek.endDate)}`
         : '';
 
-      const reps = await schoolDataService.getRepresentatives(true).catch(() => []);
+      const [reps, allEnrolls] = await Promise.all([
+        schoolDataService.getRepresentatives(true).catch(() => []),
+        schoolDataService.getAllEnrollments().catch(() => []),
+      ]);
+
+      const enrollsByClass = new Map<number, typeof allEnrolls>();
+      allEnrolls.forEach((e) => {
+        const list = enrollsByClass.get(e.classId) || [];
+        list.push(e);
+        enrollsByClass.set(e.classId, list);
+      });
 
       const classesData = await Promise.all(
         stageClasses.map(async (classItem) => {
-          const [enrollments, records] = await Promise.all([
-            schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []),
-            selectedWeek
-              ? schoolDataService
-                  .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
-                  .catch(() => [])
-              : Promise.resolve([]),
-          ]);
+          let enrollments = enrollsByClass.get(classItem.classId);
+          if (!enrollments || enrollments.length === 0) {
+            enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+          }
+
+          const records = selectedWeek
+            ? await schoolDataService
+                .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
+                .catch(() => [])
+            : [];
 
           const classRep = reps.find((r) => r.username === `${classItem.classId}_1` && r.isActive);
 
@@ -212,8 +224,9 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
       });
 
       toast.show(`تم تنزيل كشف الغياب الأسبوعي لـ ${stage.stageName} بنجاح`, 'success');
-    } catch {
-      toast.show('حدث خطأ أثناء تنزيل كشف الغياب الأسبوعي', 'danger');
+    } catch (err: any) {
+      console.error('Weekly Absence Export Error:', err);
+      toast.show(err?.message || 'حدث خطأ أثناء تنزيل كشف الغياب الأسبوعي', 'danger');
     } finally {
       setExportingKey(null);
     }

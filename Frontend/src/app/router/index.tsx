@@ -18,6 +18,9 @@ import {
   AdminCardRequestsPage,
   AdminNotificationsPage,
   AdminSettingsPage,
+  AdminMonthlyPreparationPage,
+  AdminWeeklyPreparationPage,
+  AdminAcademicWeeksPage,
 } from '../../features/admin';
 
 // Report Center
@@ -95,8 +98,11 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/admin/dashboard" replace /> },
       { path: 'dashboard', element: <AdminDashboardPage /> },
       { path: 'attendance', element: <AdminAttendancePage /> },
+      { path: 'monthly-preparation', element: <AdminMonthlyPreparationPage /> },
+      { path: 'weekly-preparation', element: <AdminWeeklyPreparationPage /> },
       { path: 'reports', element: <ReportCenterPage /> },
       { path: 'classes', element: <AdminClassesPage /> },
+      { path: 'academic-weeks', element: <AdminAcademicWeeksPage /> },
       { path: 'students', element: <AdminStudentsPage /> },
       { path: 'representatives', element: <AdminRepresentativesPage /> },
       { path: 'academic-years', element: <AdminAcademicYearsPage /> },
@@ -119,6 +125,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/representative/dashboard" replace /> },
       { path: 'dashboard', element: <RepresentativeDashboardPage /> },
       { path: 'attendance', element: <Navigate to="/representative/dashboard" replace /> },
+      { path: 'weekly-attendance', element: <RepresentativeAttendanceHistoryPage /> },
       { path: 'attendance-history', element: <RepresentativeAttendanceHistoryPage /> },
       { path: 'students', element: <RepresentativeStudentsPage /> },
       { path: 'deputy', element: <RepresentativeDeputyPage /> },

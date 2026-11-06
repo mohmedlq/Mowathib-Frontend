@@ -54,7 +54,8 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
   // Helper to dynamically filter classes by stage
   const getClassesForStage = (stageNumber: 1 | 2 | 3): ClassItem[] => {
     return classes.filter((c) => {
-      const cnum = Number(c.classNumber ?? c.className ?? c.classId);
+      const match = String(c.classNumber ?? c.className ?? c.classId).match(/\d+/);
+      const cnum = match ? Number(match[0]) : Number(c.classId);
       const cstr = String(c.className ?? c.classNumber ?? c.classId);
 
       if (stageNumber === 1) {
@@ -81,20 +82,32 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
     setExportingStage(stage.stageNumber);
 
     try {
-      // 1. Fetch representatives to map class representatives
-      const reps = await schoolDataService.getRepresentatives(true).catch(() => []);
+      // 1. Fetch representatives and all enrollments in bulk
+      const [reps, allEnrolls] = await Promise.all([
+        schoolDataService.getRepresentatives(true).catch(() => []),
+        schoolDataService.getAllEnrollments().catch(() => []),
+      ]);
 
-      // 2. Fetch enrollments and attendance records for all classes in this stage in parallel
+      const enrollsByClass = new Map<number, typeof allEnrolls>();
+      allEnrolls.forEach((e) => {
+        const list = enrollsByClass.get(e.classId) || [];
+        list.push(e);
+        enrollsByClass.set(e.classId, list);
+      });
+
+      // 2. Fetch attendance records for all classes in this stage in parallel
       const classesData = await Promise.all(
         stageClasses.map(async (classItem) => {
-          const [enrollments, records] = await Promise.all([
-            schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []),
-            selectedWeek
-              ? schoolDataService
-                  .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
-                  .catch(() => [])
-              : Promise.resolve([]),
-          ]);
+          let enrollments = enrollsByClass.get(classItem.classId);
+          if (!enrollments || enrollments.length === 0) {
+            enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+          }
+
+          const records = selectedWeek
+            ? await schoolDataService
+                .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
+                .catch(() => [])
+            : [];
 
           const classRep = reps.find((r) => r.username === `${classItem.classId}_1` && r.isActive);
 
@@ -126,8 +139,9 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
         `تم تصدير تقرير ${stage.stageName} بنجاح (${stageClasses.length} شعبة في ملف واحد)`,
         'success'
       );
-    } catch (err) {
-      toast.show('حدث خطأ أثناء إعداد وتصدير تقرير المرحلة، يرجى المحاولة لاحقاً', 'danger');
+    } catch (err: any) {
+      console.error('Stage Batch Export Error:', err);
+      toast.show(err?.message || 'حدث خطأ أثناء إعداد وتصدير تقرير المرحلة، يرجى المحاولة لاحقاً', 'danger');
     } finally {
       setExportingStage(null);
     }

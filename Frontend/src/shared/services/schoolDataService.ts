@@ -86,6 +86,10 @@ export const schoolDataService = {
     });
   },
 
+  async deleteClass(classId: number): Promise<void> {
+    await apiClient.delete(`/Classes/${classId}`);
+  },
+
   // ==========================================
   // ATTENDANCE WEEKS (Connected to AttendanceWeeksController)
   // ==========================================
@@ -102,6 +106,22 @@ export const schoolDataService = {
     return await apiClient.post<AttendanceWeek>('/AttendanceWeeks', data);
   },
 
+  async updateAttendanceWeek(
+    id: number,
+    data: {
+      academicYearId: number;
+      weekNumber: number;
+      startDate: string;
+      endDate: string;
+    }
+  ): Promise<void> {
+    await apiClient.put(`/AttendanceWeeks/${id}`, data);
+  },
+
+  async deleteAttendanceWeek(id: number): Promise<void> {
+    await apiClient.delete(`/AttendanceWeeks/${id}`);
+  },
+
   // ==========================================
   // STUDENTS & ENROLLMENTS (Connected to StudentsController & ClassEnrollmentsController)
   // ==========================================
@@ -112,6 +132,24 @@ export const schoolDataService = {
     });
 
     // Populate student field if not populated directly, and map className
+    return (enrollments || []).map((e) => ({
+      ...e,
+      classNumber: e.classNumber,
+      className: e.className ?? e.classNumber ?? '',
+      student: e.student || {
+        studentId: e.studentId,
+        firstName: '',
+        secondName: '',
+        thirdName: '',
+        lastName: '',
+        fullName: e.studentName || '',
+        nationalId: (e as unknown as { nationalId?: string }).nationalId || '',
+      },
+    }));
+  },
+
+  async getAllEnrollments(): Promise<ClassEnrollment[]> {
+    const enrollments = await apiClient.get<any[]>('/ClassEnrollments');
     return (enrollments || []).map((e) => ({
       ...e,
       classNumber: e.classNumber,

@@ -10,6 +10,7 @@ import {
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
+import { PrintClassNumberModal } from '../../components/PrintClassNumberModal';
 import {
   Users,
   CreditCard,
@@ -20,6 +21,7 @@ import {
   GraduationCap,
   UserCheck,
   ArrowDown,
+  Printer,
 } from 'lucide-react';
 
 export function RepresentativeDashboardPage() {
@@ -28,6 +30,7 @@ export function RepresentativeDashboardPage() {
   const classId = user?.classId || 105;
   const isMainRep = user?.role === 'Representative';
   const className = user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'شعبة الفصل');
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   // Calculate current school day in Saudi Arabia (Sunday = 1 ... Thursday = 5)
   const getInitialDay = () => {
     const jsDay = new Date().getDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
@@ -92,6 +95,12 @@ export function RepresentativeDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Print Class Number Modal */}
+      <PrintClassNumberModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+      />
+
       {/* Top Welcome Banner */}
       <div className="bg-white p-5 sm:p-6 rounded-xl border border-[#DCE3E6] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
@@ -109,16 +118,29 @@ export function RepresentativeDashboardPage() {
         </div>
 
         {/* Primary Action Button */}
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          icon={<ArrowDown className="w-4 h-4" />}
-          onClick={scrollToAttendance}
-          className="font-bold shadow-xs self-start md:self-auto"
-        >
-          <span>رصد حضور الحصة</span>
-        </Button>
+        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            size="md"
+            icon={<Printer className="w-4 h-4" />}
+            onClick={() => setIsPrintModalOpen(true)}
+            className="font-bold text-xs"
+          >
+            طباعة لافتة الشعبة
+          </Button>
+
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            icon={<ArrowDown className="w-4 h-4" />}
+            onClick={scrollToAttendance}
+            className="font-bold shadow-xs"
+          >
+            <span>رصد حضور الحصة</span>
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}

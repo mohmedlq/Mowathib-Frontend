@@ -3,9 +3,10 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../features/auth';
 import { NotificationBell } from '../../features/notifications';
 import { ChangePasswordModal } from '../../features/auth';
+import { PrintClassNumberModal } from '../../features/representative/components/PrintClassNumberModal';
 import {
   LayoutDashboard,
-  History,
+  CalendarCheck2,
   GraduationCap,
   UserCheck,
   CreditCard,
@@ -14,17 +15,19 @@ import {
   Menu,
   X,
   Users,
+  Printer,
 } from 'lucide-react';
 
 export function RepresentativeLayout() {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   const isMainRep = user?.role === 'Representative';
 
   const navItems = [
-    { to: '/representative/dashboard', label: 'الرئيسية ورصد الحضور', icon: LayoutDashboard },
-    { to: '/representative/attendance-history', label: 'سجل الحضور الأسبوعي', icon: History },
+    { to: '/representative/dashboard', label: 'الرئيسية والتحضير اليومي', icon: LayoutDashboard },
+    { to: '/representative/weekly-attendance', label: 'التحضير الأسبوعي (عرض فقط)', icon: CalendarCheck2 },
     { to: '/representative/students', label: 'قائمة طلاب الشعبة', icon: GraduationCap },
     ...(isMainRep ? [{ to: '/representative/deputy', label: 'إدارة نائب العريف', icon: UserCheck }] : []),
     { to: '/representative/card-requests', label: 'طلب بطاقة استئذان', icon: CreditCard },
@@ -35,6 +38,12 @@ export function RepresentativeLayout() {
     <div className="min-h-screen bg-[#F5F7F8] flex flex-col md:flex-row text-right selection:bg-[#245B63] selection:text-white">
       {/* Must Change Password Modal */}
       {user?.mustChangePassword && <ChangePasswordModal isOpen={true} />}
+
+      {/* Print Class Number Modal */}
+      <PrintClassNumberModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+      />
 
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-l border-[#DCE3E6] shrink-0 sticky top-0 h-screen select-none z-30 shadow-[1px_0_4px_rgba(0,0,0,0.02)]">
@@ -73,6 +82,18 @@ export function RepresentativeLayout() {
               </NavLink>
             );
           })}
+
+          {/* Quick Action: Print Class Sign */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setIsPrintModalOpen(true)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-[#245B63] bg-[#E8F1F1]/60 hover:bg-[#E8F1F1] border border-[#CDE0E2] transition-all cursor-pointer"
+            >
+              <Printer className="w-4 h-4 shrink-0 text-[#245B63]" />
+              <span className="font-bold">طباعة رقم الشعبة</span>
+            </button>
+          </div>
         </nav>
 
         <div className="p-3 border-t border-[#DCE3E6] bg-[#FAFCFD]">
@@ -134,6 +155,18 @@ export function RepresentativeLayout() {
                   </NavLink>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsPrintModalOpen(true);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-[#245B63] bg-[#E8F1F1] border border-[#CDE0E2] cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>طباعة رقم الشعبة</span>
+              </button>
             </nav>
             <div className="p-3 border-t border-[#DCE3E6]">
               <button
@@ -171,7 +204,18 @@ export function RepresentativeLayout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3">
+            {/* Direct Print Class Sign button in header */}
+            <button
+              type="button"
+              onClick={() => setIsPrintModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-[#245B63] bg-[#E8F1F1] hover:bg-[#D5E7E8] border border-[#CDE0E2] transition-colors cursor-pointer"
+              title="طباعة لافتة الشعبة"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>لافتة الشعبة</span>
+            </button>
+
             <NotificationBell />
             <div className="h-4 w-px bg-[#DCE3E6] hidden sm:block" />
             <div className="flex items-center gap-2.5">
@@ -182,7 +226,9 @@ export function RepresentativeLayout() {
                 <span className="text-xs font-bold text-[#17252B] block leading-tight">
                   {user?.fullName || user?.username}
                 </span>
-                <span className="text-[10px] text-[#5F6B73] font-mono">{user?.username}</span>
+                <span className="text-[10px] text-[#5F6B73]">
+                  {isMainRep ? 'عريف الشعبة' : 'نائب العريف'}
+                </span>
               </div>
             </div>
           </div>

@@ -6,10 +6,13 @@ import { useSchoolSettings } from '../../shared/services/schoolSettingsService';
 import {
   LayoutDashboard,
   CalendarCheck,
+  CalendarDays,
+  CalendarRange,
+  FileSpreadsheet,
   Building2,
   GraduationCap,
   Users2,
-  CalendarRange,
+  CalendarClock,
   CreditCard,
   FileQuestion,
   Bell,
@@ -28,20 +31,23 @@ export function AdminLayout() {
 
   const navSections = [
     {
-      title: 'العمليات والحضور',
+      title: 'العمليات وسجلات الحضور',
       items: [
-        { to: '/admin/dashboard', label: 'لوحة المتابعة', icon: LayoutDashboard },
-        { to: '/admin/attendance', label: 'تسجيل ومتابعة الحضور', icon: CalendarCheck },
-        { to: '/admin/reports', label: 'تقارير الحضور والغياب', icon: CalendarRange },
+        { to: '/admin/dashboard', label: 'الرئيسية (لوحة المتابعة)', icon: LayoutDashboard },
+        { to: '/admin/attendance', label: 'الحضور والغياب', icon: CalendarCheck },
+        { to: '/admin/monthly-preparation', label: 'التحضير الشهري (5 أسابيع)', icon: CalendarRange },
+        { to: '/admin/weekly-preparation', label: 'التحضير الأسبوعي (المراحل)', icon: FileSpreadsheet },
+        { to: '/admin/reports', label: 'تقارير الحضور والغياب', icon: CalendarDays },
       ],
     },
     {
-      title: 'إدارة المدرسة',
+      title: 'إدارة المدرسة والجداول',
       items: [
-        { to: '/admin/classes', label: 'الشعب والفصول (30 شعبة)', icon: Building2 },
+        { to: '/admin/classes', label: 'الشعب والفصول الدراسية', icon: Building2 },
+        { to: '/admin/academic-weeks', label: 'الأسابيع الدراسية', icon: CalendarClock },
         { to: '/admin/students', label: 'إدارة الطلاب والقيد', icon: GraduationCap },
         { to: '/admin/representatives', label: 'عرفاء الفصول والنواب', icon: Users2 },
-        { to: '/admin/academic-years', label: 'الأعوام والأسابيع الدراسية', icon: CalendarRange },
+        { to: '/admin/academic-years', label: 'الأعوام الدراسية', icon: CalendarRange },
       ],
     },
     {

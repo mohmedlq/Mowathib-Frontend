@@ -33,6 +33,46 @@ export interface MonthlyAttendanceWeekData {
   attendances: StudentWeeklyAttendance[];
 }
 
+export function saveExcelFile(buffer: any, filename: string) {
+  try {
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+    });
+
+    if (typeof window !== 'undefined' && window.document) {
+      const nav = window.navigator as any;
+      if (nav && nav.msSaveOrOpenBlob) {
+        nav.msSaveOrOpenBlob(blob, filename);
+        return;
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.setAttribute('download', filename);
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      }, 1000);
+      return;
+    }
+  } catch (err) {
+    console.warn('Direct link download fallback to saveAs:', err);
+  }
+
+  saveAs(
+    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    filename
+  );
+}
+
 // Theme colors
 const COLORS = {
   headerBg: 'FF245B63',
@@ -357,7 +397,7 @@ export const excelExportService = {
     const filename =
       `Mowathib_Daily_Attendance_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`;
 
-    saveAs(new Blob([buffer]), filename);
+    saveExcelFile(buffer, filename);
   },
 
   // ==========================================
@@ -666,7 +706,7 @@ export const excelExportService = {
     const filename =
       `Mowathib_Weekly_Attendance_${meta.academicYear}_Week-${meta.weekNumber}_${meta.className}.xlsx`;
 
-    saveAs(new Blob([buffer]), filename);
+    saveExcelFile(buffer, filename);
   },
 
   // ==========================================
@@ -1173,7 +1213,7 @@ export const excelExportService = {
     const filename =
       `Mowathib_Monthly_Attendance_${meta.academicYear}_${meta.month}_${safeClassName}.xlsx`;
 
-    saveAs(new Blob([buffer]), filename);
+    saveExcelFile(buffer, filename);
   },
 
   // ==========================================
@@ -1372,7 +1412,7 @@ export const excelExportService = {
     const filename =
       `Mowathib_Daily_Absence_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`;
 
-    saveAs(new Blob([buffer]), filename);
+    saveExcelFile(buffer, filename);
   },
 
   // ==========================================
@@ -2426,7 +2466,7 @@ export const excelExportService = {
     const filename =
       `Mowathib_${stageSanitized}_Week_${stageData.weekNumber}_${stageData.academicYear}.xlsx`;
 
-    saveAs(new Blob([buffer]), filename);
+    saveExcelFile(buffer, filename);
   },
 
   // ==========================================
@@ -2682,7 +2722,7 @@ export const excelExportService = {
 
     const buffer = await workbook.xlsx.writeBuffer();
     const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveAs(new Blob([buffer]), `Mowathib_Daily_Absence_${stageSanitized}_${params.date}.xlsx`);
+    saveExcelFile(buffer, `Mowathib_Daily_Absence_${stageSanitized}_${params.date}.xlsx`);
   },
 
   // ==========================================
@@ -2842,7 +2882,7 @@ export const excelExportService = {
 
     const buffer = await workbook.xlsx.writeBuffer();
     const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveAs(new Blob([buffer]), `Mowathib_Weekly_Absence_${stageSanitized}_Week_${params.weekNumber}.xlsx`);
+    saveExcelFile(buffer, `Mowathib_Weekly_Absence_${stageSanitized}_Week_${params.weekNumber}.xlsx`);
   },
 
   // ==========================================
@@ -2983,6 +3023,316 @@ export const excelExportService = {
 
     const buffer = await workbook.xlsx.writeBuffer();
     const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveAs(new Blob([buffer]), `Mowathib_Monthly_Absence_${stageSanitized}_${params.monthStr}.xlsx`);
+    saveExcelFile(buffer, `Mowathib_Monthly_Absence_${stageSanitized}_${params.monthStr}.xlsx`);
+  },
+
+  // ==========================================
+  // COMPLETE GRADE-LEVEL WEEKLY PREPARATION EXPORT (Stacked Tables)
+  // ==========================================
+
+  async exportGradeWeeklyPreparation(params: {
+    gradeName: string;
+    weekNumber: number;
+    weekRange: string;
+    academicYear?: string;
+    classesData: Array<{
+      classItem: ClassItem;
+      className: string;
+      classNumber?: number;
+      attendances: StudentWeeklyAttendance[];
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet(params.gradeName, {
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    let currentRow = 1;
+    for (const classData of params.classesData) {
+      currentRow = appendClassWeeklyPreparationToWorksheet(
+        worksheet,
+        currentRow,
+        classData,
+        {
+          weekNumber: params.weekNumber,
+          weekRange: params.weekRange,
+          academicYear: params.academicYear,
+        }
+      );
+      currentRow += 2; // Spacer between class tables
+    }
+
+    // Set Column Widths
+    worksheet.getColumn(1).width = 16;
+    worksheet.getColumn(2).width = 26;
+    for (let c = 3; c <= 35; c++) {
+      worksheet.getColumn(c).width = 5.8;
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const sanitizedGrade = params.gradeName.replace(/\s+/g, '_');
+    saveExcelFile(buffer, `Mowathib_Weekly_${sanitizedGrade}_Week${params.weekNumber}.xlsx`);
+  },
+
+  // ==========================================
+  // ALL 3 GRADES WEEKLY PREPARATION IN ONE WORKBOOK (3 Worksheets)
+  // ==========================================
+
+  async exportAllGradesWeeklyPreparation(params: {
+    weekNumber: number;
+    weekRange: string;
+    academicYear?: string;
+    gradesData: Array<{
+      gradeName: string;
+      classesData: Array<{
+        classItem: ClassItem;
+        className: string;
+        classNumber?: number;
+        attendances: StudentWeeklyAttendance[];
+      }>;
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+
+    for (const grade of params.gradesData) {
+      const worksheet = workbook.addWorksheet(grade.gradeName, {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      let currentRow = 1;
+      for (const classData of grade.classesData) {
+        currentRow = appendClassWeeklyPreparationToWorksheet(
+          worksheet,
+          currentRow,
+          classData,
+          {
+            weekNumber: params.weekNumber,
+            weekRange: params.weekRange,
+            academicYear: params.academicYear,
+          }
+        );
+        currentRow += 2; // Spacer between class tables
+      }
+
+      // Column Widths
+      worksheet.getColumn(1).width = 16;
+      worksheet.getColumn(2).width = 26;
+      for (let c = 3; c <= 35; c++) {
+        worksheet.getColumn(c).width = 5.8;
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveExcelFile(buffer, `Mowathib_Weekly_Preparation_All_Grades_Week${params.weekNumber}.xlsx`);
+  },
+
+  // ==========================================
+  // FIVE CONSECUTIVE WEEKS MONTHLY PREPARATION EXPORT
+  // ==========================================
+
+  async exportFiveWeeksMonthlyPreparation(params: {
+    className: string;
+    classNumber?: number;
+    academicYear?: string;
+    referenceWeekNumber: number;
+    weeksData: Array<{
+      weekNumber: number;
+      weekRange: string;
+      attendances: StudentWeeklyAttendance[];
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+
+    const sheetTitle = `شهري 5 أسابيع شعبة ${params.classNumber || params.className}`;
+    const worksheet = workbook.addWorksheet(sheetTitle.slice(0, 31), {
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    let currentRow = 1;
+    for (const weekData of params.weeksData) {
+      currentRow = appendClassWeeklyPreparationToWorksheet(
+        worksheet,
+        currentRow,
+        {
+          className: params.className,
+          classNumber: params.classNumber,
+          attendances: weekData.attendances,
+        },
+        {
+          weekNumber: weekData.weekNumber,
+          weekRange: weekData.weekRange,
+          academicYear: params.academicYear,
+        }
+      );
+      currentRow += 3; // Prominent spacer between consecutive weekly tables
+    }
+
+    // Column Widths
+    worksheet.getColumn(1).width = 16;
+    worksheet.getColumn(2).width = 26;
+    for (let c = 3; c <= 35; c++) {
+      worksheet.getColumn(c).width = 5.8;
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveExcelFile(
+      buffer,
+      `Mowathib_Monthly_5Weeks_Class${params.classNumber || params.className}_RefWeek${params.referenceWeekNumber}.xlsx`
+    );
   },
 };
+
+// =============================================================================
+// Helper: Append a single class's weekly preparation table to any worksheet
+// =============================================================================
+
+function appendClassWeeklyPreparationToWorksheet(
+  worksheet: ExcelJS.Worksheet,
+  startRow: number,
+  classData: {
+    className: string;
+    classNumber?: number;
+    attendances: StudentWeeklyAttendance[];
+  },
+  meta: {
+    weekNumber: number;
+    weekRange: string;
+    academicYear?: string;
+    schoolName?: string;
+  }
+): number {
+  const totalCols = 35; // 2 identity cols + 33 periods (7+7+7+6+6)
+
+  // 1. Class Header Banner
+  worksheet.mergeCells(startRow, 1, startRow, totalCols);
+  const titleCell = worksheet.getCell(startRow, 1);
+  titleCell.value = `${classData.className.startsWith('شعبة') ? classData.className : `شعبة ${classData.className}`} — كشف التحضير الأسبوعي (الأسبوع ${meta.weekNumber})`;
+  titleCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: COLORS.headerText } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(startRow).height = 26;
+
+  // 2. Class Metadata Row
+  worksheet.mergeCells(startRow + 1, 1, startRow + 1, totalCols);
+  const metaCell = worksheet.getCell(startRow + 1, 1);
+  metaCell.value = `المدرسة: ${meta.schoolName || schoolSettingsService.getSchoolName()} | الفترة: ${meta.weekRange} | عدد الطلاب: ${classData.attendances.length} | العام الدراسي: ${meta.academicYear || '1446-1447هـ'}`;
+  metaCell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF5F6B73' } };
+  metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
+  metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(startRow + 1).height = 19;
+
+  // 3. Grid Table Headers (Row startRow + 3 & startRow + 4)
+  const hRow1 = startRow + 3;
+  const hRow2 = startRow + 4;
+
+  // Identity Headers
+  worksheet.mergeCells(hRow1, 1, hRow2, 1);
+  const idH = worksheet.getCell(hRow1, 1);
+  idH.value = 'رقم الهوية';
+  idH.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
+  idH.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
+  idH.alignment = { horizontal: 'center', vertical: 'middle' };
+  idH.border = BORDER_THIN;
+
+  worksheet.mergeCells(hRow1, 2, hRow2, 2);
+  const nameH = worksheet.getCell(hRow1, 2);
+  nameH.value = 'اسم الطالب';
+  nameH.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
+  nameH.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
+  nameH.alignment = { horizontal: 'center', vertical: 'middle' };
+  nameH.border = BORDER_THIN;
+
+  // Calculate day headers columns
+  let currentStartCol = 3;
+  const dayHeaders = SCHOOL_DAYS.map((day) => {
+    const count = getPeriodsCountForDay(day.dayNumber);
+    const startCol = currentStartCol;
+    const endCol = currentStartCol + count - 1;
+    currentStartCol += count;
+    return {
+      name: day.nameAr,
+      startCol,
+      endCol,
+      periodCount: count,
+    };
+  });
+
+  // Day Name Cells
+  dayHeaders.forEach((dh) => {
+    worksheet.mergeCells(hRow1, dh.startCol, hRow1, dh.endCol);
+    const cell = worksheet.getCell(hRow1, dh.startCol);
+    cell.value = dh.name;
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = BORDER_THIN;
+  });
+
+  worksheet.getRow(hRow1).height = 22;
+  worksheet.getRow(hRow2).height = 19;
+
+  // Period Numbers
+  dayHeaders.forEach((dh) => {
+    for (let p = 1; p <= dh.periodCount; p++) {
+      const col = dh.startCol + (p - 1);
+      const cell = worksheet.getCell(hRow2, col);
+      cell.value = `ح ${p}`;
+      cell.font = { name: 'Arial', size: 8.5, bold: true, color: { argb: 'FF5F6B73' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F3F5' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = BORDER_THIN;
+    }
+  });
+
+  // 4. Data Rows
+  let curRow = hRow2 + 1;
+  classData.attendances.forEach((item) => {
+    const r = worksheet.getRow(curRow);
+    r.height = 19;
+
+    const idCell = r.getCell(1);
+    idCell.value = item.enrollment.student?.nationalId || '—';
+    idCell.numFmt = '@';
+    idCell.font = { name: 'Arial', size: 9 };
+    idCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    idCell.border = BORDER_THIN;
+
+    const nameCell = r.getCell(2);
+    nameCell.value = item.enrollment.studentName || 'طالب';
+    nameCell.font = { name: 'Arial', size: 9.5, bold: true };
+    nameCell.alignment = { horizontal: 'right', vertical: 'middle' };
+    nameCell.border = BORDER_THIN;
+
+    let colIdx = 3;
+    SCHOOL_DAYS.forEach((day) => {
+      getPeriodsForDay(day.dayNumber).forEach((p) => {
+        const cell = r.getCell(colIdx);
+        const slot = item.slots[day.dayNumber]?.[p];
+        const st = slot ? slot.status : 'Unmarked';
+        const style = getStatusStyle(st);
+
+        cell.value = style.label;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
+        cell.font = { name: 'Arial', size: 8, bold: true, color: { argb: style.fontColor } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = BORDER_THIN;
+
+        colIdx++;
+      });
+    });
+
+    curRow++;
+  });
+
+  return curRow;
+}

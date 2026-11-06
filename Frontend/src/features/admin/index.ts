@@ -8,4 +8,6 @@ export { AdminCardsPage } from './cards/pages/AdminCardsPage';
 export { AdminCardRequestsPage } from './card-requests/pages/AdminCardRequestsPage';
 export { AdminNotificationsPage } from './notifications/pages/AdminNotificationsPage';
 export { AdminSettingsPage } from './settings/pages/AdminSettingsPage';
-
+export { AdminMonthlyPreparationPage } from './monthly-preparation/pages/AdminMonthlyPreparationPage';
+export { AdminWeeklyPreparationPage } from './weekly-preparation/pages/AdminWeeklyPreparationPage';
+export { AdminAcademicWeeksPage } from './academic-weeks/pages/AdminAcademicWeeksPage';
