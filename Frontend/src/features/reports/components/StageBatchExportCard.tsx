@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileSpreadsheet, Download, Layers } from 'lucide-react';
 import { Spinner } from '../../../shared/components/ui/Spinner';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
@@ -6,7 +6,7 @@ import { schoolDataService } from '../../../shared/services/schoolDataService';
 import { excelExportService } from '../services/excelExportService';
 import { useNotifications } from '../../notifications';
 import { useSchoolSettings } from '../../../shared/services/schoolSettingsService';
-import { formatArabicDateShort } from '../../../shared/utils/date';
+import { formatArabicDateShort, resolveDefaultAttendanceWeek } from '../../../shared/utils/date';
 
 interface StageBatchExportCardProps {
   classes: ClassItem[];
@@ -46,8 +46,18 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
   const { schoolName } = useSchoolSettings();
 
   const [selectedWeekId, setSelectedWeekId] = useState<number>(() => {
-    return weeks[0]?.attendanceWeekId || 1;
+    return resolveDefaultAttendanceWeek(weeks)?.attendanceWeekId || 0;
   });
+
+  useEffect(() => {
+    if ((!selectedWeekId || selectedWeekId === 0) && weeks.length > 0) {
+      const activeWeek = resolveDefaultAttendanceWeek(weeks);
+      if (activeWeek) {
+        setSelectedWeekId(activeWeek.attendanceWeekId);
+      }
+    }
+  }, [weeks, selectedWeekId]);
+
   const [exportingStage, setExportingStage] = useState<number | null>(null);
 
   const selectedWeek = weeks.find((w) => w.attendanceWeekId === selectedWeekId) || weeks[0];
@@ -129,7 +139,7 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
       await excelExportService.exportStageBatchReport({
         stageNumber: stage.stageNumber,
         stageName: stage.stageName,
-        academicYear: '2026-2027',
+        academicYear: '1448-1449هـ',
         weekNumber: selectedWeek?.weekNumber || 1,
         weekRange,
         schoolName,

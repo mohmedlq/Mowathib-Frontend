@@ -166,6 +166,9 @@ export function isValidPeriodForDay(dayNumber: number, periodNumber: number): bo
 }
 
 
+export const DEFAULT_ATTENDANCE_WEEK = 'current' as const;
+export type DefaultAttendanceWeekPolicy = typeof DEFAULT_ATTENDANCE_WEEK;
+
 export interface WeeklyAttendanceSummary {
   classId: number;
   attendanceWeekId: number;

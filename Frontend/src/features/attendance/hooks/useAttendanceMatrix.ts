@@ -6,24 +6,30 @@ import type { AttendanceStatus, AttendanceRecord, BackendAttendanceStatus } from
 import { SCHOOL_DAYS, getPeriodsForDay, isValidPeriodForDay } from '../../../shared/types';
 import { useNotifications } from '../../notifications';
 
-export function useAttendanceMatrix(classId: number, attendanceWeekId: number) {
+export function useAttendanceMatrix(classId: number, attendanceWeekId?: number | null) {
   const queryClient = useQueryClient();
   const { toast } = useNotifications();
 
-  // Fetch enrollments
+  const isWeekReady = typeof attendanceWeekId === 'number' && attendanceWeekId > 0;
+
+  // Fetch enrollments (parallel query)
   const enrollmentsQuery = useQuery({
     queryKey: ['enrollments', classId],
     queryFn: () => schoolDataService.getEnrollmentsByClass(classId),
     enabled: classId > 0,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 10, // 10 minutes
+    gcTime: 1000 * 60 * 30,
+    refetchOnWindowFocus: false,
   });
 
-  // Fetch records
+  // Fetch records (parallel query, only when week is identified)
   const recordsQuery = useQuery({
     queryKey: ['attendance_records', classId, attendanceWeekId],
-    queryFn: () => schoolDataService.getAttendanceRecords(classId, attendanceWeekId),
-    enabled: classId > 0 && attendanceWeekId > 0,
-    staleTime: 1000 * 30, // 30 seconds
+    queryFn: () => schoolDataService.getAttendanceRecords(classId, attendanceWeekId!),
+    enabled: classId > 0 && isWeekReady,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    gcTime: 1000 * 60 * 15,
+    refetchOnWindowFocus: false,
   });
 
   // Build matrix with O(1) indexed lookup & memoization
@@ -95,18 +101,52 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId: number) {
       periodNumber: number;
       changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>;
     }) => {
+      if (!isWeekReady) {
+        throw new Error('لم يتم تحديد الأسبوع الدراسي.');
+      }
       if (!isValidPeriodForDay(dayNumber, periodNumber)) {
         throw new Error(`الحصة ${periodNumber} غير متاحة في هذا اليوم.`);
       }
       return await schoolDataService.saveBulkAttendance({
-        attendanceWeekId,
+        attendanceWeekId: attendanceWeekId!,
         dayNumber,
         periodNumber,
         records: changes,
       });
     },
-    onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ['attendance_records', classId, attendanceWeekId] });
+    onSuccess: (count, variables) => {
+      // Immediate optimistic update of the cache for zero UI lag
+      queryClient.setQueryData<AttendanceRecord[]>(
+        ['attendance_records', classId, attendanceWeekId],
+        (prev = []) => {
+          const map = new Map<string, AttendanceRecord>();
+          for (const r of prev) {
+            map.set(`${r.enrollmentId}:${r.dayNumber}:${r.periodNumber}`, r);
+          }
+          for (const ch of variables.changes) {
+            const key = `${ch.enrollmentId}:${variables.dayNumber}:${variables.periodNumber}`;
+            const existing = map.get(key);
+            if (existing) {
+              map.set(key, { ...existing, status: ch.status });
+            } else {
+              map.set(key, {
+                attendanceRecordId: -Date.now() - Math.floor(Math.random() * 1000),
+                enrollmentId: ch.enrollmentId,
+                attendanceWeekId: attendanceWeekId!,
+                dayNumber: variables.dayNumber,
+                periodNumber: variables.periodNumber,
+                status: ch.status,
+              });
+            }
+          }
+          return Array.from(map.values());
+        }
+      );
+
+      queryClient.invalidateQueries({
+        queryKey: ['attendance_records', classId, attendanceWeekId],
+        exact: true,
+      });
       toast.show(`تم حفظ تحضير ${count} طالب بنجاح`, 'success');
     },
     onError: () => {

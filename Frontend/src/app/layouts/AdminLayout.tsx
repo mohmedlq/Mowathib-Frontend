@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../features/auth';
 import { ThemeToggle } from '../../shared/components/ui/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { useSchoolSettings } from '../../shared/services/schoolSettingsService';
+import { schoolDataService } from '../../shared/services/schoolDataService';
+import { resolveDefaultAttendanceWeek } from '../../shared/utils/date';
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -14,13 +17,14 @@ import {
   GraduationCap,
   Users2,
   CalendarClock,
-  CreditCard,
-  FileQuestion,
+  // CreditCard,
+  // FileQuestion,
   Settings,
   LogOut,
   Menu,
   X,
   ChevronLeft,
+  Calendar,
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -30,13 +34,31 @@ export function AdminLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // Fetch Weeks to determine Current Week Number
+  const { data: weeks = [] } = useQuery({
+    queryKey: ['weeks'],
+    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    staleTime: 1000 * 60 * 30,
+  });
+
+  // Fetch Active Academic Year
+  const { data: activeYear } = useQuery({
+    queryKey: ['active_academic_year'],
+    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
+  const currentWeekNumber = activeWeek?.weekNumber;
+
   const navSections = [
     {
       title: 'العمليات وسجلات الحضور',
       items: [
         { to: '/admin/dashboard', label: 'الرئيسية (لوحة المتابعة)', icon: LayoutDashboard },
         { to: '/admin/attendance', label: 'الحضور والغياب', icon: CalendarCheck },
-        { to: '/admin/monthly-preparation', label: 'التحضير الشهري (5 أسابيع)', icon: CalendarRange },
+        // مؤجل مؤقتاً بناءً على طلب الإدارة: التحضير الشهري
+        // { to: '/admin/monthly-preparation', label: 'التحضير الشهري (5 أسابيع)', icon: CalendarRange },
         { to: '/admin/weekly-preparation', label: 'التحضير الأسبوعي (المراحل)', icon: FileSpreadsheet },
         { to: '/admin/reports', label: 'تقارير الحضور والغياب', icon: CalendarDays },
       ],
@@ -54,8 +76,9 @@ export function AdminLayout() {
     {
       title: 'الخدمات والإعدادات',
       items: [
-        { to: '/admin/cards', label: 'البطاقات والطباعة', icon: CreditCard },
-        { to: '/admin/card-requests', label: 'طلبات البطاقات البديلة', icon: FileQuestion },
+        // مؤجل مؤقتاً بناءً على طلب الإدارة: البطاقات والطباعة وطلبات البطاقات البديلة
+        // { to: '/admin/cards', label: 'البطاقات والطباعة', icon: CreditCard },
+        // { to: '/admin/card-requests', label: 'طلبات البطاقات البديلة', icon: FileQuestion },
         { to: '/admin/settings', label: 'إعدادات النظام', icon: Settings },
       ],
     },
@@ -183,7 +206,7 @@ export function AdminLayout() {
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden flex">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="relative w-64 bg-white dark:bg-[#182226] h-full flex flex-col z-10 border-l border-[#DCE3E6] dark:border-[#28373D] shadow-xl transition-colors duration-150">
+          <div className="relative w-64 bg-white dark:bg-[#122B23] h-full flex flex-col z-10 border-l border-[#DCE3E6] dark:border-[#1E4638] shadow-xl transition-colors duration-150">
             <div className="h-16 px-4 border-b border-[#DCE3E6] dark:border-[#1E4638] flex items-center justify-between">
               <BrandLogo
                 autoTheme={true}
@@ -228,7 +251,7 @@ export function AdminLayout() {
                 </div>
               ))}
             </nav>
-            <div className="p-3 border-t border-[#DCE3E6] dark:border-[#28373D]">
+            <div className="p-3 border-t border-[#DCE3E6] dark:border-[#1E4638]">
               <button
                 type="button"
                 onClick={logout}
@@ -259,12 +282,20 @@ export function AdminLayout() {
             <div className="md:hidden flex items-center">
               <BrandLogo variant="favicon" className="w-7 h-7 sm:w-8 sm:h-8" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Academic Year Badge */}
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0B5D43] dark:text-[#3E9B78] bg-[#E8F5F0] dark:bg-[#1A3B31] px-2.5 py-1 rounded-md border border-[#D8E5DF] dark:border-[#1E4638]">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#0B5D43] dark:bg-[#3E9B78] animate-pulse"></span>
-                <span className="hidden xs:inline">العام الدراسي 1446-1447هـ</span>
-                <span className="xs:hidden">1446-1447هـ</span>
+                <span className="hidden xs:inline">{activeYear?.yearName ? `العام الدراسي ${activeYear.yearName}` : 'العام الدراسي 1448-1449هـ'}</span>
+                <span className="xs:hidden">{activeYear?.yearName || '1448-1449هـ'}</span>
               </span>
+
+              {/* Current Week Number Badge */}
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#245B63] dark:text-[#388B96] bg-[#E8F1F1] dark:bg-[#19383E] px-2.5 py-1 rounded-md border border-[#245B63]/25 dark:border-[#388B96]/30 shadow-2xs">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{currentWeekNumber ? `الأسبوع ${currentWeekNumber}` : 'الأسبوع الدراسي'}</span>
+              </span>
+
               <span className="text-xs text-[#89949A] dark:text-[#718A80] hidden sm:inline">|</span>
               <span className="text-xs text-[#5F6B73] dark:text-[#A3C7B9] hidden sm:inline font-medium">{schoolName}</span>
             </div>

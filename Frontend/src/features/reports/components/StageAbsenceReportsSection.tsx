@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FileSpreadsheet,
   Calendar,
@@ -18,6 +18,8 @@ import { useSchoolSettings } from '../../../shared/services/schoolSettingsServic
 import {
   formatArabicDateShort,
   getArabicDayName,
+  getRiyadhDateOnly,
+  resolveDefaultAttendanceWeek,
 } from '../../../shared/utils/date';
 
 interface StageAbsenceReportsSectionProps {
@@ -59,14 +61,25 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
 
   // Unified Absence Filter State
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return '2026-11-05';
+    return getRiyadhDateOnly();
   });
 
   const [selectedWeekId, setSelectedWeekId] = useState<number>(() => {
-    return weeks[0]?.attendanceWeekId || 11;
+    return resolveDefaultAttendanceWeek(weeks)?.attendanceWeekId || 0;
   });
 
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-11');
+  useEffect(() => {
+    if ((!selectedWeekId || selectedWeekId === 0) && weeks.length > 0) {
+      const activeWeek = resolveDefaultAttendanceWeek(weeks);
+      if (activeWeek) {
+        setSelectedWeekId(activeWeek.attendanceWeekId);
+      }
+    }
+  }, [weeks, selectedWeekId]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return getRiyadhDateOnly().slice(0, 7);
+  });
 
   // Loading state track: `stageNumber-reportType` (e.g. "1-daily")
   const [exportingKey, setExportingKey] = useState<string | null>(null);
@@ -145,7 +158,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
       await excelExportService.exportStageDailyAbsenceReport({
         stageNumber: stage.stageNumber,
         stageName: stage.stageName,
-        academicYear: '2026-2027',
+        academicYear: '1448-1449هـ',
         date: selectedDate,
         dayName,
         schoolName,
@@ -216,7 +229,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
       await excelExportService.exportStageWeeklyAbsenceReport({
         stageNumber: stage.stageNumber,
         stageName: stage.stageName,
-        academicYear: '2026-2027',
+        academicYear: '1448-1449هـ',
         weekNumber: selectedWeek?.weekNumber || 1,
         weekRange,
         schoolName,
@@ -289,7 +302,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
       await excelExportService.exportStageMonthlyAbsenceReport({
         stageNumber: stage.stageNumber,
         stageName: stage.stageName,
-        academicYear: '2026-2027',
+        academicYear: '1448-1449هـ',
         monthStr: selectedMonth,
         schoolName,
         classesData,

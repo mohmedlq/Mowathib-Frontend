@@ -19,6 +19,66 @@ import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
 import { Search, CheckCircle2, ChevronRight, ChevronLeft, Save, AlertTriangle } from 'lucide-react';
 import { cn } from '../../../shared/utils/cn';
 
+interface StatusVisual {
+  label: string;
+  rowBg: string;
+  rowHover: string;
+  borderAccent: string;
+  badgeStyle: string;
+  pillStyle: string;
+  selectedBtn: string;
+}
+
+const STATUS_CONFIG: Record<AttendanceStatus, StatusVisual> = {
+  Present: {
+    label: 'حاضر',
+    rowBg: 'bg-[#EAF6EE] dark:bg-[#143224]',
+    rowHover: 'hover:bg-[#DFEFE5] dark:hover:bg-[#183B2B]',
+    borderAccent: 'border-r-4 border-r-[#176B3A] dark:border-r-[#3E9B78]',
+    badgeStyle: 'bg-[#D2EBD9] text-[#135A31] dark:bg-[#1B4D35] dark:text-[#86E0A9]',
+    pillStyle:
+      'bg-[#D2EBD9]/80 text-[#135A31] border-[#9FD3B0] dark:bg-[#1B4D35]/80 dark:text-[#86E0A9] dark:border-[#28704D]',
+    selectedBtn:
+      'bg-[#D7EEDB] dark:bg-[#1B4D35] text-[#135A31] dark:text-[#86E0A9] border-[#9FD3B0] dark:border-[#28704D] shadow-2xs ring-2 ring-[#176B3A]/30 dark:ring-[#3E9B78]/40 font-black',
+  },
+  Absent: {
+    label: 'غائب',
+    rowBg: 'bg-[#FDECEC] dark:bg-[#2D1619]',
+    rowHover: 'hover:bg-[#F9DADA] dark:hover:bg-[#381B1F]',
+    borderAccent: 'border-r-4 border-r-[#A61B1B] dark:border-r-[#F87171]',
+    badgeStyle: 'bg-[#FCD8D8] text-[#991B1B] dark:bg-[#481D22] dark:text-[#FCA5A5]',
+    pillStyle:
+      'bg-[#FCD8D8]/80 text-[#991B1B] border-[#F8AAAA] dark:bg-[#481D22]/80 dark:text-[#FCA5A5] dark:border-[#6B2A30]',
+    selectedBtn:
+      'bg-[#FCE2E2] dark:bg-[#481D22] text-[#991B1B] dark:text-[#FCA5A5] border-[#F8AAAA] dark:border-[#6B2A30] shadow-2xs ring-2 ring-[#991B1B]/30 dark:ring-[#F87171]/40 font-black',
+  },
+  Discontinued: {
+    label: 'منقطع',
+    rowBg: 'bg-[#FFF6E5] dark:bg-[#2E2211]',
+    rowHover: 'hover:bg-[#FDE8BE] dark:hover:bg-[#3B2B16]',
+    borderAccent: 'border-r-4 border-r-[#B45309] dark:border-r-[#FBBF24]',
+    badgeStyle: 'bg-[#FDEBB6] text-[#92400E] dark:bg-[#4A3515] dark:text-[#FDE047]',
+    pillStyle:
+      'bg-[#FDEBB6]/80 text-[#92400E] border-[#FCD34D] dark:bg-[#4A3515]/80 dark:text-[#FDE047] dark:border-[#714F1C]',
+    selectedBtn:
+      'bg-[#FDE68A]/70 dark:bg-[#4A3515] text-[#92400E] dark:text-[#FDE047] border-[#FCD34D] dark:border-[#714F1C] shadow-2xs ring-2 ring-[#B45309]/30 dark:ring-[#FBBF24]/40 font-black',
+  },
+  Unmarked: {
+    label: 'غير محدد',
+    rowBg: 'bg-[#F4F6F8] dark:bg-[#1A2429]',
+    rowHover: 'hover:bg-[#EAEFF2] dark:hover:bg-[#202D33]',
+    borderAccent: 'border-r-4 border-r-[#8C9BA5] dark:border-r-[#566874]',
+    badgeStyle: 'bg-[#DFE5E9] text-[#37454D] dark:bg-[#2C3A41] dark:text-[#D1DCE2]',
+    pillStyle:
+      'bg-[#DFE5E9]/80 text-[#37454D] border-[#B8C4CC] dark:bg-[#2C3A41]/80 dark:text-[#D1DCE2] dark:border-[#52646E]',
+    selectedBtn:
+      'bg-[#DFE4E8] dark:bg-[#324047] text-[#2D3B43] dark:text-[#E6EDF2] border-[#B8C4CC] dark:border-[#52646E] shadow-2xs ring-2 ring-[#8C9BA5]/30 dark:ring-[#6E818D]/40 font-black',
+  },
+};
+
+const UNSELECTED_BTN_CLASS =
+  'bg-white/90 dark:bg-[#162227]/90 text-[#4F5D65] dark:text-[#A4B5BD] border-[#D0D9DE] dark:border-[#2C3E46] hover:bg-white dark:hover:bg-[#1F2E35] hover:text-[#17252B] dark:hover:text-[#F0F4F6] hover:border-[#9BAAB1] dark:hover:border-[#425862] font-semibold';
+
 export interface QuickAttendancePanelProps {
   classNameTitle: number|string;
   weekNumber: number;
@@ -55,7 +115,7 @@ export function QuickAttendancePanel({
     queryKey: ['active_academic_year'],
     queryFn: () => schoolDataService.getActiveAcademicYear(),
   });
-  const academicYearName = activeYear?.yearName || '2026-2027';
+  const academicYearName = activeYear?.yearName || '1448-1449هـ';
 
   // Local draft status for the currently selected slot (enrollmentId -> AttendanceStatus)
   const [localStatuses, setLocalStatuses] = useState<Record<number, AttendanceStatus>>({});
@@ -208,32 +268,34 @@ export function QuickAttendancePanel({
   return (
     <div className="space-y-4">
       {/* Header Context Bar */}
-      <div className="bg-white dark:bg-[#182226] p-4 sm:p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
+      <div className="bg-white dark:bg-[#152126] p-4 sm:p-5 rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-lg text-[#17252B] dark:text-[#F0F4F6]">{classNameTitle}</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] font-semibold border border-[#CDE0E2] dark:border-[#28373D]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-black text-xl text-[#17252B] dark:text-[#F0F4F6] tracking-tight">{classNameTitle}</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#E8F1F1] dark:bg-[#18353B] text-[#0B5D43] dark:text-[#4DB4C2] font-bold border border-[#CDE0E2] dark:border-[#234D56]">
               {academicYearName}
             </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#EEF2F3] dark:bg-[#212E33] text-[#5F6B73] dark:text-[#9BAAB1] font-semibold border border-[#DCE3E6] dark:border-[#28373D]">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#EEF2F3] dark:bg-[#1E2C32] text-[#4A555C] dark:text-[#A7B8C0] font-bold border border-[#DCE3E6] dark:border-[#2C3E46]">
               الأسبوع {weekNumber}
             </span>
           </div>
-          <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-1">
-            التحضير السريع للحصة الدراسية: <span className="font-bold text-[#17252B] dark:text-[#F0F4F6]">{currentDayName}</span> —{' '}
-            <span className="font-bold text-[#245B63] dark:text-[#388B96]">الحصة {selectedPeriod}</span>
+          <p className="text-xs text-[#5F6B73] dark:text-[#95A7AF] mt-1.5 flex items-center gap-1.5 flex-wrap">
+            <span>التحضير السريع للحصة الدراسية:</span>
+            <span className="font-bold text-[#17252B] dark:text-[#F0F4F6]">{currentDayName}</span>
+            <span className="text-[#8C9AA2] dark:text-[#566874]">—</span>
+            <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">الحصة {selectedPeriod}</span>
           </p>
         </div>
 
-        {/* Primary Action: Mark All Present */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Primary Action: Mark All Present & Save */}
+        <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto">
           <Button
             type="button"
             variant="success"
             size="md"
             icon={<CheckCircle2 className="w-4 h-4" />}
             onClick={handleMarkAllPresent}
-            className="shadow-xs font-bold"
+            className="shadow-xs font-bold flex-1 md:flex-initial justify-center"
           >
             تحضير الكل حاضر
           </Button>
@@ -246,6 +308,12 @@ export function QuickAttendancePanel({
             onClick={handleSave}
             isLoading={isSaving}
             disabled={!hasUnsavedChanges && !isSaving}
+            className={cn(
+              'shadow-xs font-bold flex-1 md:flex-initial justify-center transition-all',
+              hasUnsavedChanges
+                ? 'ring-2 ring-[#0B5D43]/30 dark:ring-[#3E9B78]/40 shadow-sm'
+                : 'text-[#5F6B73] dark:text-[#95A7AF]'
+            )}
           >
             {hasUnsavedChanges ? 'حفظ التغييرات' : 'تم الحفظ'}
           </Button>
@@ -253,10 +321,10 @@ export function QuickAttendancePanel({
       </div>
 
       {/* Navigation Controls: Days & Periods */}
-      <div className="bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] space-y-3 shadow-xs transition-colors">
+      <div className="bg-white dark:bg-[#152126] p-4 sm:p-5 rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] space-y-3.5 shadow-xs transition-colors">
         {/* Days Tabs */}
         <div>
-          <span className="text-[11px] font-bold text-[#5F6B73] dark:text-[#9BAAB1] block mb-1.5">اختر اليوم الدراسي:</span>
+          <span className="text-xs font-bold text-[#5F6B73] dark:text-[#95A7AF] block mb-2">اختر اليوم الدراسي:</span>
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
             {SCHOOL_DAYS.map((day) => {
               const isSelected = day.dayNumber === selectedDay;
@@ -274,10 +342,10 @@ export function QuickAttendancePanel({
                     setLocalStatuses({});
                   }}
                   className={cn(
-                    'py-2 px-1 text-center rounded-lg text-xs font-bold transition-all cursor-pointer border',
+                    'min-h-[40px] py-1.5 px-1 text-center rounded-xl text-xs font-bold transition-all cursor-pointer border truncate flex items-center justify-center active:scale-95 select-none',
                     isSelected
-                      ? 'bg-[#245B63] dark:bg-[#2D727B] text-white border-[#245B63] dark:border-[#2D727B] shadow-xs'
-                      : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
+                      ? 'bg-[#0B5D43] dark:bg-[#107052] text-white border-[#0B5D43] dark:border-[#107052] shadow-xs ring-2 ring-[#0B5D43]/20 dark:ring-[#107052]/30'
+                      : 'bg-[#F5F8F9] dark:bg-[#1A262C] text-[#4F5B62] dark:text-[#A4B5BD] border-[#DCE3E6] dark:border-[#2B3B42] hover:bg-[#EDF2F4] dark:hover:bg-[#22323A] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
                   )}
                 >
                   {day.nameAr}
@@ -288,9 +356,9 @@ export function QuickAttendancePanel({
         </div>
 
         {/* Periods Navigation */}
-        <div className="pt-2 border-t border-[#EEF2F3] dark:border-[#28373D] flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-[11px] font-bold text-[#5F6B73] dark:text-[#9BAAB1] ml-2 shrink-0">الحصص:</span>
+        <div className="pt-3 border-t border-[#EEF2F3] dark:border-[#27383F] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scroll-smooth">
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#95A7AF] ml-2 shrink-0">الحصص:</span>
             {availablePeriods.map((period) => {
               const isSelected = period === selectedPeriod;
               return (
@@ -303,10 +371,10 @@ export function QuickAttendancePanel({
                     setLocalStatuses({});
                   }}
                   className={cn(
-                    'w-9 h-9 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer border flex items-center justify-center shrink-0',
+                    'w-10 h-10 sm:w-9.5 sm:h-9.5 rounded-xl text-xs font-bold font-mono transition-all cursor-pointer border flex items-center justify-center shrink-0 active:scale-95 select-none',
                     isSelected
-                      ? 'bg-[#245B63] dark:bg-[#2D727B] text-white border-[#245B63] dark:border-[#2D727B] shadow-xs ring-2 ring-[#245B63]/20 dark:ring-[#388B96]/30'
-                      : 'bg-white dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33]'
+                      ? 'bg-[#0B5D43] dark:bg-[#107052] text-white border-[#0B5D43] dark:border-[#107052] shadow-xs ring-2 ring-[#0B5D43]/25 dark:ring-[#107052]/35'
+                      : 'bg-[#F5F8F9] dark:bg-[#1A262C] text-[#263339] dark:text-[#D5E1E6] border-[#DCE3E6] dark:border-[#2B3B42] hover:bg-[#EDF2F4] dark:hover:bg-[#22323A]'
                   )}
                 >
                   {period}
@@ -315,7 +383,7 @@ export function QuickAttendancePanel({
             })}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
             <Button
               type="button"
               variant="secondary"
@@ -323,6 +391,7 @@ export function QuickAttendancePanel({
               disabled={selectedPeriod <= 1}
               onClick={goToPrevPeriod}
               icon={<ChevronRight className="w-3.5 h-3.5" />}
+              className="flex-1 sm:flex-initial justify-center text-xs font-semibold"
             >
               الحصة السابقة
             </Button>
@@ -332,6 +401,7 @@ export function QuickAttendancePanel({
               size="sm"
               disabled={selectedPeriod >= maxPeriods}
               onClick={goToNextPeriod}
+              className="flex-1 sm:flex-initial justify-center text-xs font-semibold"
             >
               <span>الحصة التالية</span>
               <ChevronLeft className="w-3.5 h-3.5 mr-1" />
@@ -351,68 +421,86 @@ export function QuickAttendancePanel({
       />
 
       {/* Students List for selected period */}
-      <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs overflow-hidden transition-colors">
+      <div className="bg-white dark:bg-[#152126] rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] shadow-xs overflow-hidden transition-colors">
         {/* Search Header */}
-        <div className="p-3.5 border-b border-[#DCE3E6] dark:border-[#28373D] flex items-center justify-between gap-3 bg-[#FAFCFD] dark:bg-[#151E22]">
+        <div className="p-3.5 sm:p-4 border-b border-[#DCE3E6] dark:border-[#27383F] flex items-center justify-between gap-3 bg-[#F8FAFB] dark:bg-[#18242A]">
           <div className="relative w-full sm:w-80">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="تصفية الطلاب بالاسم أو الهوية..."
-              className="w-full h-9 pr-9 pl-3 text-xs bg-white dark:bg-[#182226] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-md focus:border-[#245B63] dark:focus:border-[#388B96] focus:ring-1 focus:ring-[#245B63] outline-none placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
+              className="w-full h-10 pr-9.5 pl-3 text-xs bg-white dark:bg-[#141E22] border border-[#CBD5DA] dark:border-[#2F424B] text-[#17252B] dark:text-[#F0F4F6] rounded-xl focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none placeholder:text-[#8C9AA2] dark:placeholder:text-[#7A8D96] transition-all"
             />
-            <Search className="w-4 h-4 text-[#89949A] dark:text-[#6E7F87] absolute right-2.5 top-2.5 pointer-events-none" />
+            <Search className="w-4 h-4 text-[#8C9AA2] dark:text-[#7A8D96] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <span className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] shrink-0 font-mono">
+          <span className="text-xs text-[#4F5E66] dark:text-[#B5C5CC] bg-[#EDF2F4] dark:bg-[#1E2C32] px-3 py-1.5 rounded-lg border border-[#D5DFE3] dark:border-[#2C3F47] shrink-0 font-mono font-bold">
             {filteredStudents.length} طالب
           </span>
         </div>
 
         {/* Student Rows */}
-        <div className="divide-y divide-[#EEF2F3] dark:divide-[#28373D]">
+        <div className="divide-y divide-[#DCE3E6]/60 dark:divide-[#27383F]/70">
           {filteredStudents.length === 0 ? (
-            <div className="p-8 text-center text-xs text-[#89949A] dark:text-[#6E7F87]">لا يوجد طلاب مطابقون للبحث</div>
+            <div className="p-10 text-center text-xs text-[#89949A] dark:text-[#7A8D96]">
+              لا يوجد طلاب مطابقون لبحثك في هذه الحصة
+            </div>
           ) : (
             filteredStudents.map((en, idx) => {
               const currentStatus = effectiveStatuses[en.enrollmentId] || 'Unmarked';
+              const config = STATUS_CONFIG[currentStatus];
 
               return (
                 <div
                   key={en.enrollmentId}
                   className={cn(
-                    'p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors',
-                    idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]',
-                    currentStatus === 'Absent' && 'bg-[#FDECEC]/30 dark:bg-[#331518]/30',
-                    currentStatus === 'Discontinued' && 'bg-[#FFF4DA]/30 dark:bg-[#332712]/30'
+                    'p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors',
+                    config.rowBg,
+                    config.rowHover,
+                    config.borderAccent
                   )}
                 >
                   {/* Student Info */}
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 text-center text-[11px] font-mono text-[#89949A] dark:text-[#6E7F87]">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={cn(
+                        'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 shadow-2xs transition-colors',
+                        config.badgeStyle
+                      )}
+                    >
                       {idx + 1}
                     </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">{en.studentName}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6] truncate">
+                          {en.studentName}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors',
+                            config.pillStyle
+                          )}
+                        >
+                          {config.label}
+                        </span>
                       </div>
-                      <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] font-mono">
-                        رقم الهوية: {en.student?.nationalId}
+                      <span className="text-xs text-[#56646C] dark:text-[#95A7AF] font-mono mt-0.5 block">
+                        رقم الهوية: {en.student?.nationalId ?? '—'}
                       </span>
                     </div>
                   </div>
 
                   {/* Quick Segmented Status Controls */}
-                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  <div className="grid grid-cols-4 gap-1.5 sm:flex sm:items-center sm:gap-2 w-full sm:w-auto mt-2 sm:mt-0 shrink-0">
                     {/* Present */}
                     <button
                       type="button"
                       onClick={() => handleStatusChange(en.enrollmentId, 'Present')}
                       className={cn(
-                        'px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer',
+                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
                         currentStatus === 'Present'
-                          ? 'bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] border-[#B7DEC5] dark:border-[#1B4D32] shadow-2xs ring-1 ring-[#176B3A]/20'
-                          : 'bg-white dark:bg-[#182226] text-[#5F6B73] dark:text-[#9BAAB1] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#F5F7F8] dark:hover:bg-[#212E33] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
+                          ? STATUS_CONFIG.Present.selectedBtn
+                          : UNSELECTED_BTN_CLASS
                       )}
                     >
                       حاضر
@@ -423,10 +511,10 @@ export function QuickAttendancePanel({
                       type="button"
                       onClick={() => handleStatusChange(en.enrollmentId, 'Absent')}
                       className={cn(
-                        'px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer',
+                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
                         currentStatus === 'Absent'
-                          ? 'bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border-[#F1C3C3] dark:border-[#592226] shadow-2xs ring-1 ring-[#A61B1B]/20'
-                          : 'bg-white dark:bg-[#182226] text-[#5F6B73] dark:text-[#9BAAB1] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#F5F7F8] dark:hover:bg-[#212E33] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
+                          ? STATUS_CONFIG.Absent.selectedBtn
+                          : UNSELECTED_BTN_CLASS
                       )}
                     >
                       غائب
@@ -437,10 +525,10 @@ export function QuickAttendancePanel({
                       type="button"
                       onClick={() => handleStatusChange(en.enrollmentId, 'Discontinued')}
                       className={cn(
-                        'px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer',
+                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
                         currentStatus === 'Discontinued'
-                          ? 'bg-[#FFF4DA] dark:bg-[#332712] text-[#855500] dark:text-[#FACC15] border-[#EDD38C] dark:border-[#594218] shadow-2xs ring-1 ring-[#855500]/20'
-                          : 'bg-white dark:bg-[#182226] text-[#5F6B73] dark:text-[#9BAAB1] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#F5F7F8] dark:hover:bg-[#212E33] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
+                          ? STATUS_CONFIG.Discontinued.selectedBtn
+                          : UNSELECTED_BTN_CLASS
                       )}
                     >
                       منقطع
@@ -451,14 +539,14 @@ export function QuickAttendancePanel({
                       type="button"
                       onClick={() => handleStatusChange(en.enrollmentId, 'Unmarked')}
                       className={cn(
-                        'px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer',
+                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
                         currentStatus === 'Unmarked'
-                          ? 'bg-[#F1F3F5] dark:bg-[#1E292D] text-[#59636E] dark:text-[#9BAAB1] border-[#D9DEE3] dark:border-[#2C3C43]'
-                          : 'bg-white dark:bg-[#182226] text-[#89949A] dark:text-[#6E7F87] border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#F5F7F8] dark:hover:bg-[#212E33]'
+                          ? STATUS_CONFIG.Unmarked.selectedBtn
+                          : UNSELECTED_BTN_CLASS
                       )}
-                      title="مسح التحديد"
+                      title="تحديد كغير محدد"
                     >
-                      غير محدد
+                      <span className="truncate">غير محدد</span>
                     </button>
                   </div>
                 </div>
@@ -476,13 +564,13 @@ export function QuickAttendancePanel({
         description="تنبيه: هناك طلاب مسجلون حالياً بحالة (غائب) أو (منقطع) في هذه الحصة."
       >
         <div className="space-y-3 text-xs text-[#17252B] dark:text-[#F0F4F6] leading-relaxed">
-          <div className="p-3 bg-[#FFF4DA] dark:bg-[#332712] border border-[#EDD38C] dark:border-[#594218] text-[#855500] dark:text-[#FACC15] rounded-lg flex items-start gap-2.5">
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="p-3.5 bg-[#FFF6E5] dark:bg-[#2E2211] border border-[#FDE096] dark:border-[#5E4218] text-[#92400E] dark:text-[#FDE047] rounded-xl flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[#B45309] dark:text-[#FBBF24]" />
             <span>
               الضغط على تأكيد سيقوم بتغيير جميع الطلاب في هذه الحصة إلى <strong>حاضر</strong>، متضمناً الحالات المسجلة سابقاً كغياب أو انقطاع.
             </span>
           </div>
-          <p>هل ترغب بالاستمرار وتطبيق التحضير الجماعي لجميع الطلاب؟</p>
+          <p className="text-[#5F6B73] dark:text-[#A4B5BD]">هل ترغب بالاستمرار وتطبيق التحضير الجماعي لجميع الطلاب في هذه الحصة؟</p>
         </div>
 
         <DialogFooter>
@@ -494,6 +582,26 @@ export function QuickAttendancePanel({
           </Button>
         </DialogFooter>
       </Dialog>
+
+      {/* Mobile Sticky Floating Save Bar */}
+      {hasUnsavedChanges && (
+        <div className="fixed bottom-4 inset-x-4 z-40 md:hidden bg-[#122B23]/95 dark:bg-[#15252A]/95 backdrop-blur-md text-white p-3.5 rounded-2xl shadow-2xl border border-[#3E9B78]/40 dark:border-[#388B96]/40 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shadow-xs" />
+            <span className="text-xs font-bold text-white">لديك تغييرات غير محفوظة</span>
+          </div>
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            onClick={handleSave}
+            isLoading={isSaving}
+            className="text-xs font-black shadow-md px-5 h-9"
+          >
+            حفظ الآن
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

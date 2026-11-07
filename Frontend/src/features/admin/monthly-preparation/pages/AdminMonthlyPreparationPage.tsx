@@ -9,13 +9,13 @@ import { AttendanceWeekSelector } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { CalendarRange, Download, Printer, Layers } from 'lucide-react';
-import { formatArabicDateShort } from '../../../../shared/utils/date';
+import { formatArabicDateShort, resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
 import { useNotifications } from '../../../notifications';
 
 export function AdminMonthlyPreparationPage() {
   const { toast } = useNotifications();
   const [selectedClassId, setSelectedClassId] = useState<number>(105);
-  const [selectedWeekId, setSelectedWeekId] = useState<number>(11);
+  const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   // 1. Fetch Classes
@@ -30,10 +30,19 @@ export function AdminMonthlyPreparationPage() {
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
+  // 2b. Fetch Active Academic Year
+  const { data: activeYear } = useQuery({
+    queryKey: ['active_academic_year'],
+    queryFn: () => schoolDataService.getActiveAcademicYear(),
+  });
+
+  const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
+  const effectiveWeekId = selectedWeekId ?? activeWeek?.attendanceWeekId;
+
   // Ensure default selections once data loads
   const currentClass = classes.find((c) => c.classId === selectedClassId) || classes[0];
   const effectiveClassId = currentClass?.classId ?? selectedClassId;
-  const selectedWeek = weeks.find((w) => w.attendanceWeekId === selectedWeekId);
+  const selectedWeek = weeks.find((w) => w.attendanceWeekId === effectiveWeekId) || activeWeek;
 
   // 3. Compute 5 Consecutive Weeks (Reference week + 4 preceding weeks)
   const sortedWeeks = useMemo(() => {
@@ -42,14 +51,14 @@ export function AdminMonthlyPreparationPage() {
 
   const consecutiveWeeks = useMemo(() => {
     if (!sortedWeeks.length) return [];
-    const refIndex = sortedWeeks.findIndex((w) => w.attendanceWeekId === selectedWeekId);
+    const refIndex = sortedWeeks.findIndex((w) => w.attendanceWeekId === effectiveWeekId);
     if (refIndex === -1) {
       // If not found, take the last 5 weeks
       return sortedWeeks.slice(Math.max(0, sortedWeeks.length - 5));
     }
     const startIndex = Math.max(0, refIndex - 4);
     return sortedWeeks.slice(startIndex, refIndex + 1);
-  }, [sortedWeeks, selectedWeekId]);
+  }, [sortedWeeks, effectiveWeekId]);
 
   // 4. Fetch Enrollments for Selected Class
   const { data: enrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
@@ -159,8 +168,8 @@ export function AdminMonthlyPreparationPage() {
       await excelExportService.exportFiveWeeksMonthlyPreparation({
         className: String(currentClass.className || `شعبة ${effectiveClassId}`),
         classNumber: currentClass.classNumber || effectiveClassId,
-        academicYear: '1446-1447هـ',
-        referenceWeekNumber: selectedWeek?.weekNumber || 11,
+        academicYear: activeYear?.yearName || '1448-1449هـ',
+        referenceWeekNumber: selectedWeek?.weekNumber || 1,
         weeksData: weeksPayload,
       });
 
@@ -232,7 +241,7 @@ export function AdminMonthlyPreparationPage() {
 
         <AttendanceWeekSelector
           weeks={sortedWeeks}
-          selectedWeekId={selectedWeekId}
+          selectedWeekId={effectiveWeekId || null}
           onSelectWeek={setSelectedWeekId}
         />
       </div>

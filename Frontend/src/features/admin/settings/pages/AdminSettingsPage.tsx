@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Shield, Server, Database, Edit3, Check, RotateCcw, Info, Palette } from 'lucide-react';
+import { Settings, Shield, Edit3, Check, RotateCcw, Info, Palette } from 'lucide-react';
 import { useAuth } from '../../../auth';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Input } from '../../../../shared/components/ui/Input';
@@ -43,7 +43,7 @@ export function AdminSettingsPage() {
           <h1 className="text-xl font-bold text-[#17252B] dark:text-[#F0F4F6]">إعدادات النظام والمدرسة</h1>
         </div>
         <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-1">
-          بيانات المدرسة الرسمية، مظهر النظام، الاتصال بقاعدة البيانات، وحساب المسؤول
+          بيانات المدرسة الرسمية، مظهر النظام، وحساب المسؤول
         </p>
       </div>
 
@@ -125,7 +125,7 @@ export function AdminSettingsPage() {
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6]/60 dark:border-[#28373D]">
               <span className="text-[#5F6B73] dark:text-[#9BAAB1]">العام الدراسي الفعّال:</span>
-              <span className="font-mono font-bold text-[#245B63] dark:text-[#388B96] bg-white dark:bg-[#182226] px-2 py-0.5 rounded border border-[#DCE3E6] dark:border-[#28373D]">2026-2027</span>
+              <span className="font-mono font-bold text-[#245B63] dark:text-[#388B96] bg-white dark:bg-[#182226] px-2 py-0.5 rounded border border-[#DCE3E6] dark:border-[#28373D]">1448-1449هـ</span>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6]/60 dark:border-[#28373D]">
               <span className="text-[#5F6B73] dark:text-[#9BAAB1]">هيكل الفصول المعتمد:</span>
@@ -145,8 +145,8 @@ export function AdminSettingsPage() {
           </div>
         </div>
 
-        {/* System Theme & Connectivity */}
-        <div className="space-y-6">
+        {/* System Theme */}
+        <div>
           {/* Theme Preference Card */}
           <div className="bg-white dark:bg-[#182226] p-5 sm:p-6 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-4 transition-colors">
             <div className="flex items-center justify-between border-b border-[#EEF2F3] dark:border-[#28373D] pb-3">
@@ -164,35 +164,6 @@ export function AdminSettingsPage() {
                 </span>
                 <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5 block">
                   يتم حفظ التفضيل تلقائياً في ذاكرة المتصفح (مفتاح mowathib-theme) وتطبيقه على كافة الشاشات
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Backend & API Connectivity */}
-          <div className="bg-white dark:bg-[#182226] p-5 sm:p-6 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-4 transition-colors">
-            <div className="flex items-center gap-2 border-b border-[#EEF2F3] dark:border-[#28373D] pb-3">
-              <Server className="w-4 h-4 text-[#245B63] dark:text-[#388B96]" />
-              <h2 className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6]">خادم الويب وقاعدة البيانات</h2>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6]/60 dark:border-[#28373D]">
-                <span className="text-[#5F6B73] dark:text-[#9BAAB1]">محرك الخادم:</span>
-                <span className="font-mono text-[#17252B] dark:text-[#F0F4F6] font-semibold">ASP.NET Core 9.0 Web API</span>
-              </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6]/60 dark:border-[#28373D]">
-                <span className="text-[#5F6B73] dark:text-[#9BAAB1]">محرك البيانات:</span>
-                <span className="font-mono text-[#17252B] dark:text-[#F0F4F6] font-semibold flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-[#245B63] dark:text-[#388B96]" />
-                  PostgreSQL (EF Core)
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6]/60 dark:border-[#28373D]">
-                <span className="text-[#5F6B73] dark:text-[#9BAAB1]">حالة الاتصال والخدمة:</span>
-                <span className="font-bold text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC] dark:bg-[#122B1E] border border-[#B7DEC5] dark:border-[#1B4D32] px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#176B3A] dark:bg-[#4ADE80] animate-pulse" />
-                  متصل وجاهز للعمل
                 </span>
               </div>
             </div>

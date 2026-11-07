@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { excelExportService } from '../../../reports/services/excelExportService';
+import { useNotifications } from '../../../notifications';
 import {
   AttendanceTable,
   QuickAttendancePanel,
@@ -9,6 +11,8 @@ import {
   useAttendanceMatrix,
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
+import { Button } from '../../../../shared/components/ui/Button';
+import { resolveDefaultAttendanceWeek, formatArabicDateShort } from '../../../../shared/utils/date';
 import {
   CalendarCheck,
   Eye,
@@ -16,17 +20,31 @@ import {
   UserX,
   Building2,
   Calendar,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { SCHOOL_DAYS, getPeriodsForDay } from '../../../../shared/types';
 import type { ClassItem } from '../../../../shared/types';
 
+function getClassNum(c: ClassItem): number {
+  if (typeof c.classNumber === 'number' && Number.isFinite(c.classNumber)) {
+    return c.classNumber;
+  }
+  const match = String(c.className ?? c.classId ?? '').match(/\d+/);
+  if (match) {
+    return Number(match[0]);
+  }
+  return Number(c.classId);
+}
+
 export function AdminAttendancePage() {
   const [searchParams] = useSearchParams();
 
-  const initialClassId = Number(searchParams.get('classId')) || 105;
+  const urlClassParam = Number(searchParams.get('classId'));
+  const initialClassId =
+    Number.isFinite(urlClassParam) && urlClassParam > 0 ? urlClassParam : null;
 
-  const [selectedClassId, setSelectedClassId] = useState<number>(initialClassId);
-  const [selectedWeekId, setSelectedWeekId] = useState<number>(11);
+  const [selectedClassId, setSelectedClassId] = useState<number | null>(initialClassId);
+  const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [selectedGrade, setSelectedGrade] = useState<number>(0); // 0 = all, 1 = 1st, 2 = 2nd, 3 = 3rd
   const [viewMode, setViewMode] = useState<'matrix' | 'absences' | 'quick'>('matrix');
 
@@ -35,46 +53,86 @@ export function AdminAttendancePage() {
   const [quickPeriod, setQuickPeriod] = useState<number>(1);
 
   // Classes query
-  const { data: classes = [] } = useQuery({
+  const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
     queryFn: () => schoolDataService.getClasses(),
   });
 
   // Attendance weeks query
-  const { data: weeks = [] } = useQuery({
+  const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  const getClassNum = (c: ClassItem) => {
-    const val = Number(c.classNumber ?? c.className ?? c.classId);
-    return Number.isFinite(val) ? val : c.classId;
-  };
+  // Active academic year query
+  const { data: activeYear } = useQuery({
+    queryKey: ['active_academic_year'],
+    queryFn: () => schoolDataService.getActiveAcademicYear(),
+  });
 
-  // Filter classes by grade
+  const { toast } = useNotifications();
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  // Filter classes by grade with robust matching
   const gradeFilteredClasses = useMemo(() => {
     if (selectedGrade === 0) return classes;
     return classes.filter((c) => {
-      const num = getClassNum(c);
-      if (selectedGrade === 1) return num >= 101 && num <= 110;
-      if (selectedGrade === 2) return num >= 201 && num <= 210;
-      if (selectedGrade === 3) return num >= 301 && num <= 310;
+      const cnum = getClassNum(c);
+      const cstr = String(c.className ?? c.classNumber ?? c.classId);
+      if (selectedGrade === 1) {
+        return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
+      }
+      if (selectedGrade === 2) {
+        return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
+      }
+      if (selectedGrade === 3) {
+        return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
+      }
       return true;
     });
   }, [classes, selectedGrade]);
+
+  // Resolve selected class (defaults automatically to Class 101 on initial load)
+  const selectedClass = useMemo(() => {
+    const pool = gradeFilteredClasses.length > 0 ? gradeFilteredClasses : classes;
+    if (pool.length === 0) return undefined;
+
+    if (selectedClassId !== null) {
+      const matched = pool.find(
+        (c) => c.classId === selectedClassId || getClassNum(c) === selectedClassId
+      );
+      if (matched) return matched;
+    }
+
+    return pool.find((c) => getClassNum(c) === 101) || pool[0];
+  }, [classes, gradeFilteredClasses, selectedClassId]);
+
+  const effectiveClassId = selectedClass?.classId ?? selectedClassId ?? 101;
+
+  // Resolve active week automatically using centralized policy
+  const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
+  const selectedWeek = useMemo(() => {
+    if (weeks.length === 0) return undefined;
+    if (selectedWeekId !== null) {
+      const matched = weeks.find((w) => w.attendanceWeekId === selectedWeekId);
+      if (matched) return matched;
+    }
+    return activeWeek || weeks[0];
+  }, [weeks, selectedWeekId, activeWeek]);
+
+  const effectiveWeekId = selectedWeek?.attendanceWeekId ?? selectedWeekId ?? undefined;
 
   // Attendance Matrix
   const {
     matrix,
     enrollments,
     records,
-    isLoading,
+    isLoading: isMatrixLoading,
     isSaving,
     saveSlot,
-  } = useAttendanceMatrix(selectedClassId, selectedWeekId);
+  } = useAttendanceMatrix(effectiveClassId, effectiveWeekId);
 
-  const selectedClass = classes.find((c) => c.classId === selectedClassId) || classes[0];
-  const selectedWeek = weeks.find((w) => w.attendanceWeekId === selectedWeekId) || weeks[0];
+  const isLoading = isClassesLoading || isWeeksLoading || isMatrixLoading;
 
   // Absent students calculation
   const absentStudents = useMemo(() => {
@@ -123,8 +181,12 @@ export function AdminAttendancePage() {
       if (grade === 3) return num >= 301 && num <= 310;
       return true;
     });
-    if (inGrade.length > 0 && !inGrade.some((c) => c.classId === selectedClassId)) {
-      handleClassChange(inGrade[0].classId);
+    if (inGrade.length > 0 && !inGrade.some((c) => c.classId === effectiveClassId)) {
+      const preferred =
+        grade === 0
+          ? inGrade.find((c) => getClassNum(c) === 101) || inGrade[0]
+          : inGrade[0];
+      handleClassChange(preferred.classId);
     }
   };
 
@@ -136,6 +198,32 @@ export function AdminAttendancePage() {
     setQuickDay(dayNumber);
     setQuickPeriod(periodNumber);
     setViewMode('quick');
+  };
+
+  const handleExportCurrentClass = async () => {
+    if (!selectedClass || matrix.length === 0) {
+      toast.show('لا توجد بيانات حضور متاحة للتصدير لهذه الشعبة', 'warning');
+      return;
+    }
+    try {
+      setIsExportingExcel(true);
+      const weekRange = selectedWeek
+        ? `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(selectedWeek.endDate)}`
+        : '';
+      const cname = String(selectedClass.className || selectedClass.classNumber || `شعبة ${selectedClass.classId}`);
+      await excelExportService.exportWeeklyAttendance(matrix, {
+        className: cname,
+        weekNumber: selectedWeek?.weekNumber || 1,
+        weekRange,
+        academicYear: activeYear?.yearName || '1448-1449هـ',
+      });
+      toast.show(`تم تصدير كشف حضور ${cname} بنجاح!`, 'success');
+    } catch (err: any) {
+      console.error('Attendance Export Error:', err);
+      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف الحضور', 'danger');
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
   return (
@@ -156,8 +244,22 @@ export function AdminAttendancePage() {
           </div>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="flex items-center bg-[#F5F7F8] dark:bg-[#151E22] p-1 rounded-lg border border-[#DCE3E6] dark:border-[#28373D] self-start lg:self-auto flex-wrap">
+        {/* Global Actions & View Mode Toggle */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            icon={<FileSpreadsheet className="w-4 h-4 text-[#176B3A] dark:text-[#4ADE80]" />}
+            onClick={handleExportCurrentClass}
+            isLoading={isExportingExcel}
+            className="text-xs font-bold border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EAF6EE] dark:hover:bg-[#143224]"
+          >
+            تصدير الشعبة (Excel)
+          </Button>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-[#F5F7F8] dark:bg-[#151E22] p-1 rounded-lg border border-[#DCE3E6] dark:border-[#28373D] self-start lg:self-auto flex-wrap">
           <button
             type="button"
             onClick={() => setViewMode('matrix')}
@@ -198,6 +300,7 @@ export function AdminAttendancePage() {
           </button>
         </div>
       </div>
+    </div>
 
       {/* Grade Filters & Selection Controls */}
       <div className="bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-3 transition-colors">
@@ -258,7 +361,7 @@ export function AdminAttendancePage() {
               <span>الشعبة الدراسية:</span>
             </label>
             <select
-              value={selectedClassId}
+              value={effectiveClassId}
               onChange={(e) => handleClassChange(Number(e.target.value))}
               className="w-full h-10 px-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-[#17252B] dark:text-[#F0F4F6] font-medium focus:bg-white dark:focus:bg-[#182226] focus:border-[#245B63] outline-none cursor-pointer transition-colors"
             >
@@ -277,7 +380,7 @@ export function AdminAttendancePage() {
             </label>
             <AttendanceWeekSelector
               weeks={weeks}
-              selectedWeekId={selectedWeekId}
+              selectedWeekId={effectiveWeekId || null}
               onSelectWeek={setSelectedWeekId}
             />
           </div>
@@ -317,7 +420,7 @@ export function AdminAttendancePage() {
             <div className="flex items-center gap-2">
               <UserX className="w-4 h-4 text-[#A61B1B] dark:text-[#F87171]" />
               <h2 className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                كشف الطلاب المتغيبين في {selectedClass?.className || `شعبة ${selectedClassId}`} — الأسبوع {selectedWeek?.weekNumber}
+                كشف الطلاب المتغيبين في {selectedClass?.className || `شعبة ${effectiveClassId}`} — الأسبوع {selectedWeek?.weekNumber}
               </h2>
             </div>
             <span className="text-xs font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2.5 py-1 rounded-md border border-[#F5C2C2] dark:border-[#592226] font-mono">
@@ -385,8 +488,8 @@ export function AdminAttendancePage() {
         </div>
       ) : (
         <QuickAttendancePanel
-          classNameTitle={selectedClass?.className || 'شعبة 105'}
-          weekNumber={selectedWeek?.weekNumber || 11}
+          classNameTitle={selectedClass?.className || 'شعبة 101'}
+          weekNumber={selectedWeek?.weekNumber || 1}
           selectedDay={quickDay}
           onSelectDay={setQuickDay}
           selectedPeriod={quickPeriod}

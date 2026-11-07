@@ -111,7 +111,7 @@ export function PrintClassNumberModal({ isOpen, onClose }: PrintClassNumberModal
           </div>
 
           <div className="text-left text-xs space-y-1 text-[#17252B]">
-            <p className="font-bold">العام الدراسي 1446-1447هـ</p>
+            <p className="font-bold">العام الدراسي 1448-1449هـ</p>
             <p className="font-medium text-[#5F6B73]">الفصل الدراسي الأول</p>
             <p className="font-medium text-[#5F6B73]">إدارة شؤون الطلاب</p>
           </div>

@@ -10,6 +10,7 @@ import {
 } from '../../../attendance';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
+import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
 import { CalendarCheck, History, ArrowRight } from 'lucide-react';
 
 export function RepresentativeAttendancePage() {
@@ -39,25 +40,19 @@ export function RepresentativeAttendancePage() {
   );
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
 
-  // Fetch attendance weeks
+  // Fetch attendance weeks with long staleTime
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
+    staleTime: 1000 * 60 * 30, // 30 minutes
   });
 
   const activeWeek = useMemo(() => {
-    if (!weeks.length) return undefined;
-    const now = new Date();
-    const current = weeks.find((w) => {
-      const start = new Date(w.startDate);
-      const end = new Date(w.endDate);
-      end.setHours(23, 59, 59, 999);
-      return now >= start && now <= end;
-    });
-    return current || weeks[0];
+    return resolveDefaultAttendanceWeek(weeks);
   }, [weeks]);
 
-  const effectiveWeekId = selectedWeekId || activeWeek?.attendanceWeekId || 1;
+  // Use selected week or automatically resolved active week - NEVER an arbitrary week fallback
+  const effectiveWeekId = selectedWeekId ?? activeWeek?.attendanceWeekId;
 
   // Use the attendance matrix hook
   const {

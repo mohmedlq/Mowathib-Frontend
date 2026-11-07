@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { BrandLogo } from '../common/BrandLogo';
+import { QuenricLogo } from '../common/QuenricLogo';
 import { ShieldCheck } from 'lucide-react';
 
 export const Footer: React.FC = () => {
@@ -36,10 +37,16 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* Footer Bottom Meta */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#718A80]">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-5 text-xs text-[#718A80]">
           <div className="flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-[#3E9B78]" />
-            <span>نظام مواظب المعتمد — متوافق مع لوائح الانضباط المدرسي 1446-1447هـ</span>
+            <ShieldCheck className="w-4 h-4 text-[#3E9B78] shrink-0" />
+            <span>نظام مواظب المعتمد — متوافق مع لوائح الانضباط المدرسي 1448-1449هـ</span>
+          </div>
+
+          {/* QUENRIC Attribution */}
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-[#0F241D] border border-[#1E4638]/70">
+            <span className="text-[11px] text-[#A3C7B9] font-medium">تطوير وتشغيل</span>
+            <QuenricLogo className="h-5 sm:h-6 w-auto" />
           </div>
 
           <div>

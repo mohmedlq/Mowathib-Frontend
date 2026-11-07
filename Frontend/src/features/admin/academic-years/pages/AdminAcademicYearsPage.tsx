@@ -14,7 +14,7 @@ export function AdminAcademicYearsPage() {
   const { toast } = useNotifications();
 
   const [isNewYearModalOpen, setIsNewYearModalOpen] = useState(false);
-  const [yearName, setYearName] = useState('2027-2028');
+  const [yearName, setYearName] = useState('1448-1449هـ');
   const [startDate, setStartDate] = useState('2027-09-01');
   const [endDate, setEndDate] = useState('2028-06-30');
 

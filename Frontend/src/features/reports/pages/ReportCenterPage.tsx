@@ -350,14 +350,26 @@ export function ReportCenterPage() {
       throw new Error('لم يتم العثور على الشعب المطلوبة للتصدير.');
     }
 
-    // Fetch the enrollments for all selected classes once.
+    // Fetch all enrollments once in bulk for optimal network performance
+    const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+    const enrollsMap = new Map<number, typeof allEnrolls>();
+    allEnrolls.forEach((item) => {
+      const list = enrollsMap.get(item.classId) || [];
+      list.push(item);
+      enrollsMap.set(item.classId, list);
+    });
+
     const enrollmentGroups = await Promise.all(
-      classesToExport.map(async (classItem) => ({
-        classItem,
-        enrollments: await schoolDataService.getEnrollmentsByClass(
-          classItem.classId
-        ),
-      }))
+      classesToExport.map(async (classItem) => {
+        let enrollments = enrollsMap.get(classItem.classId);
+        if (!enrollments || enrollments.length === 0) {
+          enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+        }
+        return {
+          classItem,
+          enrollments: enrollments || [],
+        };
+      })
     );
 
     const allMonthlyEnrollments = enrollmentGroups.flatMap(
@@ -371,16 +383,18 @@ export function ReportCenterPage() {
     const monthlyWeeks: MonthlyAttendanceWeekData[] = [];
 
     // Process weeks in calendar order. Within each week, retrieve each class's
-    // actual records using the existing API method and that week's ID.
+    // actual records safely using batch requests with error fallbacks.
     for (let index = 0; index < selectedMonthWeeks.length; index++) {
       const selected = selectedMonthWeeks[index];
 
       const recordsByClass = await Promise.all(
         enrollmentGroups.map((group) =>
-          schoolDataService.getAttendanceRecords(
-            group.classItem.classId,
-            selected.week.attendanceWeekId
-          )
+          schoolDataService
+            .getAttendanceRecords(
+              group.classItem.classId,
+              selected.week.attendanceWeekId
+            )
+            .catch(() => [])
         )
       );
 
@@ -406,7 +420,7 @@ export function ReportCenterPage() {
 
   const handleExportExcel = async () => {
     const meta = {
-      academicYear: '2026-2027',
+      academicYear: '1448-1449هـ',
       className: classNameTitle,
       schoolName,
     };
@@ -535,7 +549,7 @@ export function ReportCenterPage() {
                 : `تقرير الحضور الشهري — شهر ${filters.month}`}
           </h3>
           <p className="text-xs text-gray-600 mt-1">
-            العام الدراسي: 2026-2027 | {classNameTitle} | تاريخ الطباعة:{' '}
+            العام الدراسي: 1448-1449هـ | {classNameTitle} | تاريخ الطباعة:{' '}
             {new Date().toLocaleDateString('ar-SA')}
           </p>
         </div>

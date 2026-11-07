@@ -146,7 +146,7 @@ export function AdminAcademicWeeksPage() {
 
         <div className="flex items-center gap-2.5">
           <span className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#E8F1F1] text-[#245B63] border border-[#CDE0E2]">
-            العام: {activeYear?.yearName || '1446-1447هـ'}
+            العام: {activeYear?.yearName || '1448-1449هـ'}
           </span>
 
           <Button

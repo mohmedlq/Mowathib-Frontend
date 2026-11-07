@@ -5,9 +5,10 @@ import { useAuth } from '../../../auth';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { useAttendanceMatrix } from '../../../attendance';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
-import { Button } from '../../../../shared/components/ui/Button';
+// import { Button } from '../../../../shared/components/ui/Button';
 import { PrintClassNumberModal } from '../../components/PrintClassNumberModal';
-import type { CardRequest } from '../../../../shared/types';
+import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
+// import type { CardRequest } from '../../../../shared/types';
 import {
   getPeriodsForDay,
   getPeriodsCountForDay,
@@ -17,16 +18,15 @@ import {
   CalendarCheck,
   CalendarCheck2,
   Users,
-  CreditCard,
+  // CreditCard,
   CheckCircle2,
   ChevronLeft,
   GraduationCap,
   UserCheck,
-  Printer,
   Sparkles,
   User,
   AlertCircle,
-  Clock,
+  // Clock,
   ArrowLeft,
   Calendar,
 } from 'lucide-react';
@@ -76,25 +76,18 @@ export function RepresentativeDashboardPage() {
     }
   }, [todaySchoolDay]);
 
-  // Fetch attendance weeks
+  // Fetch attendance weeks with stable cache
   const { data: weeks = [], isLoading: isLoadingWeeks } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
+    staleTime: 1000 * 60 * 30, // 30 minutes
   });
 
   const activeWeek = useMemo(() => {
-    if (!weeks.length) return undefined;
-    const now = new Date();
-    const current = weeks.find((w) => {
-      const start = new Date(w.startDate);
-      const end = new Date(w.endDate);
-      end.setHours(23, 59, 59, 999);
-      return now >= start && now <= end;
-    });
-    return current || weeks[0];
+    return resolveDefaultAttendanceWeek(weeks);
   }, [weeks]);
 
-  const effectiveWeekId = activeWeek?.attendanceWeekId || 1;
+  const effectiveWeekId = activeWeek?.attendanceWeekId;
 
   // Use the attendance matrix hook to fetch data
   const {
@@ -103,6 +96,9 @@ export function RepresentativeDashboardPage() {
     isLoading: isLoadingAttendance,
   } = useAttendanceMatrix(classId, effectiveWeekId);
 
+  /* =========================================================================
+   * مؤجل حتى إشعار آخر: جلب تفاصيل البطاقات وطلبات بطاقات الاستئذان
+   * =========================================================================
   // Fetch Class details (for total bathroom cards count)
   const { data: classItem, isLoading: isLoadingClass } = useQuery({
     queryKey: ['class_details', classId],
@@ -130,6 +126,7 @@ export function RepresentativeDashboardPage() {
   const pendingRequestsCount = useMemo(() => {
     return myRequests.filter((r) => r.status === 'Pending').length;
   }, [myRequests]);
+  ========================================================================= */
 
   // Calculate attendance statistics for today
   const todayStats = useMemo(() => {
@@ -159,8 +156,8 @@ export function RepresentativeDashboardPage() {
     };
   }, [records, todayDayNumber, todayPeriodsList]);
 
-  const isInitialLoading =
-    isLoadingWeeks && isLoadingAttendance && isLoadingClass && isLoadingRequests;
+  const isInitialLoading = isLoadingWeeks && isLoadingAttendance;
+  // && isLoadingClass && isLoadingRequests;
 
   if (isInitialLoading) {
     return (
@@ -208,7 +205,7 @@ export function RepresentativeDashboardPage() {
           </div>
         </div>
 
-        {/* Quick Header Buttons */}
+        {/* Quick Header Buttons 
         <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
           <Button
             type="button"
@@ -232,6 +229,7 @@ export function RepresentativeDashboardPage() {
             التحضير الأسبوعي
           </Button>
         </div>
+        */}
       </div>
 
       {/* Primary Action Card: Daily Attendance Banner */}
@@ -281,7 +279,7 @@ export function RepresentativeDashboardPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+          <div className="flex items-stretch gap-2 overflow-x-auto pb-2 sm:grid sm:grid-cols-4 lg:grid-cols-7 scroll-smooth">
             {todayPeriodsList.map((period) => {
               const status = todayStats.periodStatus[period];
               const isRecorded = status && status.recordedCount > 0;
@@ -296,7 +294,7 @@ export function RepresentativeDashboardPage() {
                       `/representative/daily-attendance?day=${todayDayNumber}&period=${period}`
                     )
                   }
-                  className="p-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer active:scale-95"
+                  className="min-w-[105px] sm:min-w-0 shrink-0 sm:shrink p-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer active:scale-95"
                 >
                   <div className="flex items-center justify-between w-full">
                     <span className="text-xs font-black text-white group-hover:text-emerald-100">
@@ -332,88 +330,88 @@ export function RepresentativeDashboardPage() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         {/* Total Class Students */}
         <div
           onClick={() => navigate('/representative/students')}
-          className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
+          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              طلاب الشعبة المقيدون
+              طلاب الشعبة
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
-              <Users className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
+            <span className="text-2xl sm:text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
               {enrollments.length}
             </span>
-            <span className="text-[11px] text-[#0B5D43] dark:text-[#3E9B78] font-bold flex items-center gap-1 mt-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+            <span className="text-[10px] sm:text-[11px] text-[#0B5D43] dark:text-[#3E9B78] font-bold flex items-center gap-1 mt-1 truncate">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>القيد نشط ومكتمل</span>
             </span>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-            <span>عرض قائمة الطلاب</span>
-            <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
+            <span>عرض الطلاب</span>
+            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
           </div>
         </div>
 
         {/* Today's Attendance Overview */}
         <div
           onClick={() => navigate('/representative/daily-attendance')}
-          className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
+          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              حالة حضور اليوم
+              حضور اليوم
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
-              <CalendarCheck className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
+              <CalendarCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
+            <span className="text-2xl sm:text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
               {todayStats.absentStudentsToday}{' '}
               <span className="text-xs font-normal text-[#718A80] dark:text-[#A3C7B9]">
-                حالات غياب
+                غياب
               </span>
             </span>
-            <span className="text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block">
+            <span className="text-[10px] sm:text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block truncate">
               {todayStats.totalRecordedToday > 0
-                ? `${todayStats.totalRecordedToday} سجل حضور مسجل اليوم`
-                : 'لم يتم البدء برصد حضور اليوم بعد'}
+                ? `${todayStats.totalRecordedToday} سجل حضور`
+                : 'لم يتم الرصد بعد'}
             </span>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
+          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
             <span>الانتقال للرصد</span>
-            <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
           </div>
         </div>
 
-        {/* Bathroom Permission Cards */}
+        {/* مؤجل حتى إشعار آخر: بطاقات الاستئذان وطلبات البطاقات
         <div
           onClick={() => navigate('/representative/card-requests')}
-          className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
+          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              بطاقات استئذان الشعبة
+              بطاقات الاستئذان
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#FFF8EB] dark:bg-[#332514] text-[#B45309] dark:text-[#FBBF24] flex items-center justify-center border border-[#FDE68A]/60 dark:border-[#78350F]">
-              <CreditCard className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#FFF8EB] dark:bg-[#332514] text-[#B45309] dark:text-[#FBBF24] flex items-center justify-center border border-[#FDE68A]/60 dark:border-[#78350F]">
+              <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-3xl font-black text-[#B45309] dark:text-[#FBBF24] font-mono block">
+            <span className="text-2xl sm:text-3xl font-black text-[#B45309] dark:text-[#FBBF24] font-mono block">
               {classItem?.totalCards || 3}{' '}
               <span className="text-xs font-normal text-[#718A80] dark:text-[#A3C7B9]">
                 بطاقات
               </span>
             </span>
-            <span className="text-[11px] text-[#B45309] dark:text-[#FBBF24] font-medium mt-1 block">
+            <span className="text-[10px] sm:text-[11px] text-[#B45309] dark:text-[#FBBF24] font-medium mt-1 block truncate">
               العهدة المعتمدة لدى العريف
             </span>
           </div>
@@ -423,34 +421,34 @@ export function RepresentativeDashboardPage() {
           </div>
         </div>
 
-        {/* Card Requests */}
         <div
           onClick={() => navigate('/representative/card-requests')}
-          className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
+          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              طلبات البطاقات البديلة
+              طلبات البطاقات
             </span>
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] dark:bg-[#172554] text-[#1D4ED8] dark:text-[#60A5FA] flex items-center justify-center border border-[#BFDBFE]/60 dark:border-[#1E40AF]">
-              <Clock className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#EFF6FF] dark:bg-[#172554] text-[#1D4ED8] dark:text-[#60A5FA] flex items-center justify-center border border-[#BFDBFE]/60 dark:border-[#1E40AF]">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-3xl font-black text-[#1D4ED8] dark:text-[#60A5FA] font-mono block">
+            <span className="text-2xl sm:text-3xl font-black text-[#1D4ED8] dark:text-[#60A5FA] font-mono block">
               {myRequests.length}
             </span>
-            <span className="text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block">
+            <span className="text-[10px] sm:text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block truncate">
               {pendingRequestsCount > 0
-                ? `${pendingRequestsCount} قيد مراجعة الإدارة`
+                ? `${pendingRequestsCount} قيد المراجعة`
                 : 'لا توجد طلبات معلقة'}
             </span>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
+          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
             <span>سجل الطلبات</span>
-            <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
+            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
           </div>
         </div>
+        */}
       </div>
 
       {/* Quick Action Navigation Grid */}
@@ -546,7 +544,7 @@ export function RepresentativeDashboardPage() {
             </div>
           </div>
 
-          {/* Card Requests */}
+          {/* مؤجل حتى إشعار آخر: بطاقة طلب بطاقة استئذان
           <div
             onClick={() => navigate('/representative/card-requests')}
             className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
@@ -572,8 +570,9 @@ export function RepresentativeDashboardPage() {
               <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">تقديم طلب</span>
             </div>
           </div>
+          */}
 
-          {/* Print Class Number Sign */}
+          {/* Print Class Number Sign 
           <div
             onClick={() => setIsPrintModalOpen(true)}
             className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
@@ -598,7 +597,7 @@ export function RepresentativeDashboardPage() {
               <span>تنسيق A4 مخصص للطباعة</span>
               <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">طباعة الآن</span>
             </div>
-          </div>
+          </div>*/}
 
           {/* Deputy Representative or Profile */}
           {isMainRep ? (

@@ -14,14 +14,15 @@ import {
   FileSpreadsheet,
   Layers,
 } from 'lucide-react';
-import { formatArabicDateShort } from '../../../../shared/utils/date';
+import { formatArabicDateShort, resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
 import { useNotifications } from '../../../notifications';
-import type { ClassItem } from '../../../../shared/types';
+import type { ClassItem, ClassEnrollment } from '../../../../shared/types';
+import type { StudentWeeklyAttendance } from '../../../attendance';
 
 export function AdminWeeklyPreparationPage() {
   const { toast } = useNotifications();
   const [selectedGradeTab, setSelectedGradeTab] = useState<1 | 2 | 3>(1);
-  const [selectedWeekId, setSelectedWeekId] = useState<number>(11);
+  const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [previewClassId, setPreviewClassId] = useState<number | null>(null);
   const [isExportingGrade, setIsExportingGrade] = useState(false);
   const [isExportingAll, setIsExportingAll] = useState(false);
@@ -38,7 +39,15 @@ export function AdminWeeklyPreparationPage() {
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  const selectedWeek = weeks.find((w) => w.attendanceWeekId === selectedWeekId) || weeks[0];
+  // 3. Fetch Active Academic Year
+  const { data: activeYear } = useQuery({
+    queryKey: ['active_academic_year'],
+    queryFn: () => schoolDataService.getActiveAcademicYear(),
+  });
+
+  const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
+  const effectiveWeekId = selectedWeekId ?? activeWeek?.attendanceWeekId;
+  const selectedWeek = weeks.find((w) => w.attendanceWeekId === effectiveWeekId) || activeWeek || weeks[0];
 
   // Helper to extract numeric class identifier
   const getClassNum = (c: ClassItem) => {
@@ -48,19 +57,28 @@ export function AdminWeeklyPreparationPage() {
     return Number(c.classId);
   };
 
-  // Group classes into 3 grades
-  const grade1Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 101 && getClassNum(c) <= 110),
-    [classes]
-  );
-  const grade2Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 201 && getClassNum(c) <= 210),
-    [classes]
-  );
-  const grade3Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 301 && getClassNum(c) <= 310),
-    [classes]
-  );
+  // Robust stage classification matching 100-series, 200-series, 300-series, and textual grade names
+  const getClassesForGrade = (gradeIndex: 1 | 2 | 3): ClassItem[] => {
+    return classes.filter((c) => {
+      const cnum = getClassNum(c);
+      const cstr = String(c.className ?? c.classNumber ?? c.classId);
+
+      if (gradeIndex === 1) {
+        return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
+      }
+      if (gradeIndex === 2) {
+        return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
+      }
+      if (gradeIndex === 3) {
+        return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
+      }
+      return false;
+    });
+  };
+
+  const grade1Classes = useMemo(() => getClassesForGrade(1), [classes]);
+  const grade2Classes = useMemo(() => getClassesForGrade(2), [classes]);
+  const grade3Classes = useMemo(() => getClassesForGrade(3), [classes]);
 
   const activeGradeClasses = useMemo(() => {
     if (selectedGradeTab === 1) return grade1Classes;
@@ -85,7 +103,7 @@ export function AdminWeeklyPreparationPage() {
 
   const effectivePreviewClassId = activePreviewClass?.classId ?? 0;
 
-  // 3. Fetch preview class enrollments & records
+  // 4. Fetch preview class enrollments & records
   const { data: previewEnrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
     queryKey: ['enrollments', effectivePreviewClassId],
     queryFn: () => schoolDataService.getEnrollmentsByClass(effectivePreviewClassId),
@@ -104,36 +122,74 @@ export function AdminWeeklyPreparationPage() {
     return buildWeeklyAttendanceRows(previewEnrollments, previewRecords);
   }, [previewEnrollments, previewRecords]);
 
-  // Helper to fetch attendance data for multiple classes in batch
-  const fetchClassesWeeklyData = async (classList: ClassItem[], weekId: number) => {
-    const results = await Promise.all(
-      classList.map(async (cls) => {
-        const [enrolls, recs] = await Promise.all([
-          schoolDataService.getEnrollmentsByClass(cls.classId),
-          schoolDataService.getAttendanceRecords(cls.classId, weekId),
-        ]);
-        const attendances = buildWeeklyAttendanceRows(enrolls, recs);
-        return {
-          classItem: cls,
-          className: String(cls.className || `شعبة ${cls.classId}`),
-          classNumber: getClassNum(cls),
-          attendances,
-        };
-      })
-    );
+  // Helper to fetch attendance data for multiple classes with bulk enrollments & batch concurrency control
+  const fetchClassesWeeklyData = async (
+    classList: ClassItem[],
+    weekId: number,
+    cachedEnrollsMap?: Map<number, ClassEnrollment[]>
+  ) => {
+    if (!classList.length) return [];
+
+    let enrollsMap = cachedEnrollsMap;
+    if (!enrollsMap) {
+      const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+      enrollsMap = new Map<number, ClassEnrollment[]>();
+      allEnrolls.forEach((item) => {
+        const list = enrollsMap!.get(item.classId) || [];
+        list.push(item);
+        enrollsMap!.set(item.classId, list);
+      });
+    }
+
+    const results: Array<{
+      classItem: ClassItem;
+      className: string;
+      classNumber?: number;
+      attendances: StudentWeeklyAttendance[];
+    }> = [];
+
+    // Process classes in chunks of 5 to avoid connection pool starvation or timeouts
+    const chunkSize = 5;
+    for (let i = 0; i < classList.length; i += chunkSize) {
+      const chunk = classList.slice(i, i + chunkSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (cls) => {
+          let enrolls = enrollsMap!.get(cls.classId);
+          if (!enrolls || enrolls.length === 0) {
+            enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
+          }
+          const recs = await schoolDataService
+            .getAttendanceRecords(cls.classId, weekId)
+            .catch(() => []);
+          const attendances = buildWeeklyAttendanceRows(enrolls, recs);
+          return {
+            classItem: cls,
+            className: String(cls.className || cls.classNumber || `شعبة ${cls.classId}`),
+            classNumber: getClassNum(cls),
+            attendances,
+          };
+        })
+      );
+      results.push(...chunkResults);
+    }
+
     return results;
   };
 
   // Export 1: Single Grade Workbook (Stacked classes)
   const handleExportCurrentGrade = async () => {
-    if (!selectedWeek || activeGradeClasses.length === 0) {
-      toast.show('لا توجد بيانات متاحة للتصدير', 'warning');
+    if (!selectedWeek) {
+      toast.show('يرجى تحديد أسبوع دراسي أولاً', 'warning');
+      return;
+    }
+    if (activeGradeClasses.length === 0) {
+      toast.show(`لا توجد شعب مسجلة حالياً لـ ${activeGradeName}`, 'warning');
       return;
     }
 
     try {
       setIsExportingGrade(true);
-      toast.show(`جاري تصدير كشوف ${activeGradeName}...`, 'info');
+      toast.show(`جاري تجهيز كشوف ${activeGradeName}...`, 'info');
 
       const targetWeek = selectedWeek;
       const classesData = await fetchClassesWeeklyData(activeGradeClasses, targetWeek.attendanceWeekId);
@@ -143,7 +199,7 @@ export function AdminWeeklyPreparationPage() {
         gradeName: activeGradeName,
         weekNumber: targetWeek.weekNumber,
         weekRange,
-        academicYear: '1446-1447هـ',
+        academicYear: activeYear?.yearName || '1448-1449هـ',
         classesData,
       });
 
@@ -169,18 +225,26 @@ export function AdminWeeklyPreparationPage() {
 
       const targetWeek = selectedWeek;
 
-      const [g1Data, g2Data, g3Data] = await Promise.all([
-        fetchClassesWeeklyData(grade1Classes, targetWeek.attendanceWeekId),
-        fetchClassesWeeklyData(grade2Classes, targetWeek.attendanceWeekId),
-        fetchClassesWeeklyData(grade3Classes, targetWeek.attendanceWeekId),
-      ]);
+      // 1. Fetch all enrollments once in bulk
+      const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+      const enrollsMap = new Map<number, ClassEnrollment[]>();
+      allEnrolls.forEach((item) => {
+        const list = enrollsMap.get(item.classId) || [];
+        list.push(item);
+        enrollsMap.set(item.classId, list);
+      });
+
+      // 2. Fetch data sequentially per grade with internal batching
+      const g1Data = await fetchClassesWeeklyData(grade1Classes, targetWeek.attendanceWeekId, enrollsMap);
+      const g2Data = await fetchClassesWeeklyData(grade2Classes, targetWeek.attendanceWeekId, enrollsMap);
+      const g3Data = await fetchClassesWeeklyData(grade3Classes, targetWeek.attendanceWeekId, enrollsMap);
 
       const weekRange = `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
 
       await excelExportService.exportAllGradesWeeklyPreparation({
         weekNumber: targetWeek.weekNumber,
         weekRange,
-        academicYear: '1446-1447هـ',
+        academicYear: activeYear?.yearName || '1448-1449هـ',
         gradesData: [
           { gradeName: 'الأول الثانوي', classesData: g1Data },
           { gradeName: 'الثاني الثانوي', classesData: g2Data },
@@ -319,7 +383,7 @@ export function AdminWeeklyPreparationPage() {
         <div className="w-full md:w-72">
           <AttendanceWeekSelector
             weeks={weeks}
-            selectedWeekId={selectedWeekId}
+            selectedWeekId={effectiveWeekId || null}
             onSelectWeek={setSelectedWeekId}
           />
         </div>

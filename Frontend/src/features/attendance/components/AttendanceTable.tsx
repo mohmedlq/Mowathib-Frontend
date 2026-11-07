@@ -105,11 +105,11 @@ export function AttendanceTable({
         <table className="w-full text-right border-collapse text-xs">
           <thead>
             <tr className="bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-b border-[#DCE3E6] dark:border-[#28373D] select-none">
-              <th className="sticky right-0 z-10 bg-[#F5F7F8] dark:bg-[#151E22] px-3.5 py-3 font-bold border-l border-[#DCE3E6] dark:border-[#28373D] w-28 whitespace-nowrap shadow-[1px_0_0_#DCE3E6] dark:shadow-[1px_0_0_#28373D]">
+              <th className="hidden sm:table-cell sticky right-0 z-10 bg-[#F5F7F8] dark:bg-[#151E22] px-3.5 py-3 font-bold border-l border-[#DCE3E6] dark:border-[#28373D] w-28 whitespace-nowrap shadow-[1px_0_0_#DCE3E6] dark:shadow-[1px_0_0_#28373D]">
                 رقم الهوية
               </th>
 
-              <th className="sticky right-28 z-10 bg-[#F5F7F8] dark:bg-[#151E22] px-4 py-3 font-bold border-l border-[#DCE3E6] dark:border-[#28373D] min-w-[180px] whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
+              <th className="sticky right-0 sm:right-28 z-10 bg-[#F5F7F8] dark:bg-[#151E22] px-3 sm:px-4 py-3 font-bold border-l border-[#DCE3E6] dark:border-[#28373D] min-w-[140px] sm:min-w-[180px] whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
                 اسم الطالب
               </th>
 
@@ -157,30 +157,31 @@ export function AttendanceTable({
                 </td>
               </tr>
             ) : (
-              filteredList.map((item, idx) => (
-                <tr
-                  key={item.enrollment.enrollmentId}
-                  className={`transition-colors ${
-                    idx % 2 === 0
-                      ? 'bg-white dark:bg-[#182226] hover:bg-[#F5F9F9] dark:hover:bg-[#202E34]'
-                      : 'bg-[#FAFCFD] dark:bg-[#151E22] hover:bg-[#F5F9F9] dark:hover:bg-[#202E34]'
-                  }`}
-                >
-                  {/* Sticky National ID */}
-                  <td className="sticky right-0 z-10 bg-inherit px-3.5 py-2.5 font-mono text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap">
-                    {item.enrollment.student?.nationalId ?? '—'}
-                  </td>
+              filteredList.map((item, idx) => {
+                const rowBg = idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]';
+                return (
+                  <tr
+                    key={item.enrollment.enrollmentId}
+                    className={`transition-colors ${rowBg} hover:bg-[#F5F9F9] dark:hover:bg-[#202E34]`}
+                  >
+                    {/* Sticky National ID */}
+                    <td className={`hidden sm:table-cell sticky right-0 z-10 ${rowBg} px-3.5 py-2.5 font-mono text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap`}>
+                      {item.enrollment.student?.nationalId ?? '—'}
+                    </td>
 
-                  {/* Sticky Student Name */}
-                  <td className="sticky right-28 z-10 bg-inherit px-4 py-2.5 font-medium text-[#17252B] dark:text-[#F0F4F6] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">
-                        {item.enrollment.studentName}
-                      </span>
-                    </div>
-                  </td>
+                    {/* Sticky Student Name */}
+                    <td className={`sticky right-0 sm:right-28 z-10 ${rowBg} px-3 sm:px-4 py-2.5 font-medium text-[#17252B] dark:text-[#F0F4F6] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)]`}>
+                      <div className="flex flex-col">
+                        <span className="truncate font-bold text-xs">
+                          {item.enrollment.studentName}
+                        </span>
+                        <span className="sm:hidden text-[10px] font-mono text-[#89949A] dark:text-[#6E7F87] mt-0.5">
+                          {item.enrollment.student?.nationalId ?? '—'}
+                        </span>
+                      </div>
+                    </td>
 
-                  {/* Attendance Days */}
+                    {/* Attendance Days */}
                   {SCHOOL_DAYS.map((day) => {
                     const daySlots = item.slots[day.dayNumber] || {};
 
@@ -205,8 +206,9 @@ export function AttendanceTable({
                     );
                   })}
                 </tr>
-              ))
-            )}
+              );
+            })
+          )}
           </tbody>
         </table>
       </div>

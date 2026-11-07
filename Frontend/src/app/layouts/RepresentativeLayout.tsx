@@ -10,13 +10,10 @@ import {
   CalendarCheck,
   CalendarCheck2,
   GraduationCap,
-  UserCheck,
-  CreditCard,
   User,
   LogOut,
   Menu,
   X,
-  Printer,
   ChevronLeft,
 } from 'lucide-react';
 
@@ -33,9 +30,9 @@ export function RepresentativeLayout() {
     { to: '/representative/daily-attendance', label: 'رصد الحضور اليومي', icon: CalendarCheck },
     { to: '/representative/weekly-attendance', label: 'التحضير الأسبوعي (عرض فقط)', icon: CalendarCheck2 },
     { to: '/representative/students', label: 'قائمة طلاب الشعبة', icon: GraduationCap },
-    ...(isMainRep ? [{ to: '/representative/deputy', label: 'إدارة نائب العريف', icon: UserCheck }] : []),
-    { to: '/representative/card-requests', label: 'طلب بطاقة استئذان', icon: CreditCard },
-    { to: '/representative/profile', label: 'الملف الشخصي', icon: User },
+    /*...(isMainRep ? [{ to: '/representative/deputy', label: 'إدارة نائب العريف', icon: UserCheck }] : []),
+    { to: '/representative/card-requests', label: 'طلب بطاقة استئذان', icon: CreditCard },*/
+     { to: '/representative/profile', label: 'الملف الشخصي', icon: User },
   ];
 
   return (
@@ -123,6 +120,7 @@ export function RepresentativeLayout() {
           })}
 
           {/* Quick Action: Print Class Sign */}
+          {/*
           <div className="pt-2">
             <button
               type="button"
@@ -135,7 +133,7 @@ export function RepresentativeLayout() {
               <Printer className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span className="font-bold">طباعة رقم الشعبة</span>}
             </button>
-          </div>
+          </div>*/}
         </nav>
 
         <div className="p-3 border-t border-[#DCE3E6] dark:border-[#1E4638] bg-[#FAFCFD] dark:bg-[#0D1E18]">
@@ -177,7 +175,7 @@ export function RepresentativeLayout() {
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden flex">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="relative w-64 bg-white dark:bg-[#182226] h-full flex flex-col z-10 border-l border-[#DCE3E6] dark:border-[#28373D] shadow-xl transition-colors duration-150">
+          <div className="relative w-64 bg-white dark:bg-[#122B23] h-full flex flex-col z-10 border-l border-[#DCE3E6] dark:border-[#1E4638] shadow-xl transition-colors duration-150">
             <div className="h-16 px-4 border-b border-[#DCE3E6] dark:border-[#1E4638] flex items-center justify-between">
               <BrandLogo
                 autoTheme={true}
@@ -214,7 +212,7 @@ export function RepresentativeLayout() {
                   </NavLink>
                 );
               })}
-
+              {/*}
               <button
                 type="button"
                 onClick={() => {
@@ -226,8 +224,9 @@ export function RepresentativeLayout() {
                 <Printer className="w-4 h-4" />
                 <span>طباعة رقم الشعبة</span>
               </button>
+              */}
             </nav>
-            <div className="p-3 border-t border-[#DCE3E6] dark:border-[#28373D]">
+            <div className="p-3 border-t border-[#DCE3E6] dark:border-[#1E4638]">
               <button
                 type="button"
                 onClick={logout}
@@ -267,9 +266,10 @@ export function RepresentativeLayout() {
               </span>
             </div>
           </div>
-
+            
           <div className="flex items-center gap-3">
             {/* Direct Print Class Sign button in header */}
+            {/*}
             <button
               type="button"
               onClick={() => setIsPrintModalOpen(true)}

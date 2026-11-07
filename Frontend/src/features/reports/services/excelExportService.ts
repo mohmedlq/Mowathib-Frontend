@@ -1,4 +1,3 @@
-
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { schoolSettingsService } from '../../../shared/services/schoolSettingsService';
@@ -9,7 +8,6 @@ import type {
   MonthlyStudentSummaryRow,
   MonthlyDetailedAbsenceRow,
 } from '../types/report.types';
-
 import type { StudentWeeklyAttendance } from '../../attendance';
 
 import {
@@ -17,13 +15,12 @@ import {
   getPeriodsForDay,
   getPeriodsCountForDay,
   TOTAL_WEEKLY_PERIODS,
+  ATTENDANCE_STATUS_ARABIC,
   type AttendanceStatus,
   type ClassItem,
   type ClassEnrollment,
   type AttendanceRecord,
 } from '../../../shared/types';
-
-import { ATTENDANCE_STATUS_ARABIC } from '../../../shared/types';
 import { calculateDateForDay } from '../../../shared/utils/date';
 
 export interface MonthlyAttendanceWeekData {
@@ -33,67 +30,171 @@ export interface MonthlyAttendanceWeekData {
   attendances: StudentWeeklyAttendance[];
 }
 
-export function saveExcelFile(buffer: any, filename: string) {
-  try {
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
-    });
-
-    if (typeof window !== 'undefined' && window.document) {
-      const nav = window.navigator as any;
-      if (nav && nav.msSaveOrOpenBlob) {
-        nav.msSaveOrOpenBlob(blob, filename);
-        return;
-      }
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.setAttribute('download', filename);
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        try {
-          document.body.removeChild(a);
-          window.URL.revokeObjectURL(url);
-        } catch {
-          // ignore
-        }
-      }, 1000);
-      return;
-    }
-  } catch (err) {
-    console.warn('Direct link download fallback to saveAs:', err);
-  }
-
-  saveAs(
-    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    filename
-  );
+export interface GradeClassExportData {
+  classItem: ClassItem;
+  className: string | number;
+  classNumber?: number;
+  attendances: StudentWeeklyAttendance[];
 }
 
-// Theme colors
-const COLORS = {
-  headerBg: 'FF245B63',
-  headerText: 'FFFFFFFF',
-  subheaderBg: 'FFEEF2F3',
-  subheaderText: 'FF17252B',
-  border: 'FFDCE3E6',
-  zebraBg: 'FFFAFCFD',
+// =============================================================================
+// 0. EXPORT ENGINE
+// =============================================================================
 
+/**
+ * ExcelJS passes `zip` directly to JSZip. Level 1 favors export speed over
+ * maximum compression while preserving a normal, valid .xlsx file.
+ */
+const FAST_WRITE_OPTIONS = {
+  zip: {
+    compression: 'DEFLATE',
+    compressionOptions: { level: 1 },
+  },
+} as const;
+
+async function writeWorkbookFast(workbook: ExcelJS.Workbook): Promise<ExcelJS.Buffer> {
+  return workbook.xlsx.writeBuffer(FAST_WRITE_OPTIONS);
+}
+
+const YIELD_EVERY_ROWS = 250;
+
+async function yieldToUI(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function yieldAfterRow(index: number): Promise<void> {
+  if ((index + 1) % YIELD_EVERY_ROWS === 0) {
+    await yieldToUI();
+  }
+}
+
+let cachedArDate = '';
+let cachedArDateTimestamp = 0;
+
+function getFastArabicDateString(): string {
+  const now = Date.now();
+  if (!cachedArDate || now - cachedArDateTimestamp >= 60_000) {
+    cachedArDate = new Date().toLocaleDateString('ar-SA');
+    cachedArDateTimestamp = now;
+  }
+  return cachedArDate;
+}
+
+function getSchoolName(name?: string): string {
+  return name || schoolSettingsService.getSchoolName();
+}
+
+// =============================================================================
+// 1. SANITIZATION / DOWNLOAD
+// =============================================================================
+
+export function sanitizeWorksheetName(
+  name: string | number | undefined,
+  fallback = 'Sheet'
+): string {
+  const cleaned = String(name ?? '')
+    .replace(/[\\/*?:\[\]]/g, '-')
+    .replace(/^'+|'+$/g, '')
+    .trim()
+    .slice(0, 31)
+    .trim();
+  return cleaned || fallback.slice(0, 31);
+}
+
+/** Excel worksheet names must also be unique within a workbook. */
+function getUniqueWorksheetName(
+  workbook: ExcelJS.Workbook,
+  desiredName: string,
+  fallback: string
+): string {
+  const base = sanitizeWorksheetName(desiredName, fallback);
+  const existing = new Set(
+    workbook.worksheets.map((sheet) => sheet.name.toLowerCase())
+  );
+
+  if (!existing.has(base.toLowerCase())) return base;
+
+  for (let suffix = 2; suffix < 10_000; suffix++) {
+    const suffixText = ` (${suffix})`;
+    const candidate = `${base.slice(0, 31 - suffixText.length)}${suffixText}`;
+    if (!existing.has(candidate.toLowerCase())) return candidate;
+  }
+
+  throw new Error(`تعذر إنشاء اسم ورقة فريد للاسم: ${desiredName}`);
+}
+
+export function sanitizeFilename(filename: string): string {
+  if (!filename?.trim()) return 'Mowathib_Report.xlsx';
+
+  let cleaned = filename
+    .replace(/[\\/?%*:|"<>]/g, '_')
+    .replace(/[\u0000-\u001F]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim();
+
+  if (!cleaned.toLowerCase().endsWith('.xlsx')) cleaned += '.xlsx';
+  return cleaned;
+}
+
+export function saveExcelFile(buffer: ArrayBuffer | ArrayBufferView | Blob | any, filename: string): void {
+  const cleanFilename = sanitizeFilename(filename);
+  const blob = buffer instanceof Blob
+    ? buffer
+    : new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+  try {
+    saveAs(blob, cleanFilename);
+    return;
+  } catch (error) {
+    console.warn('file-saver failed; trying a native download link:', error);
+  }
+
+  try {
+    if (typeof window === 'undefined' || !window.document) {
+      throw new Error('Browser download APIs are unavailable.');
+    }
+
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = cleanFilename;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+
+    window.setTimeout(() => {
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+    }, 1000);
+  } catch (fallbackError) {
+    console.error('Excel download failed:', fallbackError);
+    throw new Error('تم إنشاء ملف Excel لكن تعذر بدء تنزيله. حاول مرة أخرى.');
+  }
+}
+
+// =============================================================================
+// 2. SHARED STYLES
+// =============================================================================
+
+const COLORS = {
+  teal: 'FF245B63',
+  white: 'FFFFFFFF',
+  text: 'FF17252B',
+  muted: 'FF5F6B73',
+  border: 'FFDCE3E6',
+  zebra: 'FFFAFCFD',
   presentBg: 'FFE8F5EC',
   presentText: 'FF176B3A',
-
   absentBg: 'FFFDECEC',
   absentText: 'FFA61B1B',
-
   unmarkedBg: 'FFF1F3F5',
   unmarkedText: 'FF59636E',
-
   discontinuedBg: 'FFFFF4DA',
   discontinuedText: 'FF855500',
-};
+} as const;
 
 const BORDER_THIN: Partial<ExcelJS.Borders> = {
   top: { style: 'thin', color: { argb: COLORS.border } },
@@ -102,44 +203,573 @@ const BORDER_THIN: Partial<ExcelJS.Borders> = {
   right: { style: 'thin', color: { argb: COLORS.border } },
 };
 
-function getStatusStyle(status: AttendanceStatus) {
-  switch (status) {
-    case 'Present':
-      return {
-        fill: COLORS.presentBg,
-        fontColor: COLORS.presentText,
-        label: ATTENDANCE_STATUS_ARABIC.Present,
-      };
+const ALIGN_CENTER: Partial<ExcelJS.Alignment> = {
+  horizontal: 'center',
+  vertical: 'middle',
+};
+const ALIGN_RIGHT: Partial<ExcelJS.Alignment> = {
+  horizontal: 'right',
+  vertical: 'middle',
+};
 
-    case 'Absent':
-      return {
-        fill: COLORS.absentBg,
-        fontColor: COLORS.absentText,
-        label: ATTENDANCE_STATUS_ARABIC.Absent,
-      };
+function solidFill(argb: string): ExcelJS.Fill {
+  return { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+}
 
-    case 'Discontinued':
-      return {
-        fill: COLORS.discontinuedBg,
-        fontColor: COLORS.discontinuedText,
-        label: ATTENDANCE_STATUS_ARABIC.Discontinued,
-      };
+const FILL_TEAL = solidFill(COLORS.teal);
+const FILL_META = solidFill('FFEEF2F3');
+const FILL_HEADER_GRAY = solidFill('FFE2E8EB');
+const FILL_PERIOD = solidFill('FFF1F3F5');
+const FILL_PERIOD_ALT = solidFill('FFF5F7F8');
+const FILL_ZEBRA = solidFill(COLORS.zebra);
+const FILL_PRESENT = solidFill(COLORS.presentBg);
+const FILL_ABSENT = solidFill(COLORS.absentBg);
+const FILL_DISCONTINUED = solidFill(COLORS.discontinuedBg);
+const FILL_UNMARKED = solidFill(COLORS.unmarkedBg);
 
-    case 'Unmarked':
-    default:
-      return {
-        fill: COLORS.unmarkedBg,
-        fontColor: COLORS.unmarkedText,
-        label: ATTENDANCE_STATUS_ARABIC.Unmarked,
-      };
+const STYLES: Record<string, Partial<ExcelJS.Style>> = {
+  title15: {
+    font: { name: 'Arial', size: 15, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+  },
+  title14: {
+    font: { name: 'Arial', size: 14, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+  },
+  title13: {
+    font: { name: 'Arial', size: 13, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+  },
+  title12: {
+    font: { name: 'Arial', size: 12, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+  },
+  titleAbsent14: {
+    font: { name: 'Arial', size: 14, bold: true, color: { argb: COLORS.white } },
+    fill: solidFill(COLORS.absentText),
+    alignment: ALIGN_CENTER,
+  },
+  meta10: {
+    font: { name: 'Arial', size: 10, color: { argb: COLORS.muted } },
+    fill: FILL_META,
+    alignment: ALIGN_CENTER,
+  },
+  meta95: {
+    font: { name: 'Arial', size: 9.5, color: { argb: COLORS.muted } },
+    fill: FILL_META,
+    alignment: ALIGN_CENTER,
+  },
+  metaBold10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.text } },
+    fill: FILL_META,
+    alignment: ALIGN_CENTER,
+  },
+  headerGray11: {
+    font: { name: 'Arial', size: 11, bold: true, color: { argb: COLORS.text } },
+    fill: FILL_HEADER_GRAY,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  headerGray10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.text } },
+    fill: FILL_HEADER_GRAY,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  headerTeal11: {
+    font: { name: 'Arial', size: 11, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  headerTeal10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.white } },
+    fill: FILL_TEAL,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  headerRed10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.white } },
+    fill: solidFill(COLORS.absentText),
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  periodHeader9: {
+    font: { name: 'Arial', size: 9, bold: true, color: { argb: COLORS.muted } },
+    fill: FILL_PERIOD,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  periodHeaderAlt9: {
+    font: { name: 'Arial', size: 9, bold: true, color: { argb: COLORS.muted } },
+    fill: FILL_PERIOD_ALT,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  periodHeader85: {
+    font: { name: 'Arial', size: 8.5, bold: true, color: { argb: COLORS.muted } },
+    fill: FILL_PERIOD,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  idCell10: {
+    numFmt: '@',
+    font: { name: 'Arial', size: 10 },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  idCellDefault: {
+    numFmt: '@',
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  idCell9: {
+    numFmt: '@',
+    font: { name: 'Arial', size: 9 },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  idCellStage9: {
+    font: { name: 'Arial', size: 9, color: { argb: COLORS.muted } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  idCellStage9Zebra: {
+    font: { name: 'Arial', size: 9, color: { argb: COLORS.muted } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  nameCell10: {
+    font: { name: 'Arial', size: 10, bold: true },
+    alignment: ALIGN_RIGHT,
+    border: BORDER_THIN,
+  },
+  nameCellBoldOnly: {
+    font: { bold: true },
+    alignment: ALIGN_RIGHT,
+    border: BORDER_THIN,
+  },
+  nameCell95: {
+    font: { name: 'Arial', size: 9.5, bold: true },
+    alignment: ALIGN_RIGHT,
+    border: BORDER_THIN,
+  },
+  nameCellStage10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.text } },
+    alignment: ALIGN_RIGHT,
+    border: BORDER_THIN,
+  },
+  nameCellStage10Zebra: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.text } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_RIGHT,
+    border: BORDER_THIN,
+  },
+  totalBold10: {
+    font: { name: 'Arial', size: 10, bold: true },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  totalBold10Zebra: {
+    font: { name: 'Arial', size: 10, bold: true },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  centerDefault: { alignment: ALIGN_CENTER, border: BORDER_THIN },
+  centerZebra: { fill: FILL_ZEBRA, alignment: ALIGN_CENTER, border: BORDER_THIN },
+  rightDefault: { alignment: ALIGN_RIGHT, border: BORDER_THIN },
+  rightZebra: { fill: FILL_ZEBRA, alignment: ALIGN_RIGHT, border: BORDER_THIN },
+  absentAlertCell: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } },
+    fill: FILL_ABSENT,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColPresent: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.presentText } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColPresentZebra: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.presentText } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColAbsent: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColAbsentZebra: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColRate: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.teal } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageColRateZebra: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.teal } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  stageUnmarked9: {
+    font: { name: 'Arial', size: 9, color: { argb: 'FF89949A' } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  summaryCellNormal: {
+    font: { name: 'Arial', size: 10, color: { argb: COLORS.text } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  summaryCellZebra: {
+    font: { name: 'Arial', size: 10, color: { argb: COLORS.text } },
+    fill: FILL_ZEBRA,
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  summaryFooter11: {
+    font: { name: 'Arial', size: 11, bold: true, color: { argb: COLORS.text } },
+    fill: solidFill('FFE4EBED'),
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+  summaryFooter10: {
+    font: { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.text } },
+    fill: solidFill('FFE8EFF0'),
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  },
+};
+
+interface StatusStylePreset {
+  label: string;
+  cellStyle9: Partial<ExcelJS.Style>;
+  cellStyle85: Partial<ExcelJS.Style>;
+  cellStyle8: Partial<ExcelJS.Style>;
+  fastCellStyle8: Partial<ExcelJS.Style>;
+}
+
+function createStatusPreset(
+  fill: ExcelJS.Fill,
+  fontColor: string,
+  label: string
+): StatusStylePreset {
+  const createCellStyle = (size: number): Partial<ExcelJS.Style> => ({
+    fill,
+    font: { name: 'Arial', size, bold: true, color: { argb: fontColor } },
+    alignment: ALIGN_CENTER,
+    border: BORDER_THIN,
+  });
+
+  return {
+    label,
+    cellStyle9: createCellStyle(9),
+    cellStyle85: createCellStyle(8.5),
+    cellStyle8: createCellStyle(8),
+    // Row alignment and borders are applied once for the weekly grid.
+    fastCellStyle8: {
+      fill,
+      font: { name: 'Arial', size: 8, bold: true, color: { argb: fontColor } },
+    },
+  };
+}
+
+const STATUS_PRESETS: Record<AttendanceStatus, StatusStylePreset> = {
+  Present: createStatusPreset(FILL_PRESENT, COLORS.presentText, ATTENDANCE_STATUS_ARABIC.Present),
+  Absent: createStatusPreset(FILL_ABSENT, COLORS.absentText, ATTENDANCE_STATUS_ARABIC.Absent),
+  Discontinued: createStatusPreset(FILL_DISCONTINUED, COLORS.discontinuedText, ATTENDANCE_STATUS_ARABIC.Discontinued),
+  Unmarked: createStatusPreset(FILL_UNMARKED, COLORS.unmarkedText, ATTENDANCE_STATUS_ARABIC.Unmarked),
+};
+
+function getStatusStyle(status: AttendanceStatus | undefined): StatusStylePreset {
+  return (status && STATUS_PRESETS[status]) || STATUS_PRESETS.Unmarked;
+}
+
+// =============================================================================
+// 3. SCHEDULE LAYOUT AND DATA HELPERS
+// =============================================================================
+
+interface DayHeaderLayout {
+  dayNumber: number;
+  name: string;
+  startCol: number;
+  endCol: number;
+  periodCount: number;
+}
+
+interface FlatWeeklySlot {
+  dayNumber: number;
+  periodNumber: number;
+  colIndex: number;
+  slotOffset: number;
+}
+
+let cachedLayout: {
+  dayHeaders: DayHeaderLayout[];
+  flatSlots: FlatWeeklySlot[];
+} | null = null;
+
+function getWeeklyScheduleLayout() {
+  if (cachedLayout) return cachedLayout;
+
+  let currentCol = 3;
+  const dayHeaders: DayHeaderLayout[] = [];
+  const flatSlots: FlatWeeklySlot[] = [];
+
+  for (const day of SCHOOL_DAYS) {
+    const periods = getPeriodsForDay(day.dayNumber);
+    const periodCount = getPeriodsCountForDay(day.dayNumber);
+    const startCol = currentCol;
+    const endCol = startCol + periodCount - 1;
+
+    dayHeaders.push({
+      dayNumber: day.dayNumber,
+      name: day.nameAr,
+      startCol,
+      endCol,
+      periodCount,
+    });
+
+    for (const periodNumber of periods) {
+      flatSlots.push({
+        dayNumber: day.dayNumber,
+        periodNumber,
+        colIndex: currentCol,
+        slotOffset: (day.dayNumber << 3) | periodNumber,
+      });
+      currentCol++;
+    }
+  }
+
+  if (flatSlots.length !== TOTAL_WEEKLY_PERIODS) {
+    throw new Error(
+      `إعدادات الجدول غير متطابقة: عدد الحصص الفعلي ${flatSlots.length}، والمتوقع ${TOTAL_WEEKLY_PERIODS}.`
+    );
+  }
+
+  cachedLayout = { dayHeaders, flatSlots };
+  return cachedLayout;
+}
+
+function indexClassRecordsFlat(
+  records: AttendanceRecord[]
+): Map<number, AttendanceStatus> {
+  const result = new Map<number, AttendanceStatus>();
+
+  for (const record of records) {
+    const key =
+      record.enrollmentId * 64 +
+      ((record.dayNumber << 3) | record.periodNumber);
+
+    // Keep the first record, matching the original export behavior.
+    if (!result.has(key)) result.set(key, record.status);
+  }
+
+  return result;
+}
+
+function setRowStyles(
+  row: ExcelJS.Row,
+  styles: Array<Partial<ExcelJS.Style> | undefined>
+): void {
+  for (let index = 0; index < styles.length; index++) {
+    const style = styles[index];
+    if (style) row.getCell(index + 1).style = style;
   }
 }
 
-export const excelExportService = {
+function applyHeaderStyle(
+  row: ExcelJS.Row,
+  count: number,
+  style: Partial<ExcelJS.Style> = STYLES.headerGray11
+): void {
+  for (let column = 1; column <= count; column++) {
+    row.getCell(column).style = style;
+  }
+}
 
-  // ==========================================
-  // 1. DAILY ATTENDANCE EXCEL EXPORT
-  // ==========================================
+function addTitleAndMeta(
+  worksheet: ExcelJS.Worksheet,
+  lastColumn: number,
+  title: string,
+  meta: string,
+  titleStyle: Partial<ExcelJS.Style> = STYLES.title14
+): void {
+  worksheet.mergeCells(1, 1, 1, lastColumn);
+  const titleCell = worksheet.getCell(1, 1);
+  titleCell.value = title;
+  titleCell.style = titleStyle;
+  worksheet.getRow(1).height = 30;
+
+  worksheet.mergeCells(2, 1, 2, lastColumn);
+  const metaCell = worksheet.getCell(2, 1);
+  metaCell.value = meta;
+  metaCell.style = STYLES.meta10;
+  worksheet.getRow(2).height = 20;
+}
+
+function configureIdentityColumns(
+  worksheet: ExcelJS.Worksheet,
+  lastColumn: number,
+  periodWidth = 7.5
+): void {
+  worksheet.getColumn(1).width = 16;
+  worksheet.getColumn(2).width = 28;
+  for (let column = 3; column <= lastColumn; column++) {
+    worksheet.getColumn(column).width = periodWidth;
+  }
+}
+
+function getWeeklySlotStatus(
+  attendance: StudentWeeklyAttendance,
+  slot: FlatWeeklySlot
+): AttendanceStatus {
+  return attendance.slots?.[slot.dayNumber]?.[slot.periodNumber]?.status ?? 'Unmarked';
+}
+
+// =============================================================================
+// 4. WEEKLY PREPARATION TABLE BUILDER
+// =============================================================================
+
+function appendClassWeeklyPreparationToWorksheet(
+  worksheet: ExcelJS.Worksheet,
+  startRow: number,
+  classData: GradeClassExportData | {
+    className: string | number;
+    classNumber?: number;
+    attendances: StudentWeeklyAttendance[];
+  },
+  meta: {
+    weekNumber: number;
+    weekRange: string;
+    academicYear?: string;
+    schoolName?: string;
+  }
+): number {
+  const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
+  const totalCols = 2 + flatSlots.length;
+  const className = String(classData.className ?? classData.classNumber ?? 'شعبة');
+  const displayClassName = className.startsWith('شعبة') ? className : `شعبة ${className}`;
+  const attendances = classData.attendances ?? [];
+
+  worksheet.mergeCells(startRow, 1, startRow, totalCols);
+  const titleCell = worksheet.getCell(startRow, 1);
+  titleCell.value = `${displayClassName} — كشف التحضير الأسبوعي (الأسبوع ${meta.weekNumber})`;
+  titleCell.style = STYLES.title12;
+  worksheet.getRow(startRow).height = 26;
+
+  worksheet.mergeCells(startRow + 1, 1, startRow + 1, totalCols);
+  const metaCell = worksheet.getCell(startRow + 1, 1);
+  metaCell.value =
+    `المدرسة: ${meta.schoolName || getSchoolName()} | ` +
+    `الفترة: ${meta.weekRange} | عدد الطلاب: ${attendances.length} | ` +
+    `العام الدراسي: ${meta.academicYear || '1448-1449هـ'}`;
+  metaCell.style = STYLES.meta95;
+  worksheet.getRow(startRow + 1).height = 19;
+
+  const headerRow1 = startRow + 3;
+  const headerRow2 = startRow + 4;
+
+  worksheet.mergeCells(headerRow1, 1, headerRow2, 1);
+  worksheet.getCell(headerRow1, 1).value = 'رقم الهوية';
+  worksheet.getCell(headerRow1, 1).style = STYLES.headerGray10;
+  worksheet.getCell(headerRow2, 1).style = STYLES.headerGray10;
+
+  worksheet.mergeCells(headerRow1, 2, headerRow2, 2);
+  worksheet.getCell(headerRow1, 2).value = 'اسم الطالب';
+  worksheet.getCell(headerRow1, 2).style = STYLES.headerGray10;
+  worksheet.getCell(headerRow2, 2).style = STYLES.headerGray10;
+
+  const topHeader = worksheet.getRow(headerRow1);
+  const bottomHeader = worksheet.getRow(headerRow2);
+  topHeader.height = 22;
+  bottomHeader.height = 19;
+
+  for (const day of dayHeaders) {
+    worksheet.mergeCells(headerRow1, day.startCol, headerRow1, day.endCol);
+    for (let column = day.startCol; column <= day.endCol; column++) {
+      topHeader.getCell(column).style = STYLES.headerGray10;
+    }
+    topHeader.getCell(day.startCol).value = day.name;
+
+    for (let period = 1; period <= day.periodCount; period++) {
+      const cell = bottomHeader.getCell(day.startCol + period - 1);
+      cell.value = `ح ${period}`;
+      cell.style = STYLES.periodHeader85;
+    }
+  }
+
+  let currentRow = headerRow2 + 1;
+
+  if (attendances.length === 0) {
+    worksheet.mergeCells(currentRow, 1, currentRow, totalCols);
+    const emptyCell = worksheet.getCell(currentRow, 1);
+    emptyCell.value = 'لا توجد بيانات حضور مسجلة لهذه الشعبة في هذا الأسبوع';
+    emptyCell.style = STYLES.meta95;
+    worksheet.getRow(currentRow).height = 22;
+    return currentRow + 1;
+  }
+
+  // Buffers are local to this table invocation. Module-level shared buffers
+  // caused data corruption when two exports overlapped across UI yields.
+  for (let studentIndex = 0; studentIndex < attendances.length; studentIndex++) {
+    const item = attendances[studentIndex];
+    const values = new Array<string | number>(totalCols);
+    const styles = new Array<Partial<ExcelJS.Style>>(totalCols);
+
+    values[0] =
+      item.enrollment.student?.nationalId ||
+      (item.enrollment as any).nationalId ||
+      '—';
+
+    values[1] =
+      item.enrollment.studentName ||
+      item.enrollment.student?.fullName ||
+      'طالب';
+
+    styles[0] = STYLES.idCell9;
+    styles[1] = STYLES.nameCell95;
+
+    for (let slotIndex = 0; slotIndex < flatSlots.length; slotIndex++) {
+      const preset = getStatusStyle(
+        getWeeklySlotStatus(item, flatSlots[slotIndex])
+      );
+      values[2 + slotIndex] = preset.label;
+      styles[2 + slotIndex] = preset.fastCellStyle8;
+    }
+
+    const row = worksheet.addRow(values);
+    row.height = 19;
+    // Apply common formatting once per row instead of once per period cell.
+    row.alignment = ALIGN_CENTER;
+    row.border = BORDER_THIN;
+    setRowStyles(row, styles);
+  }
+
+  return currentRow + attendances.length;
+}
+
+// =============================================================================
+// 5. EXCEL EXPORT SERVICE
+// =============================================================================
+
+export const excelExportService = {
+  // ---------------------------------------------------------------------------
+  // 5.1 DAILY ATTENDANCE
+  // ---------------------------------------------------------------------------
 
   async exportDailyAttendance(
     data: DailyAttendanceRow[],
@@ -152,257 +782,98 @@ export const excelExportService = {
       isAbsenceOnly?: boolean;
     }
   ): Promise<void> {
-
     const workbook = new ExcelJS.Workbook();
-
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const sheetName = meta.isAbsenceOnly
-      ? 'تقرير الغياب اليومي'
-      : 'التقرير اليومي';
-
-    const worksheet = workbook.addWorksheet(sheetName, {
-      views: [
-        {
-          rightToLeft: true,
-          state: 'frozen',
-          xSplit: 2,
-          ySplit: 5,
-        },
-      ],
-    });
-
-    const dayObj = SCHOOL_DAYS.find(
-      (d) => d.nameAr === meta.dayName || d.dayNumber === (meta as any).dayNumber
+    const day = SCHOOL_DAYS.find(
+      (item) => item.nameAr === meta.dayName || item.dayNumber === (meta as any).dayNumber
     );
-    const dayNum = dayObj?.dayNumber ?? 1;
-    const dayPeriods = getPeriodsForDay(dayNum);
-    const periodsCount = dayPeriods.length;
-    const totalCols = 2 + periodsCount + 3;
+    const periods = getPeriodsForDay(day?.dayNumber ?? 1);
+    const totalColumns = periods.length + 5;
 
-    // Title
-    worksheet.mergeCells(1, 1, 1, totalCols);
+    const worksheet = workbook.addWorksheet(
+      sanitizeWorksheetName(meta.isAbsenceOnly ? 'تقرير الغياب اليومي' : 'التقرير اليومي'),
+      {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+      }
+    );
 
-    const titleCell = worksheet.getCell('A1');
-
-    titleCell.value =
-      `${meta.schoolName || schoolSettingsService.getSchoolName()} — ` +
-      `${meta.isAbsenceOnly ? 'تقرير الغياب اليومي' : 'تقرير الحضور اليومي'}`;
-
-    titleCell.font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: COLORS.headerText },
-    };
-
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.headerBg },
-    };
-
-    titleCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(1).height = 30;
-
-    // Metadata
-    worksheet.mergeCells(2, 1, 2, totalCols);
-
-    const metaCell = worksheet.getCell('A2');
-
-    metaCell.value =
-      `العام الدراسي: ${meta.academicYear} | ` +
-      `الشعبة: ${meta.className} | ` +
-      `اليوم: ${meta.dayName} (${meta.date}) | ` +
-      `تاريخ التوليد: ${new Date().toLocaleDateString('ar-SA')}`;
-
-    metaCell.font = {
-      name: 'Arial',
-      size: 10,
-      color: { argb: 'FF5F6B73' },
-    };
-
-    metaCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.subheaderBg },
-    };
-
-    metaCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(2).height = 20;
+    addTitleAndMeta(
+      worksheet,
+      totalColumns,
+      `${getSchoolName(meta.schoolName)} — ${meta.isAbsenceOnly ? 'تقرير الغياب اليومي' : 'تقرير الحضور اليومي'}`,
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | اليوم: ${meta.dayName} (${meta.date}) | تاريخ التوليد: ${getFastArabicDateString()}`
+    );
 
     worksheet.addRow([]);
 
-    // Table Headers
     const headers = [
       'رقم الهوية',
       'اسم الطالب',
-      ...dayPeriods.map((p) => `الحصة ${p}`),
+      ...periods.map((period) => `الحصة ${period}`),
       'حاضر',
       'غائب',
       'منقطع',
     ];
 
-    const headerRow = worksheet.addRow(headers);
+    const header = worksheet.addRow(headers);
+    header.height = 24;
+    applyHeaderStyle(header, totalColumns);
 
-    headerRow.height = 24;
-
-    headerRow.eachCell((cell) => {
-      cell.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.subheaderText },
-      };
-
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE2E8EB' },
-      };
-
-      cell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      cell.border = BORDER_THIN;
-    });
-
-    // Data Rows
-    data.forEach((row, idx) => {
-
-      const rowValues = [
-        row.nationalId,
-        row.studentName,
-        ...dayPeriods.map((p) => getStatusStyle(row.periods[p]).label),
-        row.presentCount,
-        row.absentCount,
-        row.discontinuedCount,
+    for (let index = 0; index < data.length; index++) {
+      const item = data[index];
+      const values: Array<string | number> = [
+        String(item.nationalId ?? ''),
+        item.studentName ?? '',
+      ];
+      const styles: Array<Partial<ExcelJS.Style> | undefined> = [
+        STYLES.idCell10,
+        STYLES.nameCell10,
       ];
 
-      const r = worksheet.addRow(rowValues);
-
-      r.height = 20;
-
-      const idCell = r.getCell(1);
-
-      idCell.numFmt = '@';
-      idCell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-      idCell.font = { name: 'Arial', size: 10 };
-      idCell.border = BORDER_THIN;
-
-      const nameCell = r.getCell(2);
-
-      nameCell.alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-
-      nameCell.font = {
-        name: 'Arial',
-        size: 10,
-        bold: true,
-      };
-
-      nameCell.border = BORDER_THIN;
-
-      // Period styling
-      for (let pIdx = 1; pIdx <= periodsCount; pIdx++) {
-        const pNum = dayPeriods[pIdx - 1];
-        const cell = r.getCell(pIdx + 2);
-        const style = getStatusStyle(row.periods[pNum]);
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: style.fill },
-        };
-
-        cell.font = {
-          name: 'Arial',
-          size: 9,
-          bold: true,
-          color: { argb: style.fontColor },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
+      for (const period of periods) {
+        const preset = getStatusStyle(item.periods[period]);
+        values.push(preset.label);
+        styles.push(preset.cellStyle9);
       }
 
-      // Totals
-      for (let c = 2 + periodsCount + 1; c <= totalCols; c++) {
+      values.push(item.presentCount, item.absentCount, item.discontinuedCount);
+      const totalStyle = index % 2 ? STYLES.totalBold10Zebra : STYLES.totalBold10;
+      styles.push(totalStyle, totalStyle, totalStyle);
 
-        const cell = r.getCell(c);
+      const row = worksheet.addRow(values);
+      row.height = 20;
+      setRowStyles(row, styles);
+      await yieldAfterRow(index);
+    }
 
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.font = {
-          name: 'Arial',
-          size: 10,
-          bold: true,
-        };
-
-        cell.border = BORDER_THIN;
-
-        if (idx % 2 === 1) {
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: COLORS.zebraBg },
-          };
-        }
-      }
-    });
-
-    // Column Widths
     worksheet.getColumn(1).width = 16;
     worksheet.getColumn(2).width = 28;
-
-    for (let i = 3; i <= 2 + periodsCount; i++) {
-      worksheet.getColumn(i).width = 12;
+    for (let column = 3; column <= 2 + periods.length; column++) {
+      worksheet.getColumn(column).width = 12;
+    }
+    for (let column = 3 + periods.length; column <= totalColumns; column++) {
+      worksheet.getColumn(column).width = 10;
     }
 
-    for (let i = 2 + periodsCount + 1; i <= totalCols; i++) {
-      worksheet.getColumn(i).width = 10;
+    if (data.length) {
+      worksheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + data.length, column: totalColumns },
+      };
     }
 
-    // Auto Filter
-    worksheet.autoFilter = {
-      from: { row: 4, column: 1 },
-      to: { row: 4 + data.length, column: totalCols },
-    };
-
-    const buffer = await workbook.xlsx.writeBuffer();
-
-    const filename =
-      `Mowathib_Daily_Attendance_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`;
-
-    saveExcelFile(buffer, filename);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Daily_Attendance_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`
+    );
   },
 
-  // ==========================================
-  // 2. WEEKLY ATTENDANCE EXCEL EXPORT
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.2 WEEKLY ATTENDANCE
+  // ---------------------------------------------------------------------------
 
   async exportWeeklyAttendance(
     attendances: StudentWeeklyAttendance[],
@@ -414,305 +885,92 @@ export const excelExportService = {
       weekRange: string;
     }
   ): Promise<void> {
-
     const workbook = new ExcelJS.Workbook();
-
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
+    const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
+    const lastColumn = 2 + flatSlots.length;
+
     const worksheet = workbook.addWorksheet('التقرير الأسبوعي', {
-      views: [
-        {
-          rightToLeft: true,
-          state: 'frozen',
-          xSplit: 2,
-          ySplit: 5,
-        },
-      ],
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
     });
 
-    // Main Title
-    worksheet.mergeCells(1, 1, 1, 35);
+    addTitleAndMeta(
+      worksheet,
+      lastColumn,
+      `${getSchoolName(meta.schoolName)} — تقرير الحضور والغياب الأسبوعي (الأسبوع ${meta.weekNumber})`,
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | الفترة: ${meta.weekRange} | عدد الطلاب: ${attendances.length}`
+    );
 
-    const titleCell = worksheet.getCell('A1');
-
-    titleCell.value =
-      `${meta.schoolName || schoolSettingsService.getSchoolName()} — ` +
-      `تقرير الحضور والغياب الأسبوعي (الأسبوع ${meta.weekNumber})`;
-
-    titleCell.font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: COLORS.headerText },
-    };
-
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.headerBg },
-    };
-
-    titleCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(1).height = 30;
-
-    // Metadata
-    worksheet.mergeCells(2, 1, 2, 35);
-
-    const metaCell = worksheet.getCell('A2');
-
-    metaCell.value =
-      `العام الدراسي: ${meta.academicYear} | ` +
-      `الشعبة: ${meta.className} | ` +
-      `الفترة: ${meta.weekRange} | ` +
-      `عدد الطلاب: ${attendances.length}`;
-
-    metaCell.font = {
-      name: 'Arial',
-      size: 10,
-      color: { argb: 'FF5F6B73' },
-    };
-
-    metaCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.subheaderBg },
-    };
-
-    metaCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(2).height = 20;
-
-    // Student Identity Headers
     worksheet.mergeCells('A4:A5');
     worksheet.getCell('A4').value = 'رقم الهوية';
-
     worksheet.mergeCells('B4:B5');
     worksheet.getCell('B4').value = 'اسم الطالب';
 
-    let currentStartCol = 3;
-    const dayHeaders = SCHOOL_DAYS.map((day) => {
-      const count = getPeriodsCountForDay(day.dayNumber);
-      const startCol = currentStartCol;
-      const endCol = currentStartCol + count - 1;
-      currentStartCol += count;
-      return {
-        name: day.nameAr,
-        startCol,
-        endCol,
-        periodCount: count,
-      };
-    });
+    const firstHeader = worksheet.getRow(4);
+    const secondHeader = worksheet.getRow(5);
+    firstHeader.height = 22;
+    secondHeader.height = 20;
 
-    // Day Headers
-    dayHeaders.forEach((dh) => {
+    for (const day of dayHeaders) {
+      worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+      const cell = worksheet.getCell(4, day.startCol);
+      cell.value = day.name;
+      cell.style = STYLES.headerGray11;
 
-      worksheet.mergeCells(4, dh.startCol, 4, dh.endCol);
-
-      const cell = worksheet.getCell(4, dh.startCol);
-
-      cell.value = dh.name;
-
-      cell.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.subheaderText },
-      };
-
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE2E8EB' },
-      };
-
-      cell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      cell.border = BORDER_THIN;
-    });
-
-    worksheet.getRow(4).height = 22;
-    worksheet.getRow(5).height = 20;
-
-    // Period Numbers
-    const r5 = worksheet.getRow(5);
-
-    dayHeaders.forEach((dh) => {
-
-      for (let p = 1; p <= dh.periodCount; p++) {
-
-        const col = dh.startCol + (p - 1);
-        const cell = r5.getCell(col);
-
-        cell.value = `ح ${p}`;
-
-        cell.font = {
-          name: 'Arial',
-          size: 9,
-          bold: true,
-          color: { argb: 'FF5F6B73' },
-        };
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF1F3F5' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
+      for (let period = 1; period <= day.periodCount; period++) {
+        const periodCell = secondHeader.getCell(day.startCol + period - 1);
+        periodCell.value = `ح ${period}`;
+        periodCell.style = STYLES.periodHeader9;
       }
-    });
-
-    // Format Identity Headers
-    ['A4', 'B4'].forEach((pos) => {
-
-      const c = worksheet.getCell(pos);
-
-      c.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.subheaderText },
-      };
-
-      c.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE2E8EB' },
-      };
-
-      c.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      c.border = BORDER_THIN;
-    });
-
-    // Student Data
-    attendances.forEach((item) => {
-
-      const rowArr: (string | number)[] = [
-        item.enrollment.student?.nationalId || '',
-        item.enrollment.studentName || '',
-      ];
-
-      SCHOOL_DAYS.forEach((day) => {
-
-        getPeriodsForDay(day.dayNumber).forEach((p) => {
-
-          const slot = item.slots[day.dayNumber]?.[p];
-          const st = slot ? slot.status : 'Unmarked';
-
-          rowArr.push(getStatusStyle(st).label);
-        });
-      });
-
-      const r = worksheet.addRow(rowArr);
-
-      r.height = 20;
-
-      // Identity Columns
-      const idCell = r.getCell(1);
-
-      idCell.numFmt = '@';
-
-      idCell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      idCell.border = BORDER_THIN;
-
-      const nameCell = r.getCell(2);
-
-      nameCell.alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-
-      nameCell.font = { bold: true };
-      nameCell.border = BORDER_THIN;
-
-      // Status Colors
-      let colIdx = 3;
-
-      SCHOOL_DAYS.forEach((day) => {
-
-        getPeriodsForDay(day.dayNumber).forEach((p) => {
-
-          const cell = r.getCell(colIdx);
-          const slot = item.slots[day.dayNumber]?.[p];
-          const st = slot ? slot.status : 'Unmarked';
-
-          const style = getStatusStyle(st);
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: style.fill },
-          };
-
-          cell.font = {
-            name: 'Arial',
-            size: 8.5,
-            bold: true,
-            color: { argb: style.fontColor },
-          };
-
-          cell.alignment = {
-            horizontal: 'center',
-            vertical: 'middle',
-          };
-
-          cell.border = BORDER_THIN;
-
-          colIdx++;
-        });
-      });
-    });
-
-    // Column Widths
-    worksheet.getColumn(1).width = 16;
-    worksheet.getColumn(2).width = 28;
-
-    for (let i = 3; i <= 35; i++) {
-      worksheet.getColumn(i).width = 7.5;
     }
 
-    // Auto Filter
-    worksheet.autoFilter = {
-      from: { row: 5, column: 1 },
-      to: { row: 5 + attendances.length, column: 35 },
-    };
+    worksheet.getCell('A4').style = STYLES.headerGray11;
+    worksheet.getCell('B4').style = STYLES.headerGray11;
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    for (let index = 0; index < attendances.length; index++) {
+      const item = attendances[index];
+      const values: Array<string | number> = [
+        String(item.enrollment.student?.nationalId ?? ''),
+        item.enrollment.studentName ?? '',
+      ];
+      const styles: Array<Partial<ExcelJS.Style> | undefined> = [
+        STYLES.idCellDefault,
+        STYLES.nameCellBoldOnly,
+      ];
 
-    const filename =
-      `Mowathib_Weekly_Attendance_${meta.academicYear}_Week-${meta.weekNumber}_${meta.className}.xlsx`;
+      for (const slot of flatSlots) {
+        const preset = getStatusStyle(getWeeklySlotStatus(item, slot));
+        values.push(preset.label);
+        styles.push(preset.cellStyle85);
+      }
 
-    saveExcelFile(buffer, filename);
+      const row = worksheet.addRow(values);
+      row.height = 20;
+      setRowStyles(row, styles);
+      await yieldAfterRow(index);
+    }
+
+    configureIdentityColumns(worksheet, lastColumn, 7.5);
+
+    if (attendances.length) {
+      worksheet.autoFilter = {
+        from: { row: 5, column: 1 },
+        to: { row: 5 + attendances.length, column: lastColumn },
+      };
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Weekly_Attendance_${meta.academicYear}_Week-${meta.weekNumber}_${meta.className}.xlsx`
+    );
   },
 
-  // ==========================================
-  // 3. MONTHLY ATTENDANCE EXCEL EXPORT
-  // One workbook with one weekly-style sheet per actual week
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.3 MONTHLY ATTENDANCE
+  // ---------------------------------------------------------------------------
 
   async exportMonthlyReport(
     _summaryData: MonthlyStudentSummaryRow[],
@@ -725,500 +983,166 @@ export const excelExportService = {
       weeks: MonthlyAttendanceWeekData[];
     }
   ): Promise<void> {
-
-    // Validate selected month
     const monthMatch = /^(\d{4})-(\d{2})$/.exec(meta.month);
-
-    if (!monthMatch) {
-      throw new Error('صيغة الشهر غير صحيحة. استخدم YYYY-MM.');
-    }
+    if (!monthMatch) throw new Error('صيغة الشهر غير صحيحة. استخدم YYYY-MM.');
 
     const year = Number(monthMatch[1]);
     const monthNumber = Number(monthMatch[2]);
-
     if (monthNumber < 1 || monthNumber > 12) {
       throw new Error('الشهر المحدد غير صحيح.');
     }
 
     const monthStart = `${meta.month}-01`;
+    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    const monthEnd = `${meta.month}-${String(lastDay).padStart(2, '0')}`;
 
-    const lastDay = new Date(
-      Date.UTC(year, monthNumber, 0)
-    ).getUTCDate();
-
-    const monthEnd =
-      `${meta.month}-${String(lastDay).padStart(2, '0')}`;
-
-    // Normalize and validate dates
-    const normalizeDate = (
-      value: string,
-      label: string
-    ): string => {
-
+    const normalizeDate = (value: string, label: string): string => {
       const date = String(value ?? '').trim().slice(0, 10);
-
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         throw new Error(`${label} غير صالح: ${value}`);
       }
-
       const parsed = new Date(`${date}T00:00:00.000Z`);
-
-      if (
-        Number.isNaN(parsed.getTime()) ||
-        parsed.toISOString().slice(0, 10) !== date
-      ) {
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
         throw new Error(`${label} غير صالح: ${value}`);
       }
-
       return date;
     };
 
     if (!meta.weeks?.length) {
-      throw new Error(
-        'لا توجد بيانات للأسابيع المحددة. لم تصل بيانات الأسابيع إلى التصدير.'
-      );
+      throw new Error('لا توجد بيانات للأسابيع المحددة. لم تصل بيانات الأسابيع إلى التصدير.');
     }
 
-    // Select actual weeks that overlap the chosen month
     const selectedWeeks = meta.weeks
       .map((week) => {
-
-        const startDate = normalizeDate(
-          week.startDate,
-          'تاريخ بداية الأسبوع'
-        );
-
-        const endDate = normalizeDate(
-          week.endDate,
-          'تاريخ نهاية الأسبوع'
-        );
-
+        const startDate = normalizeDate(week.startDate, 'تاريخ بداية الأسبوع');
+        const endDate = normalizeDate(week.endDate, 'تاريخ نهاية الأسبوع');
         if (startDate > endDate) {
-          throw new Error(
-            `نطاق الأسبوع غير صحيح: ${startDate} - ${endDate}`
-          );
+          throw new Error(`نطاق الأسبوع غير صحيح: ${startDate} - ${endDate}`);
         }
 
-        const hasSchoolDayInMonth = SCHOOL_DAYS.some((day) => {
-
+        const intersectsMonth = SCHOOL_DAYS.some((day) => {
           const schoolDate = normalizeDate(
             calculateDateForDay(startDate, day.dayNumber),
             'تاريخ اليوم الدراسي'
           );
-
-          return (
-            schoolDate >= startDate &&
-            schoolDate <= endDate &&
-            schoolDate >= monthStart &&
-            schoolDate <= monthEnd
-          );
+          return schoolDate >= startDate && schoolDate <= endDate && schoolDate >= monthStart && schoolDate <= monthEnd;
         });
 
-        return {
-          week,
-          startDate,
-          endDate,
-          hasSchoolDayInMonth,
-        };
+        return { week, startDate, endDate, intersectsMonth };
       })
-      .filter((item) => item.hasSchoolDayInMonth)
+      .filter((item) => item.intersectsMonth)
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
     if (!selectedWeeks.length) {
-      throw new Error(
-        'لا توجد أسابيع دراسية تتقاطع تواريخها مع الشهر المحدد.'
-      );
+      throw new Error('لا توجد أسابيع دراسية تتقاطع تواريخها مع الشهر المحدد.');
     }
 
-    // Create one workbook
     const workbook = new ExcelJS.Workbook();
-
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const schoolName =
-      meta.schoolName || schoolSettingsService.getSchoolName();
+    const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
+    const lastColumn = 2 + flatSlots.length;
 
-    const lastColumn = 2 + TOTAL_WEEKLY_PERIODS;
-
-    // Create one weekly-style worksheet per actual attendance week
-    selectedWeeks.forEach(({ week, startDate, endDate }, index) => {
-
+    for (let weekIndex = 0; weekIndex < selectedWeeks.length; weekIndex++) {
+      await yieldToUI();
+      const { week, startDate, endDate } = selectedWeeks[weekIndex];
       const attendances = week.attendances ?? [];
-
-      const actualWeekNumber = week.weekNumber ?? index + 1;
+      const weekNumber = week.weekNumber ?? weekIndex + 1;
 
       const worksheet = workbook.addWorksheet(
-        `الأسبوع ${index + 1}`,
+        getUniqueWorksheetName(workbook, `الأسبوع ${weekIndex + 1}`, `Week ${weekIndex + 1}`),
         {
-          views: [
-            {
-              rightToLeft: true,
-              state: 'frozen',
-              xSplit: 2,
-              ySplit: 5,
-            },
-          ],
+          views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
         }
       );
 
-      // A4 Landscape Print Setup
       worksheet.pageSetup = {
         orientation: 'landscape',
         paperSize: 9,
         fitToPage: true,
         fitToWidth: 1,
         fitToHeight: 0,
-        margins: {
-          left: 0.25,
-          right: 0.25,
-          top: 0.5,
-          bottom: 0.5,
-          header: 0.2,
-          footer: 0.2,
-        },
+        margins: { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
       };
 
-      worksheet.pageSetup.printArea =
-        `A1:${worksheet.getColumn(lastColumn).letter}${5 + attendances.length}`;
-
-      // ==========================================
-      // TITLE
-      // ==========================================
-
-      worksheet.mergeCells(1, 1, 1, lastColumn);
-
-      const titleCell = worksheet.getCell(1, 1);
-
-      titleCell.value =
-        `${schoolName} — تقرير الحضور والغياب الأسبوعي (الأسبوع ${actualWeekNumber})`;
-
-      titleCell.font = {
-        name: 'Arial',
-        size: 14,
-        bold: true,
-        color: { argb: COLORS.headerText },
-      };
-
-      titleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: COLORS.headerBg },
-      };
-
-      titleCell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      worksheet.getRow(1).height = 30;
-
-      // ==========================================
-      // METADATA
-      // ==========================================
-
-      worksheet.mergeCells(2, 1, 2, lastColumn);
-
-      const metaCell = worksheet.getCell(2, 1);
-
-      metaCell.value =
-        `العام الدراسي: ${meta.academicYear}` +
-        ` | الشعبة: ${meta.className ?? '—'}` +
-        ` | الفترة: ${startDate} - ${endDate}` +
-        ` | عدد الطلاب: ${attendances.length}`;
-
-      metaCell.font = {
-        name: 'Arial',
-        size: 10,
-        color: { argb: 'FF5F6B73' },
-      };
-
-      metaCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: COLORS.subheaderBg },
-      };
-
-      metaCell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      worksheet.getRow(2).height = 20;
+      addTitleAndMeta(
+        worksheet,
+        lastColumn,
+        `${getSchoolName(meta.schoolName)} — تقرير الحضور والغياب الأسبوعي (الأسبوع ${weekNumber})`,
+        `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className ?? '—'} | الفترة: ${startDate} - ${endDate} | عدد الطلاب: ${attendances.length}`
+      );
       worksheet.getRow(3).height = 10;
-
-      // ==========================================
-      // STUDENT IDENTITY HEADERS
-      // ==========================================
 
       worksheet.mergeCells('A4:A5');
       worksheet.getCell('A4').value = 'رقم الهوية';
-
       worksheet.mergeCells('B4:B5');
       worksheet.getCell('B4').value = 'اسم الطالب';
 
-      // ==========================================
-      // DAY HEADERS
-      // ==========================================
+      const firstHeader = worksheet.getRow(4);
+      const secondHeader = worksheet.getRow(5);
+      firstHeader.height = 22;
+      secondHeader.height = 20;
 
-      let currentStartCol = 3;
-      const dayHeaders = SCHOOL_DAYS.map((day) => {
-        const count = getPeriodsCountForDay(day.dayNumber);
-        const startCol = currentStartCol;
-        const endCol = currentStartCol + count - 1;
-        currentStartCol += count;
-        return {
-          name: day.nameAr,
-          startCol,
-          endCol,
-          periodCount: count,
-        };
-      });
+      for (const day of dayHeaders) {
+        worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+        const dayCell = worksheet.getCell(4, day.startCol);
+        dayCell.value = day.name;
+        dayCell.style = STYLES.headerGray11;
 
-      dayHeaders.forEach((dayHeader) => {
-
-        worksheet.mergeCells(
-          4,
-          dayHeader.startCol,
-          4,
-          dayHeader.endCol
-        );
-
-        const cell = worksheet.getCell(4, dayHeader.startCol);
-
-        cell.value = dayHeader.name;
-
-        cell.font = {
-          name: 'Arial',
-          size: 11,
-          bold: true,
-          color: { argb: COLORS.subheaderText },
-        };
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE2E8EB' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-      });
-
-      worksheet.getRow(4).height = 22;
-      worksheet.getRow(5).height = 20;
-
-      // ==========================================
-      // PERIOD NUMBERS
-      // ==========================================
-
-      dayHeaders.forEach((dayHeader) => {
-
-        for (
-          let periodIndex = 1;
-          periodIndex <= dayHeader.periodCount;
-          periodIndex++
-        ) {
-
-          const cell = worksheet.getCell(
-            5,
-            dayHeader.startCol + (periodIndex - 1)
-          );
-
-          cell.value = `ح ${periodIndex}`;
-
-          cell.font = {
-            name: 'Arial',
-            size: 9,
-            bold: true,
-            color: { argb: 'FF5F6B73' },
-          };
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFF1F3F5' },
-          };
-
-          cell.alignment = {
-            horizontal: 'center',
-            vertical: 'middle',
-          };
-
-          cell.border = BORDER_THIN;
+        for (let period = 1; period <= day.periodCount; period++) {
+          const cell = secondHeader.getCell(day.startCol + period - 1);
+          cell.value = `ح ${period}`;
+          cell.style = STYLES.periodHeader9;
         }
-      });
+      }
 
-      // Style Identity Headers
-      ['A4', 'B4'].forEach((address) => {
+      worksheet.getCell('A4').style = STYLES.headerGray11;
+      worksheet.getCell('B4').style = STYLES.headerGray11;
 
-        const cell = worksheet.getCell(address);
-
-        cell.font = {
-          name: 'Arial',
-          size: 11,
-          bold: true,
-          color: { argb: COLORS.subheaderText },
-        };
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE2E8EB' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-      });
-
-      // ==========================================
-      // STUDENT ATTENDANCE DATA
-      // Same attendance cells as weekly report
-      // ==========================================
-
-      attendances.forEach((item) => {
-
-        const rowValues: (string | number)[] = [
-          item.enrollment.student?.nationalId || '',
-          item.enrollment.studentName || '',
+      for (let studentIndex = 0; studentIndex < attendances.length; studentIndex++) {
+        const item = attendances[studentIndex];
+        const values: Array<string | number> = [
+          String(item.enrollment.student?.nationalId ?? ''),
+          item.enrollment.studentName ?? '',
+        ];
+        const styles: Array<Partial<ExcelJS.Style> | undefined> = [
+          STYLES.idCellDefault,
+          STYLES.nameCell10,
         ];
 
-        const statuses: AttendanceStatus[] = [];
+        for (const slot of flatSlots) {
+          const preset = getStatusStyle(getWeeklySlotStatus(item, slot));
+          values.push(preset.label);
+          styles.push(preset.cellStyle85);
+        }
 
-        SCHOOL_DAYS.forEach((day) => {
-
-          getPeriodsForDay(day.dayNumber).forEach((period) => {
-
-            const slot = item.slots[day.dayNumber]?.[period];
-
-            const status: AttendanceStatus =
-              slot?.status ?? 'Unmarked';
-
-            statuses.push(status);
-
-            rowValues.push(getStatusStyle(status).label);
-          });
-        });
-
-        const row = worksheet.addRow(rowValues);
-
+        const row = worksheet.addRow(values);
         row.height = 20;
-
-        // National ID
-        const idCell = row.getCell(1);
-
-        idCell.numFmt = '@';
-
-        idCell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        idCell.border = BORDER_THIN;
-
-        // Student Name
-        const nameCell = row.getCell(2);
-
-        nameCell.alignment = {
-          horizontal: 'right',
-          vertical: 'middle',
-        };
-
-        nameCell.font = {
-          name: 'Arial',
-          size: 10,
-          bold: true,
-        };
-
-        nameCell.border = BORDER_THIN;
-
-        // Attendance Status Styling
-        statuses.forEach((status, statusIndex) => {
-
-          const cell = row.getCell(statusIndex + 3);
-
-          const style = getStatusStyle(status);
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: style.fill },
-          };
-
-          cell.font = {
-            name: 'Arial',
-            size: 8.5,
-            bold: true,
-            color: { argb: style.fontColor },
-          };
-
-          cell.alignment = {
-            horizontal: 'center',
-            vertical: 'middle',
-          };
-
-          cell.border = BORDER_THIN;
-        });
-      });
-
-      // ==========================================
-      // COLUMN WIDTHS
-      // ==========================================
-
-      worksheet.getColumn(1).width = 16;
-      worksheet.getColumn(2).width = 28;
-
-      for (
-        let column = 3;
-        column <= lastColumn;
-        column++
-      ) {
-        worksheet.getColumn(column).width = 7.5;
+        setRowStyles(row, styles);
+        await yieldAfterRow(studentIndex);
       }
 
-      // ==========================================
-      // AUTO FILTER
-      // ==========================================
+      configureIdentityColumns(worksheet, lastColumn, 7.5);
 
-      if (attendances.length > 0) {
-
+      if (attendances.length) {
         worksheet.autoFilter = {
           from: { row: 5, column: 1 },
-          to: {
-            row: 5 + attendances.length,
-            column: lastColumn,
-          },
+          to: { row: 5 + attendances.length, column: lastColumn },
         };
       }
-    });
 
-    // ==========================================
-    // DOWNLOAD ONE MONTHLY WORKBOOK
-    // ==========================================
+      worksheet.pageSetup.printArea = `A1:${worksheet.getColumn(lastColumn).letter}${5 + attendances.length}`;
+    }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-
-    const safeClassName = String(
-      meta.className ?? 'AllClasses'
-    ).replace(/[\\/:*?"<>|]/g, '-');
-
-    const filename =
-      `Mowathib_Monthly_Attendance_${meta.academicYear}_${meta.month}_${safeClassName}.xlsx`;
-
-    saveExcelFile(buffer, filename);
+    const buffer = await writeWorkbookFast(workbook);
+    const safeClassName = String(meta.className ?? 'AllClasses').replace(/[\\/:*?"<>|]/g, '-');
+    saveExcelFile(buffer, `Mowathib_Monthly_Attendance_${meta.academicYear}_${meta.month}_${safeClassName}.xlsx`);
   },
 
-  // ==========================================
-  // 4. DAILY ABSENCE ONLY EXCEL EXPORT
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.4 DAILY ABSENCE
+  // ---------------------------------------------------------------------------
 
   async exportDailyAbsence(
     records: DailyAbsenceRecord[],
@@ -1230,194 +1154,69 @@ export const excelExportService = {
       dayName: string;
     }
   ): Promise<void> {
-
     const workbook = new ExcelJS.Workbook();
-
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet(
-      'سجل الغياب اليومي',
-      {
-        views: [
-          {
-            rightToLeft: true,
-            state: 'frozen',
-            xSplit: 2,
-            ySplit: 4,
-          },
-        ],
-      }
+    const worksheet = workbook.addWorksheet('سجل الغياب اليومي', {
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 3 }],
+    });
+
+    addTitleAndMeta(
+      worksheet,
+      6,
+      `${getSchoolName(meta.schoolName)} — سجل الغياب اليومي (${meta.date})`,
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | اليوم: ${meta.dayName} | إجمالي حالات الغياب: ${records.length}`,
+      STYLES.titleAbsent14
     );
 
-    worksheet.mergeCells('A1:F1');
+    const header = worksheet.addRow([
+      'رقم الهوية', 'اسم الطالب', 'الشعبة', 'التاريخ', 'اليوم', 'رقم الحصة',
+    ]);
+    header.height = 24;
+    applyHeaderStyle(header, 6);
 
-    const title = worksheet.getCell('A1');
-
-    title.value =
-      `${meta.schoolName || schoolSettingsService.getSchoolName()} — ` +
-      `سجل الغياب اليومي (${meta.date})`;
-
-    title.font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: COLORS.headerText },
-    };
-
-    title.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.absentText },
-    };
-
-    title.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(1).height = 30;
-
-    worksheet.mergeCells('A2:F2');
-
-    const metaCell = worksheet.getCell('A2');
-
-    metaCell.value =
-      `العام الدراسي: ${meta.academicYear} | ` +
-      `الشعبة: ${meta.className} | ` +
-      `اليوم: ${meta.dayName} | ` +
-      `إجمالي حالات الغياب: ${records.length}`;
-
-    metaCell.font = {
-      name: 'Arial',
-      size: 10,
-      color: { argb: 'FF5F6B73' },
-    };
-
-    metaCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.subheaderBg },
-    };
-
-    metaCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    worksheet.getRow(2).height = 20;
-
-    const headers = [
-      'رقم الهوية',
-      'اسم الطالب',
-      'الشعبة',
-      'التاريخ',
-      'اليوم',
-      'رقم الحصة',
-    ];
-
-    const hRow = worksheet.addRow(headers);
-
-    hRow.height = 24;
-
-    hRow.eachCell((c) => {
-
-      c.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.subheaderText },
-      };
-
-      c.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE2E8EB' },
-      };
-
-      c.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      c.border = BORDER_THIN;
-    });
-
-    records.forEach((row, idx) => {
-
-      const r = worksheet.addRow([
-        row.nationalId,
-        row.studentName,
-        row.className,
-        row.date,
-        row.dayName,
-        `الحصة ${row.periodNumber}`,
+    for (let index = 0; index < records.length; index++) {
+      const item = records[index];
+      const centerStyle = index % 2 ? STYLES.centerZebra : STYLES.centerDefault;
+      const row = worksheet.addRow([
+        String(item.nationalId ?? ''),
+        item.studentName,
+        item.className,
+        item.date,
+        item.dayName,
+        `الحصة ${item.periodNumber}`,
       ]);
+      row.height = 20;
+      setRowStyles(row, [
+        STYLES.idCellDefault,
+        STYLES.nameCellBoldOnly,
+        centerStyle,
+        centerStyle,
+        centerStyle,
+        centerStyle,
+      ]);
+      await yieldAfterRow(index);
+    }
 
-      r.height = 20;
-
-      r.getCell(1).numFmt = '@';
-
-      r.getCell(1).alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      r.getCell(1).border = BORDER_THIN;
-
-      r.getCell(2).alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-
-      r.getCell(2).font = { bold: true };
-      r.getCell(2).border = BORDER_THIN;
-
-      for (let c = 3; c <= 6; c++) {
-
-        const cell = r.getCell(c);
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-
-        if (idx % 2 === 1) {
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: COLORS.zebraBg },
-          };
-        }
-      }
+    [16, 28, 14, 14, 14, 14].forEach((width, index) => {
+      worksheet.getColumn(index + 1).width = width;
     });
 
-    worksheet.getColumn(1).width = 16;
-    worksheet.getColumn(2).width = 28;
-    worksheet.getColumn(3).width = 14;
-    worksheet.getColumn(4).width = 14;
-    worksheet.getColumn(5).width = 14;
-    worksheet.getColumn(6).width = 14;
+    if (records.length) {
+      worksheet.autoFilter = {
+        from: { row: 3, column: 1 },
+        to: { row: 3 + records.length, column: 6 },
+      };
+    }
 
-    worksheet.autoFilter = {
-      from: { row: 3, column: 1 },
-      to: { row: 3 + records.length, column: 6 },
-    };
-
-    const buffer = await workbook.xlsx.writeBuffer();
-
-    const filename =
-      `Mowathib_Daily_Absence_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`;
-
-    saveExcelFile(buffer, filename);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(buffer, `Mowathib_Daily_Absence_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`);
   },
 
-  // ==========================================
-  // 5. BATCH ATTENDANCE REPORT FOR ENTIRE STAGE
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.5 STAGE WEEKLY ATTENDANCE (SUMMARY + CLASS SHEETS)
+  // ---------------------------------------------------------------------------
 
   async exportStageBatchReport(stageData: {
     stageNumber: 1 | 2 | 3;
@@ -1426,7 +1225,6 @@ export const excelExportService = {
     weekNumber: number;
     weekRange: string;
     schoolName?: string;
-
     classesData: Array<{
       classItem: ClassItem;
       representativeName?: string;
@@ -1434,1044 +1232,316 @@ export const excelExportService = {
       records: AttendanceRecord[];
     }>;
   }): Promise<void> {
-
     const workbook = new ExcelJS.Workbook();
-
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const activeSchoolName =
-      stageData.schoolName || schoolSettingsService.getSchoolName();
+    const schoolName = getSchoolName(stageData.schoolName);
+    const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
+    const slotCount = flatSlots.length;
+    const classLastColumn = 2 + slotCount + 3; // AL for the 33-period schedule.
 
-    // ==========================================
-    // SHEET 1: STAGE SUMMARY
-    // ==========================================
-
-    const summarySheet = workbook.addWorksheet(
-      'ملخص المرحلة',
-      {
-        views: [
-          {
-            rightToLeft: true,
-            state: 'frozen',
-            xSplit: 0,
-            ySplit: 6,
-          },
-        ],
-      }
-    );
+    const summarySheet = workbook.addWorksheet('ملخص المرحلة', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 6 }],
+    });
 
     summarySheet.pageSetup = {
-      orientation: 'landscape',
-      paperSize: 9,
-      fitToPage: true,
-      fitToWidth: 1,
-      fitToHeight: 0,
+      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
     };
 
-    // Title
-    summarySheet.mergeCells('A1:H1');
-
-    const titleCell = summarySheet.getCell('A1');
-
-    titleCell.value =
-      `${activeSchoolName} — التقرير الشامل لحضور وغياب ${stageData.stageName}`;
-
-    titleCell.font = {
-      name: 'Arial',
-      size: 15,
-      bold: true,
-      color: { argb: COLORS.headerText },
-    };
-
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.headerBg },
-    };
-
-    titleCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getRow(1).height = 32;
-
-    // Metadata
-    summarySheet.mergeCells('A2:H2');
-
-    const metaCell = summarySheet.getCell('A2');
-
-    metaCell.value =
-      `العام الدراسي: ${stageData.academicYear} | ` +
-      `الأسبوع الدراسي: الأسبوع ${stageData.weekNumber} (${stageData.weekRange}) | ` +
-      `عدد الشعب المشمولة: ${stageData.classesData.length} شعبة | ` +
-      `تاريخ الإصدار: ${new Date().toLocaleDateString('ar-SA')}`;
-
-    metaCell.font = {
-      name: 'Arial',
-      size: 10,
-      color: { argb: 'FF5F6B73' },
-    };
-
-    metaCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: COLORS.subheaderBg },
-    };
-
-    metaCell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getRow(2).height = 22;
-
+    addTitleAndMeta(
+      summarySheet,
+      8,
+      `${schoolName} — التقرير الشامل لحضور وغياب ${stageData.stageName}`,
+      `العام الدراسي: ${stageData.academicYear} | الأسبوع الدراسي: ${stageData.weekNumber} (${stageData.weekRange}) | عدد الشعب: ${stageData.classesData.length} | تاريخ الإصدار: ${getFastArabicDateString()}`,
+      STYLES.title15
+    );
     summarySheet.getRow(3).height = 10;
 
-    // Stage Statistics
-    let stageTotalStudents = 0;
-    let stageTotalPresent = 0;
-    let stageTotalAbsent = 0;
-    let stageTotalDiscontinued = 0;
+    let stageStudents = 0;
+    let stagePresent = 0;
+    let stageAbsent = 0;
 
-    const classSummaries = stageData.classesData.map((c) => {
-
-      const studentCount = c.enrollments.length;
-
-      stageTotalStudents += studentCount;
+    const preparedClasses = stageData.classesData.map((classData) => {
+      const recordIndex = indexClassRecordsFlat(classData.records);
+      const studentCount = classData.enrollments.length;
+      stageStudents += studentCount;
 
       let classPresent = 0;
       let classAbsent = 0;
       let classDiscontinued = 0;
 
-      c.enrollments.forEach((en) => {
+      const studentRows: Array<{
+        values: Array<string | number>;
+        styles: Array<Partial<ExcelJS.Style> | undefined>;
+      }> = new Array(studentCount);
 
-        SCHOOL_DAYS.forEach((day) => {
+      for (let studentIndex = 0; studentIndex < studentCount; studentIndex++) {
+        const enrollment = classData.enrollments[studentIndex];
+        const baseKey = enrollment.enrollmentId * 64;
+        const values: Array<string | number> = [
+          String(enrollment.student?.nationalId ?? ''),
+          enrollment.studentName ?? '',
+        ];
+        const styles: Array<Partial<ExcelJS.Style> | undefined> = [
+          STYLES.idCellStage9,
+          STYLES.nameCellStage10,
+        ];
 
-          getPeriodsForDay(day.dayNumber).forEach((p) => {
+        let studentPresent = 0;
+        let studentAbsent = 0;
 
-            const match = c.records.find(
-              (r) =>
-                r.enrollmentId === en.enrollmentId &&
-                r.dayNumber === day.dayNumber &&
-                r.periodNumber === p
-            );
+        for (const slot of flatSlots) {
+          const status = recordIndex.get(baseKey + slot.slotOffset);
+          if (status === 'Present') {
+            values.push('ح');
+            styles.push(STATUS_PRESETS.Present.cellStyle9);
+            studentPresent++;
+            classPresent++;
+          } else if (status === 'Absent') {
+            values.push('غ');
+            styles.push(STATUS_PRESETS.Absent.cellStyle9);
+            studentAbsent++;
+            classAbsent++;
+          } else if (status === 'Discontinued') {
+            values.push('م');
+            styles.push(STATUS_PRESETS.Discontinued.cellStyle9);
+            classDiscontinued++;
+          } else {
+            values.push('-');
+            styles.push(STYLES.stageUnmarked9);
+          }
+        }
 
-            if (match) {
+        const recorded = studentPresent + studentAbsent;
+        const studentRate = recorded ? (studentPresent / recorded) * 100 : 0;
+        values.push(studentPresent, studentAbsent, `${studentRate.toFixed(0)}%`);
+        styles.push(STYLES.stageColPresent, STYLES.stageColAbsent, STYLES.stageColRate);
 
-              if (match.status === 'Present') {
-                classPresent++;
-              } else if (match.status === 'Absent') {
-                classAbsent++;
-              } else if (match.status === 'Discontinued') {
-                classDiscontinued++;
-              }
-            }
-          });
-        });
-      });
+        studentRows[studentIndex] = { values, styles };
+      }
 
-      stageTotalPresent += classPresent;
-      stageTotalAbsent += classAbsent;
-      stageTotalDiscontinued += classDiscontinued;
+      stagePresent += classPresent;
+      stageAbsent += classAbsent;
 
-      const totalRecorded = classPresent + classAbsent;
-
-      const attendanceRate =
-        totalRecorded > 0
-          ? (classPresent / totalRecorded) * 100
-          : 0;
-
-      const absenceRate =
-        totalRecorded > 0
-          ? (classAbsent / totalRecorded) * 100
-          : 0;
+      const recorded = classPresent + classAbsent;
+      const attendanceRate = recorded ? (classPresent / recorded) * 100 : 0;
+      const absenceRate = recorded ? (classAbsent / recorded) * 100 : 0;
 
       return {
-        classItem: c.classItem,
-        representativeName: c.representativeName,
+        ...classData,
         studentCount,
         present: classPresent,
         absent: classAbsent,
         discontinued: classDiscontinued,
         attendanceRate,
         absenceRate,
+        studentRows,
       };
     });
 
-    const totalStageRecorded =
-      stageTotalPresent + stageTotalAbsent;
+    const stageRecorded = stagePresent + stageAbsent;
+    const stageAttendanceRate = stageRecorded ? (stagePresent / stageRecorded) * 100 : 0;
+    const stageAbsenceRate = stageRecorded ? (stageAbsent / stageRecorded) * 100 : 0;
 
-    const stageAttendanceRate =
-      totalStageRecorded > 0
-        ? (stageTotalPresent / totalStageRecorded) * 100
-        : 0;
+    // KPI row blocks.
+    const kpiGroups = [
+      { first: 1, last: 2, label: 'إجمالي طلاب المرحلة', value: `${stageStudents} طالب`, fill: FILL_PERIOD_ALT, color: COLORS.text },
+      { first: 3, last: 4, label: 'إجمالي الحضور المسجل', value: `${stagePresent} حصة`, fill: FILL_PRESENT, color: COLORS.presentText },
+      { first: 5, last: 6, label: 'إجمالي الغياب المسجل', value: `${stageAbsent} حصة`, fill: FILL_ABSENT, color: COLORS.absentText },
+      { first: 7, last: 8, label: 'النسبة العامة لحضور المرحلة', value: `${stageAttendanceRate.toFixed(1)}%`, fill: solidFill('FFE8F1F1'), color: COLORS.teal },
+    ];
 
-    const stageAbsenceRate =
-      totalStageRecorded > 0
-        ? (stageTotalAbsent / totalStageRecorded) * 100
-        : 0;
-
-    // ==========================================
-    // KPI BLOCKS
-    // ==========================================
-
-    // Total Students
-    summarySheet.mergeCells('A4:B4');
-    summarySheet.getCell('A4').value = 'إجمالي طلاب المرحلة';
-
-    summarySheet.getCell('A4').font = {
-      name: 'Arial',
-      size: 10,
-      bold: true,
-      color: { argb: 'FF5F6B73' },
-    };
-
-    summarySheet.getCell('A4').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('A4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFF5F7F8' },
-    };
-
-    summarySheet.mergeCells('A5:B5');
-
-    summarySheet.getCell('A5').value =
-      `${stageTotalStudents} طالب`;
-
-    summarySheet.getCell('A5').font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: 'FF17252B' },
-    };
-
-    summarySheet.getCell('A5').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('A5').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFF5F7F8' },
-    };
-
-    // Total Present
-    summarySheet.mergeCells('C4:D4');
-
-    summarySheet.getCell('C4').value =
-      'إجمالي الحضور المسجل';
-
-    summarySheet.getCell('C4').font = {
-      name: 'Arial',
-      size: 10,
-      bold: true,
-      color: { argb: 'FF176B3A' },
-    };
-
-    summarySheet.getCell('C4').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('C4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE8F5EC' },
-    };
-
-    summarySheet.mergeCells('C5:D5');
-
-    summarySheet.getCell('C5').value =
-      `${stageTotalPresent} حصة`;
-
-    summarySheet.getCell('C5').font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: 'FF176B3A' },
-    };
-
-    summarySheet.getCell('C5').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('C5').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE8F5EC' },
-    };
-
-    // Total Absence
-    summarySheet.mergeCells('E4:F4');
-
-    summarySheet.getCell('E4').value =
-      'إجمالي الغياب المسجل';
-
-    summarySheet.getCell('E4').font = {
-      name: 'Arial',
-      size: 10,
-      bold: true,
-      color: { argb: 'FFA61B1B' },
-    };
-
-    summarySheet.getCell('E4').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('E4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFFDECEC' },
-    };
-
-    summarySheet.mergeCells('E5:F5');
-
-    summarySheet.getCell('E5').value =
-      `${stageTotalAbsent} حصة`;
-
-    summarySheet.getCell('E5').font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: 'FFA61B1B' },
-    };
-
-    summarySheet.getCell('E5').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('E5').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFFDECEC' },
-    };
-
-    // Stage Attendance Rate
-    summarySheet.mergeCells('G4:H4');
-
-    summarySheet.getCell('G4').value =
-      'النسبة العامة لحضور المرحلة';
-
-    summarySheet.getCell('G4').font = {
-      name: 'Arial',
-      size: 10,
-      bold: true,
-      color: { argb: 'FF245B63' },
-    };
-
-    summarySheet.getCell('G4').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('G4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE8F1F1' },
-    };
-
-    summarySheet.mergeCells('G5:H5');
-
-    summarySheet.getCell('G5').value =
-      `${stageAttendanceRate.toFixed(1)}%`;
-
-    summarySheet.getCell('G5').font = {
-      name: 'Arial',
-      size: 14,
-      bold: true,
-      color: { argb: 'FF245B63' },
-    };
-
-    summarySheet.getCell('G5').alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-
-    summarySheet.getCell('G5').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE8F1F1' },
-    };
-
-    // KPI Borders
-    for (let r = 4; r <= 5; r++) {
-
-      for (let c = 1; c <= 8; c++) {
-        summarySheet.getCell(r, c).border = BORDER_THIN;
-      }
+    for (const group of kpiGroups) {
+      summarySheet.mergeCells(4, group.first, 4, group.last);
+      summarySheet.mergeCells(5, group.first, 5, group.last);
+      const labelCell = summarySheet.getCell(4, group.first);
+      const valueCell = summarySheet.getCell(5, group.first);
+      labelCell.value = group.label;
+      valueCell.value = group.value;
+      labelCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: group.color } };
+      valueCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: group.color } };
+      labelCell.alignment = ALIGN_CENTER;
+      valueCell.alignment = ALIGN_CENTER;
+      labelCell.fill = group.fill;
+      valueCell.fill = group.fill;
     }
 
+    for (let row = 4; row <= 5; row++) {
+      for (let col = 1; col <= 8; col++) summarySheet.getCell(row, col).border = BORDER_THIN;
+    }
     summarySheet.getRow(4).height = 18;
     summarySheet.getRow(5).height = 24;
 
-    // ==========================================
-    // CLASS COMPARISON TABLE
-    // ==========================================
-
-    const tableHeaders = [
-      'م',
-      'الشعبة / الفصل',
-      'عدد الطلاب المقيدين',
-      'إجمالي الحضور (حصة)',
-      'إجمالي الغياب (حصة)',
-      'نسبة الحضور',
-      'نسبة الغياب',
-      'عريف الصف المعتمد',
+    const summaryHeaders = [
+      'م', 'الشعبة / الفصل', 'عدد الطلاب المقيدين', 'إجمالي الحضور (حصة)',
+      'إجمالي الغياب (حصة)', 'نسبة الحضور', 'نسبة الغياب', 'عريف الصف المعتمد',
     ];
+    const summaryHeader = summarySheet.addRow(summaryHeaders);
+    summaryHeader.height = 26;
+    applyHeaderStyle(summaryHeader, 8, STYLES.headerTeal11);
 
-    const headerRow = summarySheet.addRow(tableHeaders);
-
-    headerRow.height = 26;
-
-    headerRow.eachCell((c) => {
-
-      c.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.headerText },
-      };
-
-      c.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: COLORS.headerBg },
-      };
-
-      c.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      c.border = BORDER_THIN;
-    });
-
-    // Class Rows
-    classSummaries.forEach((cs, idx) => {
-
+    for (let index = 0; index < preparedClasses.length; index++) {
+      const item = preparedClasses[index];
+      const zebra = index % 2 === 1;
+      const base = zebra ? STYLES.summaryCellZebra : STYLES.summaryCellNormal;
       const row = summarySheet.addRow([
-        idx + 1,
-        cs.classItem.className,
-        cs.studentCount,
-        cs.present,
-        cs.absent,
-        `${cs.attendanceRate.toFixed(1)}%`,
-        `${cs.absenceRate.toFixed(1)}%`,
-        cs.representativeName || 'غير مسند',
+        index + 1,
+        item.classItem.className,
+        item.studentCount,
+        item.present,
+        item.absent,
+        `${item.attendanceRate.toFixed(1)}%`,
+        `${item.absenceRate.toFixed(1)}%`,
+        item.representativeName || 'غير مسند',
       ]);
-
       row.height = 22;
+      setRowStyles(row, [
+        base,
+        zebra ? STYLES.stageColRateZebra : STYLES.stageColRate,
+        base,
+        base,
+        base,
+        zebra ? STYLES.stageColPresentZebra : STYLES.stageColPresent,
+        zebra ? STYLES.stageColAbsentZebra : STYLES.stageColAbsent,
+        base,
+      ]);
+      await yieldAfterRow(index);
+    }
 
-      row.eachCell((cell, colNum) => {
-
-        cell.font = {
-          name: 'Arial',
-          size: 10,
-          color: { argb: 'FF17252B' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-
-        if (colNum === 2) {
-
-          cell.font = {
-            name: 'Arial',
-            size: 10,
-            bold: true,
-            color: { argb: 'FF245B63' },
-          };
-
-        } else if (colNum === 6) {
-
-          cell.font = {
-            name: 'Arial',
-            size: 10,
-            bold: true,
-            color: { argb: 'FF176B3A' },
-          };
-
-        } else if (colNum === 7) {
-
-          cell.font = {
-            name: 'Arial',
-            size: 10,
-            bold: true,
-            color: { argb: 'FFA61B1B' },
-          };
-        }
-
-        if (idx % 2 === 1) {
-
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: COLORS.zebraBg },
-          };
-        }
-      });
-    });
-
-    // Grand Total
     const totalRow = summarySheet.addRow([
-      'الإجمالي العام للمرحلة',
-      `${classSummaries.length} شعبة`,
-      stageTotalStudents,
-      stageTotalPresent,
-      stageTotalAbsent,
-      `${stageAttendanceRate.toFixed(1)}%`,
-      `${stageAbsenceRate.toFixed(1)}%`,
-      '—',
+      'الإجمالي العام للمرحلة', `${preparedClasses.length} شعبة`, stageStudents,
+      stagePresent, stageAbsent, `${stageAttendanceRate.toFixed(1)}%`,
+      `${stageAbsenceRate.toFixed(1)}%`, '—',
     ]);
-
     totalRow.height = 26;
+    for (let col = 1; col <= 8; col++) totalRow.getCell(col).style = STYLES.summaryFooter11;
 
-    totalRow.eachCell((cell) => {
-
-      cell.font = {
-        name: 'Arial',
-        size: 11,
-        bold: true,
-        color: { argb: COLORS.subheaderText },
-      };
-
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE4EBED' },
-      };
-
-      cell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      cell.border = BORDER_THIN;
+    [6, 20, 20, 22, 22, 16, 16, 24].forEach((width, index) => {
+      summarySheet.getColumn(index + 1).width = width;
     });
 
-    // Summary Column Widths
-    summarySheet.getColumn(1).width = 6;
-    summarySheet.getColumn(2).width = 20;
-    summarySheet.getColumn(3).width = 20;
-    summarySheet.getColumn(4).width = 22;
-    summarySheet.getColumn(5).width = 22;
-    summarySheet.getColumn(6).width = 16;
-    summarySheet.getColumn(7).width = 16;
-    summarySheet.getColumn(8).width = 24;
+    if (preparedClasses.length) {
+      summarySheet.autoFilter = {
+        from: { row: 6, column: 1 },
+        to: { row: 6 + preparedClasses.length, column: 8 },
+      };
+    }
 
-    summarySheet.autoFilter = {
-      from: { row: 6, column: 1 },
-      to: { row: 6 + classSummaries.length, column: 8 },
-    };
-
-    // ==========================================
-    // INDIVIDUAL CLASS WORKSHEETS
-    // ==========================================
-
-    stageData.classesData.forEach((classData) => {
-
-      const safeSheetName =
-        classData.classItem.className.toString()
-          .replace(/[\\/?*\[\]:]/g, '-')
-          .substring(0, 30);
-
-      const classSheet = workbook.addWorksheet(safeSheetName, {
-        views: [
-          {
-            rightToLeft: true,
-            state: 'frozen',
-            xSplit: 2,
-            ySplit: 5,
-          },
-        ],
+    // Class worksheets. Names are made unique to prevent duplicate-name errors.
+    for (let classIndex = 0; classIndex < preparedClasses.length; classIndex++) {
+      await yieldToUI();
+      const item = preparedClasses[classIndex];
+      const requestedName = String(item.classItem.className ?? `شعبة ${classIndex + 1}`);
+      const sheetName = getUniqueWorksheetName(workbook, requestedName, `Class ${classIndex + 1}`);
+      const worksheet = workbook.addWorksheet(sheetName, {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
       });
 
-      classSheet.pageSetup = {
-        orientation: 'landscape',
-        paperSize: 9,
-        fitToPage: true,
-        fitToWidth: 1,
-        fitToHeight: 0,
+      worksheet.pageSetup = {
+        orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
       };
 
-      // Header Title
-      classSheet.mergeCells('A1:AN1');
+      addTitleAndMeta(
+        worksheet,
+        classLastColumn,
+        `${schoolName} — سجل الحضور والغياب الأسبوعي: ${item.classItem.className} (${stageData.stageName})`,
+        `العام الدراسي: ${stageData.academicYear} | الأسبوع ${stageData.weekNumber} (${stageData.weekRange}) | عدد الطلاب: ${item.studentCount} | العريف: ${item.representativeName || 'غير مسند'}`,
+        STYLES.title13
+      );
 
-      const cTitle = classSheet.getCell('A1');
+      worksheet.mergeCells('A4:A5');
+      worksheet.getCell('A4').value = 'رقم الهوية';
+      worksheet.mergeCells('B4:B5');
+      worksheet.getCell('B4').value = 'اسم الطالب';
 
-      cTitle.value =
-        `${activeSchoolName} — سجل الحضور والغياب الأسبوعي: ` +
-        `${classData.classItem.className} (${stageData.stageName})`;
+      const top = worksheet.getRow(4);
+      const bottom = worksheet.getRow(5);
+      top.height = 22;
+      bottom.height = 20;
 
-      cTitle.font = {
-        name: 'Arial',
-        size: 13,
-        bold: true,
-        color: { argb: COLORS.headerText },
-      };
-
-      cTitle.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: COLORS.headerBg },
-      };
-
-      cTitle.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      classSheet.getRow(1).height = 30;
-
-      // Metadata
-      classSheet.mergeCells('A2:AN2');
-
-      const cMeta = classSheet.getCell('A2');
-
-      cMeta.value =
-        `العام الدراسي: ${stageData.academicYear} | ` +
-        `الأسبوع ${stageData.weekNumber} (${stageData.weekRange}) | ` +
-        `عدد الطلاب: ${classData.enrollments.length} طالب | ` +
-        `العريف: ${classData.representativeName || 'غير مسند'}`;
-
-      cMeta.font = {
-        name: 'Arial',
-        size: 10,
-        color: { argb: 'FF5F6B73' },
-      };
-
-      cMeta.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: COLORS.subheaderBg },
-      };
-
-      cMeta.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-      };
-
-      classSheet.getRow(2).height = 20;
-
-      // Day Headers
-      classSheet.mergeCells('A4:A5');
-      classSheet.getCell('A4').value = 'رقم الهوية';
-
-      classSheet.mergeCells('B4:B5');
-      classSheet.getCell('B4').value = 'اسم الطالب';
-
-      const dayColumnRanges = [
-        { name: 'الأحد', startCol: 3, endCol: 9, count: 7 },
-        { name: 'الاثنين', startCol: 10, endCol: 16, count: 7 },
-        { name: 'الثلاثاء', startCol: 17, endCol: 23, count: 7 },
-        { name: 'الأربعاء', startCol: 24, endCol: 29, count: 6 },
-        { name: 'الخميس', startCol: 30, endCol: 35, count: 6 },
-      ];
-
-      dayColumnRanges.forEach((dh) => {
-
-        classSheet.mergeCells(
-          4,
-          dh.startCol,
-          4,
-          dh.endCol
-        );
-
-        const cell = classSheet.getCell(4, dh.startCol);
-
-        cell.value = dh.name;
-
-        cell.font = {
-          name: 'Arial',
-          size: 11,
-          bold: true,
-          color: { argb: COLORS.subheaderText },
-        };
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE2E8EB' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-      });
-
-      // Totals Headers
-      classSheet.mergeCells('AJ4:AJ5');
-      classSheet.getCell('AJ4').value = 'حاضر';
-
-      classSheet.mergeCells('AK4:AK5');
-      classSheet.getCell('AK4').value = 'غائب';
-
-      classSheet.mergeCells('AL4:AL5');
-      classSheet.getCell('AL4').value = 'النسبة %';
-
-      ['A4', 'B4', 'AJ4', 'AK4', 'AL4'].forEach((addr) => {
-
-        const c = classSheet.getCell(addr);
-
-        c.font = {
-          name: 'Arial',
-          size: 10,
-          bold: true,
-          color: { argb: COLORS.subheaderText },
-        };
-
-        c.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE2E8EB' },
-        };
-
-        c.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        c.border = BORDER_THIN;
-      });
-
-      classSheet.getRow(4).height = 22;
-
-      // Period Numbers
-      classSheet.getRow(5).height = 20;
-
-      dayColumnRanges.forEach((dh) => {
-
-        for (let p = 1; p <= dh.count; p++) {
-
-          const colIndex = dh.startCol + p - 1;
-
-          const pCell = classSheet.getCell(5, colIndex);
-
-          pCell.value = p;
-
-          pCell.font = {
-            name: 'Arial',
-            size: 9,
-            bold: true,
-            color: { argb: 'FF5F6B73' },
-          };
-
-          pCell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFF5F7F8' },
-          };
-
-          pCell.alignment = {
-            horizontal: 'center',
-            vertical: 'middle',
-          };
-
-          pCell.border = BORDER_THIN;
+      for (const day of dayHeaders) {
+        worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+        const dayCell = worksheet.getCell(4, day.startCol);
+        dayCell.value = day.name;
+        dayCell.style = STYLES.headerGray11;
+        for (let period = 1; period <= day.periodCount; period++) {
+          const cell = bottom.getCell(day.startCol + period - 1);
+          cell.value = period;
+          cell.style = STYLES.periodHeaderAlt9;
         }
-      });
+      }
 
-      // Student Data
-      let classTotalPresentPeriods = 0;
-      let classTotalAbsentPeriods = 0;
+      for (const address of ['A4', 'B4']) {
+        worksheet.getCell(address).style = STYLES.headerGray10;
+      }
 
-      classData.enrollments.forEach((en, eIdx) => {
+      worksheet.mergeCells('AJ4:AJ5');
+      worksheet.getCell('AJ4').value = 'حاضر';
+      worksheet.mergeCells('AK4:AK5');
+      worksheet.getCell('AK4').value = 'غائب';
+      worksheet.mergeCells('AL4:AL5');
+      worksheet.getCell('AL4').value = 'النسبة %';
 
-        const rowValues: (string | number)[] = [
-          en.student?.nationalId || '',
-          en.studentName || '',
-        ];
+      for (const address of ['AJ4', 'AK4', 'AL4']) {
+        worksheet.getCell(address).style = STYLES.headerGray10;
+      }
 
-        let studentPresent = 0;
-        let studentAbsent = 0;
+      for (let studentIndex = 0; studentIndex < item.studentRows.length; studentIndex++) {
+        const student = item.studentRows[studentIndex];
+        const zebra = studentIndex % 2 === 1;
+        student.styles[0] = zebra ? STYLES.idCellStage9Zebra : STYLES.idCellStage9;
+        student.styles[1] = zebra ? STYLES.nameCellStage10Zebra : STYLES.nameCellStage10;
+        student.styles[2 + slotCount] = zebra ? STYLES.stageColPresentZebra : STYLES.stageColPresent;
+        student.styles[3 + slotCount] = zebra ? STYLES.stageColAbsentZebra : STYLES.stageColAbsent;
+        student.styles[4 + slotCount] = zebra ? STYLES.stageColRateZebra : STYLES.stageColRate;
 
-        SCHOOL_DAYS.forEach((day) => {
+        const row = worksheet.addRow(student.values);
+        row.height = 20;
+        setRowStyles(row, student.styles);
+        await yieldAfterRow(studentIndex);
+      }
 
-          getPeriodsForDay(day.dayNumber).forEach((p) => {
-
-            const match = classData.records.find(
-              (r) =>
-                r.enrollmentId === en.enrollmentId &&
-                r.dayNumber === day.dayNumber &&
-                r.periodNumber === p
-            );
-
-            if (match) {
-
-              if (match.status === 'Present') {
-
-                rowValues.push('ح');
-                studentPresent++;
-
-              } else if (match.status === 'Absent') {
-
-                rowValues.push('غ');
-                studentAbsent++;
-
-              } else if (match.status === 'Discontinued') {
-
-                rowValues.push('م');
-
-              } else {
-
-                rowValues.push('-');
-              }
-
-            } else {
-
-              rowValues.push('-');
-            }
-          });
-        });
-
-        classTotalPresentPeriods += studentPresent;
-        classTotalAbsentPeriods += studentAbsent;
-
-        const totalStudentRecorded =
-          studentPresent + studentAbsent;
-
-        const studentRate =
-          totalStudentRecorded > 0
-            ? (studentPresent / totalStudentRecorded) * 100
-            : 0;
-
-        rowValues.push(studentPresent);
-        rowValues.push(studentAbsent);
-        rowValues.push(`${studentRate.toFixed(0)}%`);
-
-        const sRow = classSheet.addRow(rowValues);
-
-        sRow.height = 20;
-
-        // Student Cell Styling
-        sRow.eachCell((cell, colNum) => {
-
-          cell.border = BORDER_THIN;
-
-          cell.alignment = {
-            vertical: 'middle',
-            horizontal: colNum === 2 ? 'right' : 'center',
-          };
-
-          if (colNum === 1) {
-
-            cell.font = {
-              name: 'Arial',
-              size: 9,
-              color: { argb: 'FF5F6B73' },
-            };
-
-          } else if (colNum === 2) {
-
-            cell.font = {
-              name: 'Arial',
-              size: 10,
-              bold: true,
-              color: { argb: 'FF17252B' },
-            };
-
-          } else if (colNum >= 3 && colNum <= 35) {
-
-            const val = cell.value?.toString();
-
-            if (val === 'ح') {
-
-              cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: COLORS.presentBg },
-              };
-
-              cell.font = {
-                name: 'Arial',
-                size: 9,
-                bold: true,
-                color: { argb: COLORS.presentText },
-              };
-
-            } else if (val === 'غ') {
-
-              cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: COLORS.absentBg },
-              };
-
-              cell.font = {
-                name: 'Arial',
-                size: 9,
-                bold: true,
-                color: { argb: COLORS.absentText },
-              };
-
-            } else if (val === 'م') {
-
-              cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: COLORS.discontinuedBg },
-              };
-
-              cell.font = {
-                name: 'Arial',
-                size: 9,
-                bold: true,
-                color: { argb: COLORS.discontinuedText },
-              };
-
-            } else {
-
-              cell.font = {
-                name: 'Arial',
-                size: 9,
-                color: { argb: 'FF89949A' },
-              };
-            }
-
-          } else if (colNum === 36) {
-
-            cell.font = {
-              name: 'Arial',
-              size: 10,
-              bold: true,
-              color: { argb: 'FF176B3A' },
-            };
-
-          } else if (colNum === 37) {
-
-            cell.font = {
-              name: 'Arial',
-              size: 10,
-              bold: true,
-              color: { argb: 'FFA61B1B' },
-            };
-
-          } else if (colNum === 38) {
-
-            cell.font = {
-              name: 'Arial',
-              size: 10,
-              bold: true,
-              color: { argb: 'FF245B63' },
-            };
-          }
-
-          if (
-            eIdx % 2 === 1 &&
-            (colNum <= 2 || colNum >= 36)
-          ) {
-
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: COLORS.zebraBg },
-            };
-          }
-        });
-      });
-
-      // Class Total Row
-      const classRecordedTotal =
-        classTotalPresentPeriods + classTotalAbsentPeriods;
-
-      const classFinalRate =
-        classRecordedTotal > 0
-          ? (classTotalPresentPeriods / classRecordedTotal) * 100
-          : 0;
-
-      const classSummaryValues: (string | number)[] = [
-        'المجموع الإجمالي',
-        `${classData.enrollments.length} طالب`,
+      const totalValues: Array<string | number> = [
+        'المجموع الإجمالي', `${item.studentCount} طالب`,
+        ...Array.from({ length: slotCount }, () => '—'),
+        item.present,
+        item.absent,
+        `${item.attendanceRate.toFixed(1)}%`,
       ];
 
-      for (let i = 0; i < TOTAL_WEEKLY_PERIODS; i++) {
-        classSummaryValues.push('—');
+      const totalRowClass = worksheet.addRow(totalValues);
+      totalRowClass.height = 24;
+      for (let column = 1; column <= classLastColumn; column++) {
+        totalRowClass.getCell(column).style = STYLES.summaryFooter10;
       }
 
-      classSummaryValues.push(classTotalPresentPeriods);
-      classSummaryValues.push(classTotalAbsentPeriods);
-      classSummaryValues.push(`${classFinalRate.toFixed(1)}%`);
-
-      const classBottomRow = classSheet.addRow(classSummaryValues);
-
-      classBottomRow.height = 24;
-
-      classBottomRow.eachCell((cell) => {
-
-        cell.font = {
-          name: 'Arial',
-          size: 10,
-          bold: true,
-          color: { argb: COLORS.subheaderText },
-        };
-
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE8EFF0' },
-        };
-
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-        };
-
-        cell.border = BORDER_THIN;
-      });
-
-      // Column Widths
-      classSheet.getColumn(1).width = 15;
-      classSheet.getColumn(2).width = 28;
-
-      for (let c = 3; c <= 35; c++) {
-        classSheet.getColumn(c).width = 4.2;
+      worksheet.getColumn(1).width = 15;
+      worksheet.getColumn(2).width = 28;
+      for (let column = 3; column <= 2 + slotCount; column++) {
+        worksheet.getColumn(column).width = 4.2;
       }
+      worksheet.getColumn(3 + slotCount).width = 12;
+      worksheet.getColumn(4 + slotCount).width = 12;
+      worksheet.getColumn(5 + slotCount).width = 12;
 
-      classSheet.getColumn(36).width = 12;
-      classSheet.getColumn(37).width = 12;
-      classSheet.getColumn(38).width = 12;
+      if (item.studentCount) {
+        worksheet.autoFilter = {
+          from: { row: 5, column: 1 },
+          to: { row: 5 + item.studentCount, column: classLastColumn },
+        };
+      }
+    }
 
-      classSheet.autoFilter = {
-        from: { row: 5, column: 1 },
-        to: {
-          row: 5 + classData.enrollments.length,
-          column: 38,
-        },
-      };
-    });
-
-    // Download Stage Report
-    const buffer = await workbook.xlsx.writeBuffer();
-
-    const stageSanitized =
-      stageData.stageName.replace(/\s+/g, '_');
-
-    const filename =
-      `Mowathib_${stageSanitized}_Week_${stageData.weekNumber}_${stageData.academicYear}.xlsx`;
-
-    saveExcelFile(buffer, filename);
+    const buffer = await writeWorkbookFast(workbook);
+    const stageSlug = stageData.stageName.replace(/\s+/g, '_');
+    saveExcelFile(buffer, `Mowathib_${stageSlug}_Week_${stageData.weekNumber}_${stageData.academicYear}.xlsx`);
   },
 
-  // ==========================================
-  // 5. STAGE DAILY ABSENCE REPORT (CONSOLIDATED WORKBOOK)
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.6 STAGE DAILY ABSENCE
+  // ---------------------------------------------------------------------------
+
   async exportStageDailyAbsenceReport(params: {
     stageNumber: number;
     stageName: string;
@@ -2489,245 +1559,184 @@ export const excelExportService = {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
-    const schoolName = params.schoolName || schoolSettingsService.getSchoolName();
+    const schoolName = getSchoolName(params.schoolName);
 
-    // 1. Stage Summary Sheet
-    const summarySheet = workbook.addWorksheet('ملخص المرحلة', {
+    const processed = params.classesData.map((classData) => {
+      const absentByEnrollment = new Map<number, number[]>();
+      for (const record of classData.records) {
+        if (record.status !== 'Absent') continue;
+        const periods = absentByEnrollment.get(record.enrollmentId) ?? [];
+        periods.push(record.periodNumber);
+        absentByEnrollment.set(record.enrollmentId, periods);
+      }
+
+      const totalStudents = classData.enrollments.length;
+      const absentStudents = absentByEnrollment.size;
+      const rate = totalStudents
+        ? ((totalStudents - absentStudents) / totalStudents) * 100
+        : 100;
+
+      return {
+        classData,
+        className: String(classData.classItem.className ?? classData.classItem.classId),
+        totalStudents,
+        absentStudents,
+        rate,
+        absentByEnrollment,
+      };
+    });
+
+    const totalStudents = processed.reduce((sum, item) => sum + item.totalStudents, 0);
+    const totalAbsentStudents = processed.reduce((sum, item) => sum + item.absentStudents, 0);
+    const overallRate = totalStudents
+      ? ((totalStudents - totalAbsentStudents) / totalStudents) * 100
+      : 100;
+
+    const summary = workbook.addWorksheet('ملخص المرحلة', {
       views: [{ rightToLeft: true }],
     });
 
-    summarySheet.mergeCells('A1:F1');
-    const sTitle = summarySheet.getCell('A1');
-    sTitle.value = `${schoolName} — كشف الغياب اليومي المجمع لـ ${params.stageName}`;
-    sTitle.font = { name: 'Arial', size: 14, bold: true, color: { argb: COLORS.headerText } };
-    sTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-    sTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-    summarySheet.getRow(1).height = 30;
+    addTitleAndMeta(
+      summary,
+      6,
+      `${schoolName} — كشف الغياب اليومي المجمع لـ ${params.stageName}`,
+      `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | تاريخ الاستخراج: ${getFastArabicDateString()}`
+    );
 
-    summarySheet.mergeCells('A2:F2');
-    const sMeta = summarySheet.getCell('A2');
-    sMeta.value = `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-SA')}`;
-    sMeta.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-    sMeta.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
-    sMeta.alignment = { horizontal: 'center', vertical: 'middle' };
-    summarySheet.getRow(2).height = 22;
-
-    // Calculate Stage Totals
-    let stageTotalStudents = 0;
-    let stageTotalAbsentStudents = 0;
-    const classRows: Array<{
-      className: string;
-      repName: string;
-      totalStudents: number;
-      absentStudents: number;
-      rate: number;
-    }> = [];
-
-    params.classesData.forEach((cd) => {
-      const totalStudents = cd.enrollments.length;
-      stageTotalStudents += totalStudents;
-
-      const absentEnrollmentIds = new Set(
-        cd.records.filter((r) => r.status === 'Absent').map((r) => r.enrollmentId)
-      );
-      const absentCount = absentEnrollmentIds.size;
-      stageTotalAbsentStudents += absentCount;
-
-      const rate = totalStudents > 0 ? ((totalStudents - absentCount) / totalStudents) * 100 : 100;
-
-      classRows.push({
-        className: String(cd.classItem.className || cd.classItem.classId),
-        repName: cd.representativeName || '—',
-        totalStudents,
-        absentStudents: absentCount,
-        rate,
-      });
-    });
-
-    const stageAttendanceRate =
-      stageTotalStudents > 0
-        ? ((stageTotalStudents - stageTotalAbsentStudents) / stageTotalStudents) * 100
-        : 100;
-
-    summarySheet.addRow([]);
-    const kpiRow = summarySheet.addRow([
-      'إجمالي طلاب المرحلة',
-      stageTotalStudents,
-      'إجمالي الغائبين',
-      stageTotalAbsentStudents,
-      'نسبة الحضور العامة',
-      `${stageAttendanceRate.toFixed(1)}%`,
+    summary.addRow([]);
+    const kpi = summary.addRow([
+      'إجمالي طلاب المرحلة', totalStudents,
+      'إجمالي الغائبين', totalAbsentStudents,
+      'نسبة الحضور العامة', `${overallRate.toFixed(1)}%`,
     ]);
-    kpiRow.height = 24;
-    kpiRow.eachCell((cell, col) => {
+    kpi.height = 24;
+    kpi.eachCell((cell, column) => {
       cell.border = BORDER_THIN;
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      if (col % 2 === 1) {
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
-      } else {
-        cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: COLORS.headerBg } };
-      }
+      cell.alignment = ALIGN_CENTER;
+      cell.font = { name: 'Arial', size: column % 2 ? 10 : 11, bold: true };
+      if (column % 2) cell.fill = FILL_META;
     });
 
-    summarySheet.addRow([]);
+    summary.addRow([]);
+    const header = summary.addRow([
+      'م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'عدد الطلاب الغائبين', 'نسبة الحضور',
+    ]);
+    header.height = 24;
+    applyHeaderStyle(header, 6, STYLES.headerTeal10);
 
-    const headers = ['م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'عدد الطلاب الغائبين', 'نسبة الحضور'];
-    const hRow = summarySheet.addRow(headers);
-    hRow.height = 24;
-    hRow.eachCell((cell) => {
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = BORDER_THIN;
-    });
-
-    classRows.forEach((r, idx) => {
-      const row = summarySheet.addRow([
-        idx + 1,
-        `شعبة ${r.className}`,
-        r.repName,
-        r.totalStudents,
-        r.absentStudents,
-        `${r.rate.toFixed(1)}%`,
+    for (let index = 0; index < processed.length; index++) {
+      const item = processed[index];
+      const zebra = index % 2 === 1;
+      const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+      const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
+      const row = summary.addRow([
+        index + 1,
+        `شعبة ${item.className}`,
+        item.classData.representativeName || '—',
+        item.totalStudents,
+        item.absentStudents,
+        `${item.rate.toFixed(1)}%`,
       ]);
       row.height = 20;
-      row.eachCell((cell, col) => {
-        cell.border = BORDER_THIN;
-        cell.alignment = { vertical: 'middle', horizontal: col === 2 || col === 3 ? 'right' : 'center' };
-        if (col === 5 && r.absentStudents > 0) {
-          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.absentBg } };
-        } else if (idx % 2 === 1) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-        }
-      });
-    });
+      setRowStyles(row, [
+        center, right, right, center,
+        item.absentStudents ? STYLES.absentAlertCell : center,
+        center,
+      ]);
+      await yieldAfterRow(index);
+    }
 
-    const tRow = summarySheet.addRow([
-      'الإجمالي',
-      `${params.classesData.length} شعب`,
-      '—',
-      stageTotalStudents,
-      stageTotalAbsentStudents,
-      `${stageAttendanceRate.toFixed(1)}%`,
+    const totalRow = summary.addRow([
+      'الإجمالي', `${processed.length} شعب`, '—', totalStudents,
+      totalAbsentStudents, `${overallRate.toFixed(1)}%`,
     ]);
-    tRow.height = 24;
-    tRow.eachCell((cell) => {
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EFF0' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = BORDER_THIN;
+    for (let column = 1; column <= 6; column++) {
+      totalRow.getCell(column).style = STYLES.summaryFooter10;
+    }
+
+    [6, 16, 24, 16, 18, 16].forEach((width, index) => {
+      summary.getColumn(index + 1).width = width;
     });
 
-    summarySheet.getColumn(1).width = 6;
-    summarySheet.getColumn(2).width = 16;
-    summarySheet.getColumn(3).width = 24;
-    summarySheet.getColumn(4).width = 16;
-    summarySheet.getColumn(5).width = 18;
-    summarySheet.getColumn(6).width = 16;
+    for (let classIndex = 0; classIndex < processed.length; classIndex++) {
+      await yieldToUI();
+      const item = processed[classIndex];
+      const worksheet = workbook.addWorksheet(
+        getUniqueWorksheetName(workbook, `شعبة ${item.className}`, `Class ${classIndex + 1}`),
+        { views: [{ rightToLeft: true }] }
+      );
 
-    // 2. Class Worksheets
-    params.classesData.forEach((cd) => {
-      const cname = String(cd.classItem.className || cd.classItem.classId);
-      const classSheet = workbook.addWorksheet(`شعبة ${cname}`, {
-        views: [{ rightToLeft: true }],
-      });
+      addTitleAndMeta(
+        worksheet,
+        5,
+        `${schoolName} — كشف غياب شعبة ${item.className} (${params.dayName} ${params.date})`,
+        `العريف المسؤول: ${item.classData.representativeName || 'غير معين'} | إجمالي طلاب الشعبة: ${item.totalStudents} طالب`,
+        STYLES.title13
+      );
 
-      classSheet.mergeCells('A1:E1');
-      const csTitle = classSheet.getCell('A1');
-      csTitle.value = `${schoolName} — كشف غياب شعبة ${cname} (${params.dayName} ${params.date})`;
-      csTitle.font = { name: 'Arial', size: 13, bold: true, color: { argb: COLORS.headerText } };
-      csTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      csTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-      classSheet.getRow(1).height = 28;
-
-      classSheet.mergeCells('A2:E2');
-      const csMeta = classSheet.getCell('A2');
-      csMeta.value = `العريف المسؤول: ${cd.representativeName || 'غير معين'} | إجمالي طلاب الشعبة: ${cd.enrollments.length} طالب`;
-      csMeta.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-      csMeta.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
-      csMeta.alignment = { horizontal: 'center', vertical: 'middle' };
-      classSheet.getRow(2).height = 20;
-
-      const absentMap: Array<{
-        enrollmentId: number;
-        nationalId: string;
-        studentName: string;
-        absentPeriods: number[];
+      const absentStudents: Array<{
+        enrollment: ClassEnrollment;
+        periods: number[];
       }> = [];
 
-      cd.enrollments.forEach((en) => {
-        const studentAbsences = cd.records
-          .filter((r) => r.enrollmentId === en.enrollmentId && r.status === 'Absent')
-          .map((r) => r.periodNumber)
-          .sort((a, b) => a - b);
-
-        if (studentAbsences.length > 0) {
-          absentMap.push({
-            enrollmentId: en.enrollmentId,
-            nationalId: en.student?.nationalId || '',
-            studentName: en.studentName || en.student?.fullName || '',
-            absentPeriods: studentAbsences,
-          });
+      for (const enrollment of item.classData.enrollments) {
+        const periods = item.absentByEnrollment.get(enrollment.enrollmentId);
+        if (periods?.length) {
+          periods.sort((a, b) => a - b);
+          absentStudents.push({ enrollment, periods });
         }
-      });
-
-      if (absentMap.length === 0) {
-        classSheet.addRow([]);
-        classSheet.mergeCells('A4:E4');
-        const noteCell = classSheet.getCell('A4');
-        noteCell.value = '✓ لا توجد أي حالات غياب مسجلة لهذه الشعبة اليوم (نسبة انضباط 100%)';
-        noteCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF176B3A' } };
-        noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.presentBg } };
-        noteCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        classSheet.getRow(4).height = 32;
-      } else {
-        classSheet.addRow([]);
-        const cHeaders = ['م', 'رقم الهوية الوطنية', 'اسم الطالب الغائب', 'الحصص التي غاب بها', 'إجمالي الحصص'];
-        const chRow = classSheet.addRow(cHeaders);
-        chRow.height = 22;
-        chRow.eachCell((cell) => {
-          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA61B1B' } };
-          cell.alignment = { horizontal: 'center', vertical: 'middle' };
-          cell.border = BORDER_THIN;
-        });
-
-        absentMap.forEach((s, idx) => {
-          const row = classSheet.addRow([
-            idx + 1,
-            s.nationalId,
-            s.studentName,
-            s.absentPeriods.map((p) => `الحصة ${p}`).join('، '),
-            s.absentPeriods.length,
-          ]);
-          row.height = 20;
-          row.eachCell((cell, col) => {
-            cell.border = BORDER_THIN;
-            cell.alignment = { vertical: 'middle', horizontal: col === 3 ? 'right' : 'center' };
-            if (idx % 2 === 1) {
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-            }
-          });
-        });
       }
 
-      classSheet.getColumn(1).width = 6;
-      classSheet.getColumn(2).width = 18;
-      classSheet.getColumn(3).width = 28;
-      classSheet.getColumn(4).width = 30;
-      classSheet.getColumn(5).width = 14;
-    });
+      if (!absentStudents.length) {
+        worksheet.mergeCells('A4:E4');
+        const note = worksheet.getCell('A4');
+        note.value = '✓ لا توجد أي حالات غياب مسجلة لهذه الشعبة اليوم (نسبة انضباط 100%)';
+        note.font = { name: 'Arial', size: 11, bold: true, color: { argb: COLORS.presentText } };
+        note.fill = FILL_PRESENT;
+        note.alignment = ALIGN_CENTER;
+        worksheet.getRow(4).height = 32;
+      } else {
+        const classHeader = worksheet.addRow([
+          'م', 'رقم الهوية الوطنية', 'اسم الطالب الغائب', 'الحصص التي غاب بها', 'إجمالي الحصص',
+        ]);
+        classHeader.height = 22;
+        applyHeaderStyle(classHeader, 5, STYLES.headerRed10);
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveExcelFile(buffer, `Mowathib_Daily_Absence_${stageSanitized}_${params.date}.xlsx`);
+        for (let index = 0; index < absentStudents.length; index++) {
+          const item = absentStudents[index];
+          const zebra = index % 2 === 1;
+          const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+          const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
+          const enrollment = item.enrollment;
+          const row = worksheet.addRow([
+            index + 1,
+            String(enrollment.student?.nationalId ?? ''),
+            enrollment.studentName || enrollment.student?.fullName || '',
+            item.periods.map((period) => `الحصة ${period}`).join('، '),
+            item.periods.length,
+          ]);
+          row.height = 20;
+          setRowStyles(row, [center, center, right, center, center]);
+          await yieldAfterRow(index);
+        }
+      }
+
+      [6, 18, 28, 30, 14].forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
+      });
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Daily_Absence_${params.stageName.replace(/\s+/g, '_')}_${params.date}.xlsx`
+    );
   },
 
-  // ==========================================
-  // 6. STAGE WEEKLY ABSENCE REPORT (CONSOLIDATED WORKBOOK)
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.7 STAGE WEEKLY ABSENCE
+  // ---------------------------------------------------------------------------
+
   async exportStageWeeklyAbsenceReport(params: {
     stageNumber: number;
     stageName: string;
@@ -2745,149 +1754,155 @@ export const excelExportService = {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
-    const schoolName = params.schoolName || schoolSettingsService.getSchoolName();
+    const schoolName = getSchoolName(params.schoolName);
 
-    const summarySheet = workbook.addWorksheet('ملخص الأسبوع', {
+    const processed = params.classesData.map((classData) => {
+      const absences = new Map<number, Int32Array>();
+      let absentSlots = 0;
+      let presentSlots = 0;
+
+      for (const record of classData.records) {
+        if (record.status === 'Present') {
+          presentSlots++;
+        } else if (record.status === 'Absent') {
+          absentSlots++;
+          let counts = absences.get(record.enrollmentId);
+          if (!counts) {
+            counts = new Int32Array(6);
+            absences.set(record.enrollmentId, counts);
+          }
+          if (record.dayNumber >= 1 && record.dayNumber <= 5) {
+            counts[record.dayNumber]++;
+          }
+          counts[0]++;
+        }
+      }
+
+      // Preserve the existing report rule: absent periods are deducted
+      // from the class's scheduled weekly periods.
+      const totalExpected = classData.enrollments.length * TOTAL_WEEKLY_PERIODS;
+      const rate = totalExpected > 0
+        ? ((totalExpected - absentSlots) / totalExpected) * 100
+        : 100;
+
+      return {
+        classData,
+        className: String(classData.classItem.className ?? classData.classItem.classId),
+        totalStudents: classData.enrollments.length,
+        absentSlots,
+        presentSlots,
+        totalExpected,
+        rate,
+        absences,
+      };
+    });
+
+    const summary = workbook.addWorksheet('ملخص الأسبوع', {
       views: [{ rightToLeft: true }],
     });
 
-    summarySheet.mergeCells('A1:F1');
-    const sTitle = summarySheet.getCell('A1');
-    sTitle.value = `${schoolName} — كشف الغياب الأسبوعي المجمع لـ ${params.stageName}`;
-    sTitle.font = { name: 'Arial', size: 14, bold: true, color: { argb: COLORS.headerText } };
-    sTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-    sTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-    summarySheet.getRow(1).height = 30;
+    addTitleAndMeta(
+      summary,
+      6,
+      `${schoolName} — كشف الغياب الأسبوعي المجمع لـ ${params.stageName}`,
+      `العام الدراسي: ${params.academicYear} | الأسبوع: ${params.weekNumber} (${params.weekRange}) | تاريخ الاستخراج: ${getFastArabicDateString()}`
+    );
 
-    summarySheet.mergeCells('A2:F2');
-    const sMeta = summarySheet.getCell('A2');
-    sMeta.value = `العام الدراسي: ${params.academicYear} | الأسبوع: ${params.weekNumber} (${params.weekRange}) | تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-SA')}`;
-    sMeta.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-    sMeta.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
-    sMeta.alignment = { horizontal: 'center', vertical: 'middle' };
-    summarySheet.getRow(2).height = 22;
+    const header = summary.addRow([
+      'م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي حصص الغياب', 'نسبة الحضور',
+    ]);
+    header.height = 24;
+    applyHeaderStyle(header, 6, STYLES.headerTeal10);
 
-    summarySheet.addRow([]);
-
-    const headers = ['م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي حصص الغياب', 'نسبة الحضور'];
-    const hRow = summarySheet.addRow(headers);
-    hRow.height = 24;
-    hRow.eachCell((cell) => {
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = BORDER_THIN;
-    });
-
-    params.classesData.forEach((cd, idx) => {
-      const cname = String(cd.classItem.className || cd.classItem.classId);
-      const totalStudents = cd.enrollments.length;
-      const absentSlots = cd.records.filter((r) => r.status === 'Absent').length;
-      const totalExpected = totalStudents * TOTAL_WEEKLY_PERIODS;
-      const rate = totalExpected > 0 ? ((totalExpected - absentSlots) / totalExpected) * 100 : 100;
-
-      const row = summarySheet.addRow([
-        idx + 1,
-        `شعبة ${cname}`,
-        cd.representativeName || '—',
-        totalStudents,
-        absentSlots,
-        `${rate.toFixed(1)}%`,
+    for (let index = 0; index < processed.length; index++) {
+      const item = processed[index];
+      const zebra = index % 2 === 1;
+      const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+      const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
+      const row = summary.addRow([
+        index + 1,
+        `شعبة ${item.className}`,
+        item.classData.representativeName || '—',
+        item.totalStudents,
+        item.absentSlots,
+        `${item.rate.toFixed(1)}%`,
       ]);
       row.height = 20;
-      row.eachCell((cell, col) => {
-        cell.border = BORDER_THIN;
-        cell.alignment = { vertical: 'middle', horizontal: col === 2 || col === 3 ? 'right' : 'center' };
-        if (col === 5 && absentSlots > 0) {
-          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.absentBg } };
-        } else if (idx % 2 === 1) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-        }
-      });
+      setRowStyles(row, [
+        center, right, right, center,
+        item.absentSlots ? STYLES.absentAlertCell : center,
+        center,
+      ]);
+      await yieldAfterRow(index);
+    }
+
+    [6, 16, 24, 16, 18, 16].forEach((width, index) => {
+      summary.getColumn(index + 1).width = width;
     });
 
-    summarySheet.getColumn(1).width = 6;
-    summarySheet.getColumn(2).width = 16;
-    summarySheet.getColumn(3).width = 24;
-    summarySheet.getColumn(4).width = 16;
-    summarySheet.getColumn(5).width = 18;
-    summarySheet.getColumn(6).width = 16;
+    for (let classIndex = 0; classIndex < processed.length; classIndex++) {
+      await yieldToUI();
+      const item = processed[classIndex];
+      const worksheet = workbook.addWorksheet(
+        getUniqueWorksheetName(workbook, `شعبة ${item.className}`, `Class ${classIndex + 1}`),
+        { views: [{ rightToLeft: true }] }
+      );
 
-    params.classesData.forEach((cd) => {
-      const cname = String(cd.classItem.className || cd.classItem.classId);
-      const classSheet = workbook.addWorksheet(`شعبة ${cname}`, {
-        views: [{ rightToLeft: true }],
-      });
+      addTitleAndMeta(
+        worksheet,
+        9,
+        `${schoolName} — غياب شعبة ${item.className} (الأسبوع ${params.weekNumber})`,
+        `العام الدراسي: ${params.academicYear} | الفترة: ${params.weekRange}`,
+        STYLES.title13
+      );
 
-      classSheet.mergeCells('A1:I1');
-      const csTitle = classSheet.getCell('A1');
-      csTitle.value = `${schoolName} — غياب شعبة ${cname} (الأسبوع ${params.weekNumber})`;
-      csTitle.font = { name: 'Arial', size: 13, bold: true, color: { argb: COLORS.headerText } };
-      csTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      csTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-      classSheet.getRow(1).height = 28;
+      const headerRow = worksheet.addRow([
+        'م', 'رقم الهوية', 'اسم الطالب', 'الأحد', 'الاثنين', 'الثلاثاء',
+        'الأربعاء', 'الخميس', 'إجمالي الغياب',
+      ]);
+      headerRow.height = 22;
+      applyHeaderStyle(headerRow, 9, STYLES.headerTeal10);
 
-      const cHeaders = ['م', 'رقم الهوية', 'اسم الطالب', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'إجمالي الغياب'];
-      const chRow = classSheet.addRow(cHeaders);
-      chRow.height = 22;
-      chRow.eachCell((cell) => {
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = BORDER_THIN;
-      });
+      for (let studentIndex = 0; studentIndex < item.classData.enrollments.length; studentIndex++) {
+        const enrollment = item.classData.enrollments[studentIndex];
+        const counts = item.absences.get(enrollment.enrollmentId);
+        const dailyCounts = [1, 2, 3, 4, 5].map((day) => counts?.[day] ?? 0);
+        const totalAbsent = counts?.[0] ?? 0;
+        const zebra = studentIndex % 2 === 1;
+        const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+        const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
 
-      cd.enrollments.forEach((en, idx) => {
-        const dayAbsences: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        let totalStudentAbsent = 0;
-
-        cd.records.forEach((r) => {
-          if (r.enrollmentId === en.enrollmentId && r.status === 'Absent') {
-            dayAbsences[r.dayNumber] = (dayAbsences[r.dayNumber] || 0) + 1;
-            totalStudentAbsent++;
-          }
-        });
-
-        const row = classSheet.addRow([
-          idx + 1,
-          en.student?.nationalId || '',
-          en.studentName || en.student?.fullName || '',
-          dayAbsences[1] > 0 ? `${dayAbsences[1]} حصة` : '—',
-          dayAbsences[2] > 0 ? `${dayAbsences[2]} حصة` : '—',
-          dayAbsences[3] > 0 ? `${dayAbsences[3]} حصة` : '—',
-          dayAbsences[4] > 0 ? `${dayAbsences[4]} حصة` : '—',
-          dayAbsences[5] > 0 ? `${dayAbsences[5]} حصة` : '—',
-          totalStudentAbsent,
+        const row = worksheet.addRow([
+          studentIndex + 1,
+          String(enrollment.student?.nationalId ?? ''),
+          enrollment.studentName || enrollment.student?.fullName || '',
+          ...dailyCounts.map((count) => count ? `${count} حصة` : '—'),
+          totalAbsent,
         ]);
         row.height = 20;
-        row.eachCell((cell, col) => {
-          cell.border = BORDER_THIN;
-          cell.alignment = { vertical: 'middle', horizontal: col === 3 ? 'right' : 'center' };
-          if (col === 9 && totalStudentAbsent > 0) {
-            cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.absentBg } };
-          } else if (idx % 2 === 1) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-          }
-        });
+        setRowStyles(row, [
+          center, center, right, center, center, center, center, center,
+          totalAbsent ? STYLES.absentAlertCell : center,
+        ]);
+        await yieldAfterRow(studentIndex);
+      }
+
+      [6, 16, 28, 12, 12, 12, 12, 12, 14].forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
       });
+    }
 
-      classSheet.getColumn(1).width = 6;
-      classSheet.getColumn(2).width = 16;
-      classSheet.getColumn(3).width = 28;
-      for (let c = 4; c <= 8; c++) classSheet.getColumn(c).width = 12;
-      classSheet.getColumn(9).width = 14;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveExcelFile(buffer, `Mowathib_Weekly_Absence_${stageSanitized}_Week_${params.weekNumber}.xlsx`);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Weekly_Absence_${params.stageName.replace(/\s+/g, '_')}_Week_${params.weekNumber}.xlsx`
+    );
   },
 
-  // ==========================================
-  // 7. STAGE MONTHLY ABSENCE REPORT (CONSOLIDATED WORKBOOK)
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.8 STAGE MONTHLY ABSENCE
+  // ---------------------------------------------------------------------------
+
   async exportStageMonthlyAbsenceReport(params: {
     stageNumber: number;
     stageName: string;
@@ -2905,240 +1920,235 @@ export const excelExportService = {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
-    const schoolName = params.schoolName || schoolSettingsService.getSchoolName();
+    const schoolName = getSchoolName(params.schoolName);
 
-    const summarySheet = workbook.addWorksheet('ملخص الشهر', {
+    const summary = workbook.addWorksheet('ملخص الشهر', {
       views: [{ rightToLeft: true }],
     });
 
-    summarySheet.mergeCells('A1:F1');
-    const sTitle = summarySheet.getCell('A1');
-    sTitle.value = `${schoolName} — كشف الغياب الشهري المجمع لـ ${params.stageName} (${params.monthStr})`;
-    sTitle.font = { name: 'Arial', size: 14, bold: true, color: { argb: COLORS.headerText } };
-    sTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-    sTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-    summarySheet.getRow(1).height = 30;
+    addTitleAndMeta(
+      summary,
+      6,
+      `${schoolName} — كشف الغياب الشهري المجمع لـ ${params.stageName} (${params.monthStr})`,
+      `العام الدراسي: ${params.academicYear} | الشهر: ${params.monthStr}`
+    );
 
-    summarySheet.addRow([]);
+    const header = summary.addRow([
+      'م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي حصص الغياب', 'نسبة الحضور',
+    ]);
+    header.height = 24;
+    applyHeaderStyle(header, 6, STYLES.headerTeal10);
 
-    const headers = ['م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي حصص الغياب', 'نسبة الحضور'];
-    const hRow = summarySheet.addRow(headers);
-    hRow.height = 24;
-    hRow.eachCell((cell) => {
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = BORDER_THIN;
-    });
+    for (let index = 0; index < params.classesData.length; index++) {
+      const classData = params.classesData[index];
+      const className = String(classData.classItem.className ?? classData.classItem.classId);
+      const totalStudents = classData.enrollments.length;
 
-    params.classesData.forEach((cd, idx) => {
-      const cname = String(cd.classItem.className || cd.classItem.classId);
-      const totalStudents = cd.enrollments.length;
-      const totalAbsents = cd.monthlySummary.reduce((acc, s) => acc + s.absentCount, 0);
-      const avgRate =
-        cd.monthlySummary.length > 0
-          ? cd.monthlySummary.reduce((acc, s) => acc + s.attendanceRate, 0) / cd.monthlySummary.length
-          : 100;
+      let totalAbsences = 0;
+      let rateSum = 0;
+      for (const student of classData.monthlySummary) {
+        totalAbsences += student.absentCount;
+        rateSum += student.attendanceRate;
+      }
+      const averageRate = classData.monthlySummary.length
+        ? rateSum / classData.monthlySummary.length
+        : 100;
 
-      const row = summarySheet.addRow([
-        idx + 1,
-        `شعبة ${cname}`,
-        cd.representativeName || '—',
+      const zebra = index % 2 === 1;
+      const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+      const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
+      const row = summary.addRow([
+        index + 1,
+        `شعبة ${className}`,
+        classData.representativeName || '—',
         totalStudents,
-        totalAbsents,
-        `${avgRate.toFixed(1)}%`,
+        totalAbsences,
+        `${averageRate.toFixed(1)}%`,
       ]);
       row.height = 20;
-      row.eachCell((cell, col) => {
-        cell.border = BORDER_THIN;
-        cell.alignment = { vertical: 'middle', horizontal: col === 2 || col === 3 ? 'right' : 'center' };
-        if (idx % 2 === 1) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-        }
-      });
+      setRowStyles(row, [center, right, right, center, center, center]);
+      await yieldAfterRow(index);
+    }
+
+    [6, 16, 24, 16, 18, 16].forEach((width, index) => {
+      summary.getColumn(index + 1).width = width;
     });
 
-    summarySheet.getColumn(1).width = 6;
-    summarySheet.getColumn(2).width = 16;
-    summarySheet.getColumn(3).width = 24;
-    summarySheet.getColumn(4).width = 16;
-    summarySheet.getColumn(5).width = 18;
-    summarySheet.getColumn(6).width = 16;
+    for (let classIndex = 0; classIndex < params.classesData.length; classIndex++) {
+      await yieldToUI();
+      const classData = params.classesData[classIndex];
+      const className = String(classData.classItem.className ?? classData.classItem.classId);
+      const worksheet = workbook.addWorksheet(
+        getUniqueWorksheetName(workbook, `شعبة ${className}`, `Class ${classIndex + 1}`),
+        { views: [{ rightToLeft: true }] }
+      );
 
-    params.classesData.forEach((cd) => {
-      const cname = String(cd.classItem.className || cd.classItem.classId);
-      const classSheet = workbook.addWorksheet(`شعبة ${cname}`, {
-        views: [{ rightToLeft: true }],
-      });
+      addTitleAndMeta(
+        worksheet,
+        7,
+        `${schoolName} — غياب شعبة ${className} (${params.monthStr})`,
+        `العام الدراسي: ${params.academicYear} | الشهر: ${params.monthStr}`,
+        STYLES.title13
+      );
 
-      classSheet.mergeCells('A1:G1');
-      const csTitle = classSheet.getCell('A1');
-      csTitle.value = `${schoolName} — غياب شعبة ${cname} (${params.monthStr})`;
-      csTitle.font = { name: 'Arial', size: 13, bold: true, color: { argb: COLORS.headerText } };
-      csTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-      csTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-      classSheet.getRow(1).height = 28;
+      const classHeader = worksheet.addRow([
+        'م', 'رقم الهوية', 'اسم الطالب', 'الحصص المتوقعة', 'حضور', 'غياب', 'نسبة الحضور',
+      ]);
+      classHeader.height = 22;
+      applyHeaderStyle(classHeader, 7, STYLES.headerTeal10);
 
-      const cHeaders = ['م', 'رقم الهوية', 'اسم الطالب', 'الحصص المتوقعة', 'حضور', 'غياب', 'نسبة الحضور'];
-      const chRow = classSheet.addRow(cHeaders);
-      chRow.height = 22;
-      chRow.eachCell((cell) => {
-        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.headerText } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = BORDER_THIN;
-      });
-
-      cd.monthlySummary.forEach((s, idx) => {
-        const row = classSheet.addRow([
-          idx + 1,
-          s.nationalId,
-          s.studentName,
-          s.totalExpected,
-          s.presentCount,
-          s.absentCount,
-          `${s.attendanceRate.toFixed(1)}%`,
+      for (let studentIndex = 0; studentIndex < classData.monthlySummary.length; studentIndex++) {
+        const student = classData.monthlySummary[studentIndex];
+        const zebra = studentIndex % 2 === 1;
+        const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
+        const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
+        const row = worksheet.addRow([
+          studentIndex + 1,
+          String(student.nationalId ?? ''),
+          student.studentName,
+          student.totalExpected,
+          student.presentCount,
+          student.absentCount,
+          `${student.attendanceRate.toFixed(1)}%`,
         ]);
         row.height = 20;
-        row.eachCell((cell, col) => {
-          cell.border = BORDER_THIN;
-          cell.alignment = { vertical: 'middle', horizontal: col === 3 ? 'right' : 'center' };
-          if (col === 6 && s.absentCount > 0) {
-            cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.absentText } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.absentBg } };
-          } else if (idx % 2 === 1) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.zebraBg } };
-          }
-        });
+        setRowStyles(row, [
+          center, center, right, center, center,
+          student.absentCount > 0 ? STYLES.absentAlertCell : center,
+          center,
+        ]);
+        await yieldAfterRow(studentIndex);
+      }
+
+      [6, 16, 28, 14, 12, 12, 14].forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
       });
+    }
 
-      classSheet.getColumn(1).width = 6;
-      classSheet.getColumn(2).width = 16;
-      classSheet.getColumn(3).width = 28;
-      classSheet.getColumn(4).width = 14;
-      classSheet.getColumn(5).width = 12;
-      classSheet.getColumn(6).width = 12;
-      classSheet.getColumn(7).width = 14;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const stageSanitized = params.stageName.replace(/\s+/g, '_');
-    saveExcelFile(buffer, `Mowathib_Monthly_Absence_${stageSanitized}_${params.monthStr}.xlsx`);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Monthly_Absence_${params.stageName.replace(/\s+/g, '_')}_${params.monthStr}.xlsx`
+    );
   },
 
-  // ==========================================
-  // COMPLETE GRADE-LEVEL WEEKLY PREPARATION EXPORT (Stacked Tables)
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.9 SINGLE GRADE WEEKLY PREPARATION
+  // ---------------------------------------------------------------------------
 
   async exportGradeWeeklyPreparation(params: {
     gradeName: string;
     weekNumber: number;
     weekRange: string;
     academicYear?: string;
-    classesData: Array<{
-      classItem: ClassItem;
-      className: string;
-      classNumber?: number;
-      attendances: StudentWeeklyAttendance[];
-    }>;
+    classesData: GradeClassExportData[];
   }): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet(params.gradeName, {
+    const sheetName = getUniqueWorksheetName(workbook, params.gradeName, 'كشف المرحلة');
+    const schoolName = getSchoolName();
+    const worksheet = workbook.addWorksheet(sheetName, {
       views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
     });
 
     let currentRow = 1;
-    for (const classData of params.classesData) {
+    for (let index = 0; index < params.classesData.length; index++) {
+      await yieldToUI();
       currentRow = appendClassWeeklyPreparationToWorksheet(
         worksheet,
         currentRow,
-        classData,
+        params.classesData[index],
         {
           weekNumber: params.weekNumber,
           weekRange: params.weekRange,
           academicYear: params.academicYear,
+          schoolName,
         }
       );
-      currentRow += 2; // Spacer between class tables
+      currentRow += 2;
     }
 
-    // Set Column Widths
-    worksheet.getColumn(1).width = 16;
-    worksheet.getColumn(2).width = 26;
-    for (let c = 3; c <= 35; c++) {
-      worksheet.getColumn(c).width = 5.8;
-    }
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const sanitizedGrade = params.gradeName.replace(/\s+/g, '_');
-    saveExcelFile(buffer, `Mowathib_Weekly_${sanitizedGrade}_Week${params.weekNumber}.xlsx`);
+    configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Weekly_${sheetName.replace(/\s+/g, '_')}_Week${params.weekNumber}.xlsx`
+    );
   },
 
-  // ==========================================
-  // ALL 3 GRADES WEEKLY PREPARATION IN ONE WORKBOOK (3 Worksheets)
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.10 ALL GRADES WEEKLY PREPARATION (DASHBOARD EXPORT)
+  // ---------------------------------------------------------------------------
 
   async exportAllGradesWeeklyPreparation(params: {
     weekNumber: number;
     weekRange: string;
     academicYear?: string;
+    schoolName?: string;
     gradesData: Array<{
       gradeName: string;
-      classesData: Array<{
-        classItem: ClassItem;
-        className: string;
-        classNumber?: number;
-        attendances: StudentWeeklyAttendance[];
-      }>;
+      classesData: GradeClassExportData[];
     }>;
   }): Promise<void> {
+    if (!params.gradesData?.length) {
+      throw new Error('لا توجد مراحل دراسية لتصديرها.');
+    }
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
 
-    for (const grade of params.gradesData) {
-      const worksheet = workbook.addWorksheet(grade.gradeName, {
+    for (let gradeIndex = 0; gradeIndex < params.gradesData.length; gradeIndex++) {
+      await yieldToUI();
+      const grade = params.gradesData[gradeIndex];
+      const sheetName = getUniqueWorksheetName(
+        workbook,
+        grade.gradeName,
+        `مرحلة ${gradeIndex + 1}`
+      );
+
+      const worksheet = workbook.addWorksheet(sheetName, {
         views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
         pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
       });
 
       let currentRow = 1;
-      for (const classData of grade.classesData) {
+      for (let classIndex = 0; classIndex < grade.classesData.length; classIndex++) {
         currentRow = appendClassWeeklyPreparationToWorksheet(
           worksheet,
           currentRow,
-          classData,
+          grade.classesData[classIndex],
           {
             weekNumber: params.weekNumber,
             weekRange: params.weekRange,
             academicYear: params.academicYear,
+            schoolName,
           }
         );
-        currentRow += 2; // Spacer between class tables
+        currentRow += 2;
+        await yieldAfterRow(classIndex);
       }
 
-      // Column Widths
-      worksheet.getColumn(1).width = 16;
-      worksheet.getColumn(2).width = 26;
-      for (let c = 3; c <= 35; c++) {
-        worksheet.getColumn(c).width = 5.8;
-      }
+      configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
     }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    saveExcelFile(buffer, `Mowathib_Weekly_Preparation_All_Grades_Week${params.weekNumber}.xlsx`);
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Weekly_Preparation_All_Grades_Week${params.weekNumber}.xlsx`
+    );
   },
 
-  // ==========================================
-  // FIVE CONSECUTIVE WEEKS MONTHLY PREPARATION EXPORT
-  // ==========================================
+  // ---------------------------------------------------------------------------
+  // 5.11 FIVE CONSECUTIVE WEEKS MONTHLY PREPARATION
+  // ---------------------------------------------------------------------------
 
   async exportFiveWeeksMonthlyPreparation(params: {
-    className: string;
+    className: string | number;
     classNumber?: number;
     academicYear?: string;
     referenceWeekNumber: number;
@@ -3152,187 +2162,47 @@ export const excelExportService = {
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const sheetTitle = `شهري 5 أسابيع شعبة ${params.classNumber || params.className}`;
-    const worksheet = workbook.addWorksheet(sheetTitle.slice(0, 31), {
+    const classLabel = String(params.classNumber || params.className || 'class');
+    const schoolName = getSchoolName();
+    const sheetName = getUniqueWorksheetName(
+      workbook,
+      `شهري 5 أسابيع شعبة ${classLabel}`,
+      'تحضير شهري'
+    );
+
+    const worksheet = workbook.addWorksheet(sheetName, {
       views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
     });
 
     let currentRow = 1;
-    for (const weekData of params.weeksData) {
+    for (let weekIndex = 0; weekIndex < params.weeksData.length; weekIndex++) {
+      await yieldToUI();
+      const week = params.weeksData[weekIndex];
       currentRow = appendClassWeeklyPreparationToWorksheet(
         worksheet,
         currentRow,
         {
           className: params.className,
           classNumber: params.classNumber,
-          attendances: weekData.attendances,
+          attendances: week.attendances,
         },
         {
-          weekNumber: weekData.weekNumber,
-          weekRange: weekData.weekRange,
+          weekNumber: week.weekNumber,
+          weekRange: week.weekRange,
           academicYear: params.academicYear,
+          schoolName,
         }
       );
-      currentRow += 3; // Prominent spacer between consecutive weekly tables
+      currentRow += 3;
     }
 
-    // Column Widths
-    worksheet.getColumn(1).width = 16;
-    worksheet.getColumn(2).width = 26;
-    for (let c = 3; c <= 35; c++) {
-      worksheet.getColumn(c).width = 5.8;
-    }
-
-    const buffer = await workbook.xlsx.writeBuffer();
+    configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
+    const buffer = await writeWorkbookFast(workbook);
+    const safeClass = sanitizeFilename(classLabel).replace(/\.xlsx$/i, '');
     saveExcelFile(
       buffer,
-      `Mowathib_Monthly_5Weeks_Class${params.classNumber || params.className}_RefWeek${params.referenceWeekNumber}.xlsx`
+      `Mowathib_Monthly_5Weeks_Class${safeClass}_RefWeek${params.referenceWeekNumber}.xlsx`
     );
   },
 };
-
-// =============================================================================
-// Helper: Append a single class's weekly preparation table to any worksheet
-// =============================================================================
-
-function appendClassWeeklyPreparationToWorksheet(
-  worksheet: ExcelJS.Worksheet,
-  startRow: number,
-  classData: {
-    className: string;
-    classNumber?: number;
-    attendances: StudentWeeklyAttendance[];
-  },
-  meta: {
-    weekNumber: number;
-    weekRange: string;
-    academicYear?: string;
-    schoolName?: string;
-  }
-): number {
-  const totalCols = 35; // 2 identity cols + 33 periods (7+7+7+6+6)
-
-  // 1. Class Header Banner
-  worksheet.mergeCells(startRow, 1, startRow, totalCols);
-  const titleCell = worksheet.getCell(startRow, 1);
-  titleCell.value = `${classData.className.startsWith('شعبة') ? classData.className : `شعبة ${classData.className}`} — كشف التحضير الأسبوعي (الأسبوع ${meta.weekNumber})`;
-  titleCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: COLORS.headerText } };
-  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  worksheet.getRow(startRow).height = 26;
-
-  // 2. Class Metadata Row
-  worksheet.mergeCells(startRow + 1, 1, startRow + 1, totalCols);
-  const metaCell = worksheet.getCell(startRow + 1, 1);
-  metaCell.value = `المدرسة: ${meta.schoolName || schoolSettingsService.getSchoolName()} | الفترة: ${meta.weekRange} | عدد الطلاب: ${classData.attendances.length} | العام الدراسي: ${meta.academicYear || '1446-1447هـ'}`;
-  metaCell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF5F6B73' } };
-  metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.subheaderBg } };
-  metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  worksheet.getRow(startRow + 1).height = 19;
-
-  // 3. Grid Table Headers (Row startRow + 3 & startRow + 4)
-  const hRow1 = startRow + 3;
-  const hRow2 = startRow + 4;
-
-  // Identity Headers
-  worksheet.mergeCells(hRow1, 1, hRow2, 1);
-  const idH = worksheet.getCell(hRow1, 1);
-  idH.value = 'رقم الهوية';
-  idH.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-  idH.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
-  idH.alignment = { horizontal: 'center', vertical: 'middle' };
-  idH.border = BORDER_THIN;
-
-  worksheet.mergeCells(hRow1, 2, hRow2, 2);
-  const nameH = worksheet.getCell(hRow1, 2);
-  nameH.value = 'اسم الطالب';
-  nameH.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-  nameH.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
-  nameH.alignment = { horizontal: 'center', vertical: 'middle' };
-  nameH.border = BORDER_THIN;
-
-  // Calculate day headers columns
-  let currentStartCol = 3;
-  const dayHeaders = SCHOOL_DAYS.map((day) => {
-    const count = getPeriodsCountForDay(day.dayNumber);
-    const startCol = currentStartCol;
-    const endCol = currentStartCol + count - 1;
-    currentStartCol += count;
-    return {
-      name: day.nameAr,
-      startCol,
-      endCol,
-      periodCount: count,
-    };
-  });
-
-  // Day Name Cells
-  dayHeaders.forEach((dh) => {
-    worksheet.mergeCells(hRow1, dh.startCol, hRow1, dh.endCol);
-    const cell = worksheet.getCell(hRow1, dh.startCol);
-    cell.value = dh.name;
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: COLORS.subheaderText } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8EB' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.border = BORDER_THIN;
-  });
-
-  worksheet.getRow(hRow1).height = 22;
-  worksheet.getRow(hRow2).height = 19;
-
-  // Period Numbers
-  dayHeaders.forEach((dh) => {
-    for (let p = 1; p <= dh.periodCount; p++) {
-      const col = dh.startCol + (p - 1);
-      const cell = worksheet.getCell(hRow2, col);
-      cell.value = `ح ${p}`;
-      cell.font = { name: 'Arial', size: 8.5, bold: true, color: { argb: 'FF5F6B73' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F3F5' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = BORDER_THIN;
-    }
-  });
-
-  // 4. Data Rows
-  let curRow = hRow2 + 1;
-  classData.attendances.forEach((item) => {
-    const r = worksheet.getRow(curRow);
-    r.height = 19;
-
-    const idCell = r.getCell(1);
-    idCell.value = item.enrollment.student?.nationalId || '—';
-    idCell.numFmt = '@';
-    idCell.font = { name: 'Arial', size: 9 };
-    idCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    idCell.border = BORDER_THIN;
-
-    const nameCell = r.getCell(2);
-    nameCell.value = item.enrollment.studentName || 'طالب';
-    nameCell.font = { name: 'Arial', size: 9.5, bold: true };
-    nameCell.alignment = { horizontal: 'right', vertical: 'middle' };
-    nameCell.border = BORDER_THIN;
-
-    let colIdx = 3;
-    SCHOOL_DAYS.forEach((day) => {
-      getPeriodsForDay(day.dayNumber).forEach((p) => {
-        const cell = r.getCell(colIdx);
-        const slot = item.slots[day.dayNumber]?.[p];
-        const st = slot ? slot.status : 'Unmarked';
-        const style = getStatusStyle(st);
-
-        cell.value = style.label;
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.fill } };
-        cell.font = { name: 'Arial', size: 8, bold: true, color: { argb: style.fontColor } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = BORDER_THIN;
-
-        colIdx++;
-      });
-    });
-
-    curRow++;
-  });
-
-  return curRow;
-}

@@ -131,7 +131,7 @@ export function AdminCardsPage() {
                 <ShieldCheck className="w-4 h-4 text-[#245B63]" />
                 <span className="text-xs font-bold text-[#17252B]">{schoolName}</span>
               </div>
-              <span className="text-[10px] font-mono text-[#5F6B73]">2026-2027</span>
+              <span className="text-[10px] font-mono text-[#5F6B73]">1448-1449هـ</span>
             </div>
 
             {/* Main Center Content */}
@@ -183,7 +183,7 @@ export function AdminCardsPage() {
             {/* Footer */}
             <div className="border-t border-[#DCE3E6] pt-1.5 flex items-center justify-between text-[9px] text-[#5F6B73]">
               <span>إدارة المدرسة والشؤون التعليمية</span>
-              <span className="font-mono font-medium">العام 2026-2027</span>
+              <span className="font-mono font-medium">العام 1448-1449هـ</span>
             </div>
           </div>
         )}
