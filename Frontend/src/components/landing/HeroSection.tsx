@@ -32,15 +32,7 @@ export const HeroSection: React.FC = () => {
           {/* Content */}
           <div className="space-y-7 text-right lg:col-span-7">
 
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#CDE4D7] bg-white/80 px-4 py-2 text-xs font-bold text-[#0B5D43] shadow-sm backdrop-blur dark:border-[#285640] dark:bg-[#122B23]/80 dark:text-[#78D6A4]">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3E9B78] opacity-50" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#0B8A5B]" />
-              </span>
-              منصة لإدارة الحضور المدرسي
-              <Sparkles className="h-3.5 w-3.5" />
-            </div>
-
+            
             <div className="space-y-4">
               <h1 className="text-[2.35rem] font-black leading-[1.35] tracking-tight text-[#122B23] dark:text-[#F1F8F4] sm:text-5xl lg:text-[3.65rem]">
                 حضور الحصص،
