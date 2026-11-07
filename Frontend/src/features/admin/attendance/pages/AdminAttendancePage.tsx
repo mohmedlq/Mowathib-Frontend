@@ -21,7 +21,7 @@ import { SCHOOL_DAYS, getPeriodsForDay } from '../../../../shared/types';
 import type { ClassItem } from '../../../../shared/types';
 
 export function AdminAttendancePage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const initialClassId = Number(searchParams.get('classId')) || 105;
 
@@ -78,26 +78,28 @@ export function AdminAttendancePage() {
 
   // Absent students calculation
   const absentStudents = useMemo(() => {
+    if (!matrix || matrix.length === 0) return [];
+
     return matrix
-      .map((studentRow) => {
-        const absentDetails: Array<{ dayName: string; dayNumber: number; period: number }> = [];
+      .map((student) => {
+        let absentCount = 0;
+        const absentDetails: Array<{ dayName: string; period: number }> = [];
 
         SCHOOL_DAYS.forEach((day) => {
-          const daySlots = studentRow.slots[day.dayNumber] || {};
-          getPeriodsForDay(day.dayNumber).forEach((period) => {
-            if (daySlots[period]?.status === 'Absent') {
-              absentDetails.push({
-                dayName: day.nameAr,
-                dayNumber: day.dayNumber,
-                period,
-              });
+          const daySlots = student.slots[day.dayNumber] || {};
+          const periods = getPeriodsForDay(day.dayNumber);
+          periods.forEach((period) => {
+            const slot = daySlots[period];
+            if (slot && slot.status === 'Absent') {
+              absentCount++;
+              absentDetails.push({ dayName: day.nameAr, period });
             }
           });
         });
 
         return {
-          enrollment: studentRow.enrollment,
-          absentCount: studentRow.summary.absent,
+          enrollment: student.enrollment,
+          absentCount,
           absentDetails,
         };
       })
@@ -105,15 +107,15 @@ export function AdminAttendancePage() {
       .sort((a, b) => b.absentCount - a.absentCount);
   }, [matrix]);
 
-  // Handlers
-  const handleClassChange = (classId: number) => {
-    setSelectedClassId(classId);
-    setSearchParams({ classId: String(classId) });
+  const handleClassChange = (newClassId: number) => {
+    setSelectedClassId(newClassId);
+    const params = new URLSearchParams(window.location.search);
+    params.set('classId', String(newClassId));
+    window.history.replaceState(null, '', `?${params.toString()}`);
   };
 
   const handleGradeChange = (grade: number) => {
     setSelectedGrade(grade);
-    // Auto-select first class in that grade if current class is outside
     const inGrade = classes.filter((c) => {
       const num = getClassNum(c);
       if (grade === 1) return num >= 101 && num <= 110;
@@ -139,15 +141,15 @@ export function AdminAttendancePage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-[#DCE3E6] shadow-xs">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] text-[#245B63] flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold">
               <CalendarCheck className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-[#17252B]">رصد ومتابعة الحضور والغياب</h1>
-              <p className="text-xs text-[#5F6B73] mt-0.5">
+              <h1 className="text-xl font-bold text-[#17252B] dark:text-[#F0F4F6]">رصد ومتابعة الحضور والغياب</h1>
+              <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
                 متابعة جدول الحضور الأسبوعي، تدقيق كشف الغائبين، أو التحضير السريع للحصص الدراسية
               </p>
             </div>
@@ -155,14 +157,14 @@ export function AdminAttendancePage() {
         </div>
 
         {/* View Mode Toggle */}
-        <div className="flex items-center bg-[#F5F7F8] p-1 rounded-lg border border-[#DCE3E6] self-start lg:self-auto flex-wrap">
+        <div className="flex items-center bg-[#F5F7F8] dark:bg-[#151E22] p-1 rounded-lg border border-[#DCE3E6] dark:border-[#28373D] self-start lg:self-auto flex-wrap">
           <button
             type="button"
             onClick={() => setViewMode('matrix')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               viewMode === 'matrix'
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -174,8 +176,8 @@ export function AdminAttendancePage() {
             onClick={() => setViewMode('absences')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               viewMode === 'absences'
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <UserX className="w-3.5 h-3.5" />
@@ -187,8 +189,8 @@ export function AdminAttendancePage() {
             onClick={() => setViewMode('quick')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               viewMode === 'quick'
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <Edit3 className="w-3.5 h-3.5" />
@@ -198,17 +200,17 @@ export function AdminAttendancePage() {
       </div>
 
       {/* Grade Filters & Selection Controls */}
-      <div className="bg-white p-4 rounded-xl border border-[#DCE3E6] shadow-xs space-y-3">
+      <div className="bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-3 transition-colors">
         {/* Grade tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          <span className="text-xs font-bold text-[#5F6B73] shrink-0 ml-1">المرحلة:</span>
+          <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] shrink-0 ml-1">المرحلة:</span>
           <button
             type="button"
             onClick={() => handleGradeChange(0)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               selectedGrade === 0
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             جميع المراحل
@@ -218,8 +220,8 @@ export function AdminAttendancePage() {
             onClick={() => handleGradeChange(1)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               selectedGrade === 1
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             الأول الثانوي
@@ -229,8 +231,8 @@ export function AdminAttendancePage() {
             onClick={() => handleGradeChange(2)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               selectedGrade === 2
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             الثاني الثانوي
@@ -240,8 +242,8 @@ export function AdminAttendancePage() {
             onClick={() => handleGradeChange(3)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               selectedGrade === 3
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             الثالث الثانوي
@@ -249,19 +251,19 @@ export function AdminAttendancePage() {
         </div>
 
         {/* Class and Week Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#EEF2F3]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#EEF2F3] dark:border-[#28373D]">
           <div>
-            <label className="text-xs font-bold text-[#17252B] mb-1.5 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-[#245B63]" />
+            <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-[#245B63] dark:text-[#388B96]" />
               <span>الشعبة الدراسية:</span>
             </label>
             <select
               value={selectedClassId}
               onChange={(e) => handleClassChange(Number(e.target.value))}
-              className="w-full h-10 px-3 text-xs bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg text-[#17252B] font-medium focus:bg-white focus:border-[#245B63] outline-none cursor-pointer"
+              className="w-full h-10 px-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-[#17252B] dark:text-[#F0F4F6] font-medium focus:bg-white dark:focus:bg-[#182226] focus:border-[#245B63] outline-none cursor-pointer transition-colors"
             >
               {gradeFilteredClasses.map((c) => (
-                <option key={c.classId} value={c.classId}>
+                <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                   {c.className || `شعبة ${c.classId}`}
                 </option>
               ))}
@@ -269,8 +271,8 @@ export function AdminAttendancePage() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-[#17252B] mb-1.5 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-[#245B63]" />
+            <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-[#245B63] dark:text-[#388B96]" />
               <span>الأسبوع الدراسي:</span>
             </label>
             <AttendanceWeekSelector
@@ -284,19 +286,19 @@ export function AdminAttendancePage() {
 
       {/* Main View Area */}
       {isLoading ? (
-        <div className="bg-white rounded-xl border border-[#DCE3E6] p-12 shadow-xs">
+        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] p-12 shadow-xs">
           <LoadingState message="جاري تحميل سجلات حضور الفصل المختار..." />
         </div>
       ) : viewMode === 'matrix' ? (
         <div className="space-y-4">
-          <div className="p-3.5 bg-[#F0F7F7] border border-[#245B63]/20 rounded-xl text-xs text-[#245B63] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+          <div className="p-3.5 bg-[#F0F7F7] dark:bg-[#19383E]/50 border border-[#245B63]/20 dark:border-[#388B96]/30 rounded-xl text-xs text-[#245B63] dark:text-[#52B4C2] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs transition-colors">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#245B63]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#245B63] dark:bg-[#388B96]" />
               <strong>تلميح الإدارة:</strong>
               يمكنك النقر على أي حصة داخل الجدول للانتقال المباشر وتعديل حالتها في نمط التحضير السريع.
             </span>
 
-            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white border border-[#245B63]/20 self-start sm:self-auto">
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white dark:bg-[#182226] border border-[#245B63]/20 dark:border-[#388B96]/30 text-[#17252B] dark:text-[#F0F4F6] self-start sm:self-auto">
               {matrix.length} طالب مقيد
             </span>
           </div>
@@ -310,22 +312,22 @@ export function AdminAttendancePage() {
         </div>
       ) : viewMode === 'absences' ? (
         /* Absent Students Roster */
-        <div className="bg-white rounded-xl border border-[#DCE3E6] shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-[#DCE3E6] bg-[#FAFCFD] flex items-center justify-between">
+        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs overflow-hidden transition-colors">
+          <div className="p-4 border-b border-[#DCE3E6] dark:border-[#28373D] bg-[#FAFCFD] dark:bg-[#151E22] flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <UserX className="w-4 h-4 text-[#A61B1B]" />
-              <h2 className="text-sm font-bold text-[#17252B]">
+              <UserX className="w-4 h-4 text-[#A61B1B] dark:text-[#F87171]" />
+              <h2 className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6]">
                 كشف الطلاب المتغيبين في {selectedClass?.className || `شعبة ${selectedClassId}`} — الأسبوع {selectedWeek?.weekNumber}
               </h2>
             </div>
-            <span className="text-xs font-bold text-[#A61B1B] bg-[#FDECEC] px-2.5 py-1 rounded-md border border-[#F5C2C2] font-mono">
+            <span className="text-xs font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2.5 py-1 rounded-md border border-[#F5C2C2] dark:border-[#592226] font-mono">
               إجمالي المتغيبين: {absentStudents.length} طلاب
             </span>
           </div>
 
           {absentStudents.length === 0 ? (
-            <div className="p-12 text-center text-xs text-[#176B3A] bg-[#E8F5EC]/30">
-              <div className="w-10 h-10 rounded-full bg-[#E8F5EC] text-[#176B3A] flex items-center justify-center mx-auto mb-2 font-bold">
+            <div className="p-12 text-center text-xs text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC]/30 dark:bg-[#122B1E]/30">
+              <div className="w-10 h-10 rounded-full bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] flex items-center justify-center mx-auto mb-2 font-bold">
                 ✓
               </div>
               <strong className="block text-sm mb-1">لا يوجد غياب مسجل!</strong>
@@ -335,7 +337,7 @@ export function AdminAttendancePage() {
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs border-collapse">
                 <thead>
-                  <tr className="bg-[#F5F7F8] text-[#17252B] border-b border-[#DCE3E6]">
+                  <tr className="bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-b border-[#DCE3E6] dark:border-[#28373D]">
                     <th className="px-4 py-3 font-bold w-12 text-center">#</th>
                     <th className="px-4 py-3 font-bold">اسم الطالب</th>
                     <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
@@ -343,21 +345,21 @@ export function AdminAttendancePage() {
                     <th className="px-4 py-3 font-bold">تفاصيل الحصص والأيام</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EEF2F3]">
+                <tbody className="divide-y divide-[#EEF2F3] dark:divide-[#28373D]">
                   {absentStudents.map((item, idx) => (
                     <tr
                       key={item.enrollment.enrollmentId}
-                      className={`hover:bg-[#FDF6F6] transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFCFD]'}`}
+                      className={`hover:bg-[#FDF6F6] dark:hover:bg-[#331518]/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]'}`}
                     >
-                      <td className="px-4 py-3 text-center font-mono text-[#5F6B73]">{idx + 1}</td>
-                      <td className="px-4 py-3 font-bold text-[#17252B]">
+                      <td className="px-4 py-3 text-center font-mono text-[#5F6B73] dark:text-[#9BAAB1]">{idx + 1}</td>
+                      <td className="px-4 py-3 font-bold text-[#17252B] dark:text-[#F0F4F6]">
                         {item.enrollment.studentName}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#5F6B73]">
+                      <td className="px-4 py-3 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">
                         {item.enrollment.student?.nationalId || '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] text-[#A61B1B] border border-[#F5C2C2]">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
                           {item.absentCount} حصة
                         </span>
                       </td>
@@ -366,10 +368,10 @@ export function AdminAttendancePage() {
                           {item.absentDetails.map((det, dIdx) => (
                             <span
                               key={dIdx}
-                              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] text-[#17252B] border border-[#DCE3E6]"
+                              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border border-[#DCE3E6] dark:border-[#28373D]"
                             >
-                              <span className="font-bold text-[#A61B1B]">{det.dayName}</span>
-                              <span className="text-[#5F6B73]">ح{det.period}</span>
+                              <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">{det.dayName}</span>
+                              <span className="text-[#5F6B73] dark:text-[#9BAAB1]">ح{det.period}</span>
                             </span>
                           ))}
                         </div>

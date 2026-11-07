@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '../../../../shared/components/ui/Button';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import {
   Dialog,
   DialogFooter,
@@ -496,13 +497,9 @@ export function RepresentativeDeputyPage() {
       =================================================== */}
 
       {isLoadingPage ? (
-
-        <div className="bg-white p-8 rounded-xl border border-[#DCE3E6] flex justify-center items-center">
-          <span className="text-xs text-[#5F6B73]">
-            جاري تحميل البيانات...
-          </span>
+        <div className="bg-white dark:bg-[#122B23] p-10 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs">
+          <MuwathibLoading message="جاري استرجاع بيانات نائب العريف والصلاحيات..." />
         </div>
-
       ) : !hasClassRepresentative ? (
 
         /* NO ACTIVE CLASS REPRESENTATIVE */

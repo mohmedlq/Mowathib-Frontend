@@ -5,6 +5,7 @@ import { CalendarRange, Plus, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 import { formatArabicDateShort } from '../../../../shared/utils/date';
 
@@ -86,7 +87,9 @@ export function AdminAcademicYearsPage() {
         <h2 className="text-sm font-bold text-[#17252B]">سجل الأعوام الدراسية</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {isLoading ? (
-            <div className="p-6 text-center text-xs text-[#5F6B73]">جاري التحميل...</div>
+            <div className="col-span-full p-8 bg-white dark:bg-[#122B23] rounded-xl border border-[#D8E5DF] dark:border-[#1E4638]">
+              <MuwathibLoading message="جاري استرجاع سجل الأعوام الدراسية..." />
+            </div>
           ) : (
             years.map((y) => (
               <div

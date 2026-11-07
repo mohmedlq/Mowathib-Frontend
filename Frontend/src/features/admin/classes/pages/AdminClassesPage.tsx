@@ -17,6 +17,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 import type { ClassItem } from '../../../../shared/types';
 
@@ -301,7 +302,9 @@ export function AdminClassesPage() {
       {/* Classes Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {isClassesLoading ? (
-          <div className="col-span-full p-12 text-center text-xs text-[#5F6B73]">جاري تحميل الشعب الدراسية...</div>
+          <div className="col-span-full p-12 bg-white dark:bg-[#122B23] rounded-xl border border-[#D8E5DF] dark:border-[#1E4638]">
+            <MuwathibLoading message="جاري استرجاع قائمة الشعب الدراسية..." />
+          </div>
         ) : filteredClasses.length === 0 ? (
           <div className="col-span-full p-12 text-center text-xs text-[#89949A] bg-white rounded-xl border border-[#DCE3E6]">
             لا توجد شعب مطابقة لخيارات الفرز الحالية

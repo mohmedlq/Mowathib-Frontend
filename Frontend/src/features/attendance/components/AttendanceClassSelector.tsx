@@ -32,20 +32,20 @@ export function AttendanceClassSelector({
 
   return (
     <div className={className}>
-      <label className="block text-xs font-semibold text-[#17252B] mb-1.5 select-none">
+      <label className="block text-xs font-semibold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 select-none">
         الشعبة / الفصل:
       </label>
       <select
         value={selectedClassId}
         onChange={(e) => onSelectClass(Number(e.target.value))}
-        className="w-full h-10 px-3 bg-white text-[#17252B] text-xs font-medium rounded-lg border border-[#DCE3E6] focus:border-[#245B63] focus:ring-1 focus:ring-[#245B63] outline-none cursor-pointer"
+        className="w-full h-10 px-3 bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] text-xs font-medium rounded-lg border border-[#DCE3E6] dark:border-[#28373D] focus:border-[#245B63] dark:focus:border-[#388B96] focus:ring-1 focus:ring-[#245B63] outline-none cursor-pointer transition-colors"
       >
-        {allowAllOption && <option value={0}>جميع فصول المدرسة (30 شعبة)</option>}
+        {allowAllOption && <option value={0} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">جميع فصول المدرسة (30 شعبة)</option>}
 
         {grade1.length > 0 && (
-          <optgroup label="الصف الأول الثانوي (101 - 109)">
+          <optgroup label="الصف الأول الثانوي (101 - 109)" className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
             {grade1.map((c) => (
-              <option key={c.classId} value={c.classId}>
+              <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                  {c.className} — الصف الأول الثانوي
               </option>
             ))}
@@ -53,9 +53,9 @@ export function AttendanceClassSelector({
         )}
 
         {grade2.length > 0 && (
-          <optgroup label="الصف الثاني الثانوي (201 - 210)">
+          <optgroup label="الصف الثاني الثانوي (201 - 210)" className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
             {grade2.map((c) => (
-              <option key={c.classId} value={c.classId}>
+              <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                  {c.className} — الصف الثاني الثانوي
               </option>
             ))}
@@ -63,9 +63,9 @@ export function AttendanceClassSelector({
         )}
 
         {grade3.length > 0 && (
-          <optgroup label="الصف الثالث الثانوي (301 - 309)">
+          <optgroup label="الصف الثالث الثانوي (301 - 309)" className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
             {grade3.map((c) => (
-              <option key={c.classId} value={c.classId}>
+              <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                  {c.className} — الصف الثالث الثانوي
               </option>
             ))}
@@ -73,9 +73,9 @@ export function AttendanceClassSelector({
         )}
 
         {others.length > 0 && (
-          <optgroup label="شعب أخرى">
+          <optgroup label="شعب أخرى" className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
             {others.map((c) => (
-              <option key={c.classId} value={c.classId}>
+              <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                 شعبة {c.className}
               </option>
             ))}
@@ -85,4 +85,3 @@ export function AttendanceClassSelector({
     </div>
   );
 }
-

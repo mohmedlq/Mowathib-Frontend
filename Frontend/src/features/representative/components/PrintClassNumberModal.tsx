@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
 import { Button } from '../../../shared/components/ui/Button';
-import { Printer, ShieldCheck } from 'lucide-react';
+import { Printer } from 'lucide-react';
+import { BrandLogo } from '../../../components/common/BrandLogo';
 
 interface PrintClassNumberModalProps {
   isOpen: boolean;
@@ -94,6 +95,7 @@ export function PrintClassNumberModal({ isOpen, onClose }: PrintClassNumberModal
       {/* Printable Sheet Preview */}
       <div
         id="printable-class-sign"
+        data-keep-white="true"
         className="bg-white p-8 rounded-2xl border-4 border-double border-[#245B63] shadow-sm text-center space-y-6 select-none my-2"
       >
         {/* Ministry / School Header */}
@@ -105,10 +107,7 @@ export function PrintClassNumberModal({ isOpen, onClose }: PrintClassNumberModal
           </div>
 
           <div className="flex flex-col items-center">
-            <div className="w-12 h-12 rounded-xl bg-[#245B63] text-white flex items-center justify-center font-bold shadow-xs">
-              <ShieldCheck className="w-7 h-7" />
-            </div>
-            <span className="text-[11px] font-bold text-[#245B63] mt-1 font-mono">نظام مواظب</span>
+            <BrandLogo variant="wordmark" className="h-11 w-auto object-contain" />
           </div>
 
           <div className="text-left text-xs space-y-1 text-[#17252B]">

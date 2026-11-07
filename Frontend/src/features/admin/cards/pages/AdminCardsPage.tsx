@@ -121,7 +121,7 @@ export function AdminCardsPage() {
 
         {/* Physical Card Representation (approx 85.6mm x 54mm standard badge) */}
         {selectedCardType === 'bathroom' ? (
-          <div className="w-[340px] h-[215px] bg-white border-2 border-[#245B63] rounded-2xl shadow-sm p-4 flex flex-col justify-between text-right relative overflow-hidden select-none bg-gradient-to-b from-[#F9FBFC] to-white">
+          <div data-keep-white="true" className="w-[340px] h-[215px] bg-white border-2 border-[#245B63] rounded-2xl shadow-sm p-4 flex flex-col justify-between text-right relative overflow-hidden select-none bg-gradient-to-b from-[#F9FBFC] to-white">
             {/* Lanyard punch hole indicator */}
             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-2 rounded-full border border-[#DCE3E6] bg-[#ECEFF1]" />
 
@@ -154,7 +154,7 @@ export function AdminCardsPage() {
             </div>
           </div>
         ) : (
-          <div className="w-[340px] h-[215px] bg-white border-2 border-[#245B63] rounded-2xl shadow-sm p-4 flex flex-col justify-between text-right relative overflow-hidden select-none bg-gradient-to-b from-[#F9FBFC] to-white">
+          <div data-keep-white="true" className="w-[340px] h-[215px] bg-white border-2 border-[#245B63] rounded-2xl shadow-sm p-4 flex flex-col justify-between text-right relative overflow-hidden select-none bg-gradient-to-b from-[#F9FBFC] to-white">
             {/* Lanyard punch hole indicator */}
             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-2 rounded-full border border-[#1d494f] bg-[#1d494f] z-10" />
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { FileSpreadsheet, Loader2, Download, Layers } from 'lucide-react';
+import { FileSpreadsheet, Download, Layers } from 'lucide-react';
+import { Spinner } from '../../../shared/components/ui/Spinner';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import { excelExportService } from '../services/excelExportService';
@@ -230,7 +231,7 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
                 >
                   {isThisExporting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Spinner size="sm" />
                       <span>جاري تجميع البيانات والتصدير...</span>
                     </>
                   ) : (

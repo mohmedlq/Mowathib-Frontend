@@ -6,7 +6,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, Link } from 'react-router-dom';
 import { Input } from '../../../shared/components/ui/Input';
 import { Button } from '../../../shared/components/ui/Button';
-import { ShieldCheck, User, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ThemeToggle } from '../../../shared/components/ui/ThemeToggle';
+import { BrandLogo } from '../../../components/common/BrandLogo';
+import { User, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
 
 export function AdminLoginPage() {
   const { loginAdmin } = useAuth();
@@ -40,26 +42,32 @@ export function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F7F8] flex flex-col justify-center items-center p-4 selection:bg-[#245B63] selection:text-white">
-      {/* Brand & Emblem */}
+    <div className="min-h-screen bg-[#F5F7F8] dark:bg-[#0F171A] flex flex-col justify-center items-center p-4 selection:bg-[#245B63] selection:text-white transition-colors duration-150 relative">
+      {/* Top Bar with Theme Switcher */}
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
+        <ThemeToggle />
+      </div>
+
+      {/* Brand Wordmark & Official Mission */}
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#245B63] text-white shadow-md mb-4 ring-8 ring-[#E8F1F1]">
-            <ShieldCheck className="w-7 h-7" />
-          </div>
-          <h1 className="text-2xl font-bold text-[#17252B] tracking-tight">نظام مـواظـب المدرسي</h1>
-          <p className="text-sm text-[#5F6B73] mt-1.5">بوابة تسجيل دخول الإدارة المدرسية المعتمدة</p>
+        <div className="text-center mb-6 flex flex-col items-center">
+          <BrandLogo
+            variant="wordmark"
+            className="h-16 sm:h-20 w-auto mb-2 filter drop-shadow-xs"
+            alt="شعار منصة مواظب - حضور منظم لبيئة تعليمية أفضل"
+          />
+          <p className="text-xs text-[#3E544C] dark:text-[#A3C7B9] font-medium">بوابة تسجيل دخول الإدارة المدرسية المعتمدة</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-xl border border-[#DCE3E6] shadow-xs p-7 sm:p-8">
-          <div className="mb-6 pb-4 border-b border-[#EEF2F3]">
-            <h2 className="text-base font-bold text-[#17252B]">تسجيل دخول المسؤول</h2>
-            <p className="text-xs text-[#5F6B73] mt-0.5">أدخل بيانات الاعتماد الرسمية لإدارة شؤون المدرسة والطلاب</p>
+        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs p-7 sm:p-8 transition-colors">
+          <div className="mb-6 pb-4 border-b border-[#EEF2F3] dark:border-[#28373D]">
+            <h2 className="text-base font-bold text-[#17252B] dark:text-[#F0F4F6]">تسجيل دخول المسؤول</h2>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">أدخل بيانات الاعتماد الرسمية لإدارة شؤون المدرسة والطلاب</p>
           </div>
 
           {errorMsg && (
-            <div className="mb-5 p-3.5 bg-[#FDECEC] border border-[#F1C3C3] text-[#A61B1B] text-xs rounded-lg flex items-center gap-2.5">
+            <div className="mb-5 p-3.5 bg-[#FDECEC] dark:bg-[#331518] border border-[#F1C3C3] dark:border-[#592226] text-[#A61B1B] dark:text-[#F87171] text-xs rounded-lg flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMsg}</span>
             </div>
@@ -101,7 +109,7 @@ export function AdminLoginPage() {
         <div className="mt-6 text-center">
           <Link
             to="/representative/login"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#245B63] hover:text-[#1D4B52] transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#245B63] dark:text-[#388B96] hover:text-[#1D4B52] dark:hover:text-[#52B4C2] transition-colors"
           >
             <span>هل أنت عريف صف أو نائب؟ انتقل لبوابة العرفاء</span>
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -111,3 +119,5 @@ export function AdminLoginPage() {
     </div>
   );
 }
+
+export default AdminLoginPage;

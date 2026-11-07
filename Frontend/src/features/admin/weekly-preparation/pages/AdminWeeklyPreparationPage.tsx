@@ -100,51 +100,42 @@ export function AdminWeeklyPreparationPage() {
   });
 
   const previewAttendances = useMemo(() => {
+    if (!previewEnrollments.length) return [];
     return buildWeeklyAttendanceRows(previewEnrollments, previewRecords);
   }, [previewEnrollments, previewRecords]);
 
-  // Fast helper to fetch full data for a list of classes using bulk enrollments
+  // Helper to fetch attendance data for multiple classes in batch
   const fetchClassesWeeklyData = async (classList: ClassItem[], weekId: number) => {
-    // 1. Fetch all enrollments once in bulk (fast single roundtrip)
-    const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
-    const enrollsMap = new Map<number, typeof allEnrolls>();
-    allEnrolls.forEach((e) => {
-      const list = enrollsMap.get(e.classId) || [];
-      list.push(e);
-      enrollsMap.set(e.classId, list);
-    });
-
-    // 2. Fetch records for classes in parallel with resilient error catch
-    return await Promise.all(
+    const results = await Promise.all(
       classList.map(async (cls) => {
-        let enrolls = enrollsMap.get(cls.classId);
-        if (!enrolls || enrolls.length === 0) {
-          enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
-        }
-        const recs = await schoolDataService.getAttendanceRecords(cls.classId, weekId).catch(() => []);
+        const [enrolls, recs] = await Promise.all([
+          schoolDataService.getEnrollmentsByClass(cls.classId),
+          schoolDataService.getAttendanceRecords(cls.classId, weekId),
+        ]);
         const attendances = buildWeeklyAttendanceRows(enrolls, recs);
         return {
           classItem: cls,
           className: String(cls.className || `شعبة ${cls.classId}`),
-          classNumber: cls.classNumber || cls.classId,
+          classNumber: getClassNum(cls),
           attendances,
         };
       })
     );
+    return results;
   };
 
-  // Export current grade
+  // Export 1: Single Grade Workbook (Stacked classes)
   const handleExportCurrentGrade = async () => {
-    const targetWeek = selectedWeek || weeks[0];
-    if (!targetWeek || !activeGradeClasses.length) {
-      toast.show('لا توجد بيانات متاحة للتصدير حالياً', 'danger');
+    if (!selectedWeek || activeGradeClasses.length === 0) {
+      toast.show('لا توجد بيانات متاحة للتصدير', 'warning');
       return;
     }
 
     try {
       setIsExportingGrade(true);
-      toast.show(`جاري استخراج بيانات ${activeGradeName} وتوليد ملف Excel...`, 'info');
+      toast.show(`جاري تصدير كشوف ${activeGradeName}...`, 'info');
 
+      const targetWeek = selectedWeek;
       const classesData = await fetchClassesWeeklyData(activeGradeClasses, targetWeek.attendanceWeekId);
       const weekRange = `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
 
@@ -156,26 +147,27 @@ export function AdminWeeklyPreparationPage() {
         classesData,
       });
 
-      toast.show(`تم تصدير كشف التحضير الأسبوعي لـ ${activeGradeName} بنجاح`, 'success');
+      toast.show(`تم تصدير كشف ${activeGradeName} بنجاح!`, 'success');
     } catch (err: any) {
       console.error('Grade Export Error:', err);
-      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف المرحلة، يرجى المحاولة مرة أخرى', 'danger');
+      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف المرحلة', 'danger');
     } finally {
       setIsExportingGrade(false);
     }
   };
 
-  // Export ALL 3 GRADES into ONE Workbook with 3 Worksheets
+  // Export 2: All 3 Grades Unified Workbook (3 Worksheets)
   const handleExportAllGrades = async () => {
-    const targetWeek = selectedWeek || weeks[0];
-    if (!targetWeek) {
-      toast.show('يرجى تحديد الأسبوع الدراسي أولاً', 'danger');
+    if (!selectedWeek) {
+      toast.show('يرجى تحديد أسبوع دراسي أولاً', 'warning');
       return;
     }
 
     try {
       setIsExportingAll(true);
-      toast.show('جاري إعداد المصنف المتكامل لجميع المراحل (3 أوراق عمل)...', 'info');
+      toast.show('جاري تجهيز المصنف المجمع لجميع المراحل الثلاث (قد يستغرق بضع ثوانٍ)...', 'info');
+
+      const targetWeek = selectedWeek;
 
       const [g1Data, g2Data, g3Data] = await Promise.all([
         fetchClassesWeeklyData(grade1Classes, targetWeek.attendanceWeekId),
@@ -210,15 +202,15 @@ export function AdminWeeklyPreparationPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-[#DCE3E6] shadow-xs">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] text-[#245B63] flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold">
               <CalendarCheck className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-[#17252B]">التحضير الأسبوعي للمراحل الدراسية</h1>
-              <p className="text-xs text-[#5F6B73] mt-0.5">
+              <h1 className="text-xl font-bold text-[#17252B] dark:text-[#F0F4F6]">التحضير الأسبوعي للمراحل الدراسية</h1>
+              <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
                 تصدير وطباعة كشوف التحضير الأسبوعية المعتمدة للمراحل الدراسية الثلاث ومصنف الحضور المتكامل
               </p>
             </div>
@@ -257,7 +249,7 @@ export function AdminWeeklyPreparationPage() {
             icon={<FileSpreadsheet className="w-4 h-4" />}
             onClick={handleExportAllGrades}
             isLoading={isExportingAll}
-            className="text-xs font-bold shadow-xs bg-[#176B3A] hover:bg-[#135830] border-[#135830]"
+            className="text-xs font-bold shadow-xs bg-[#176B3A] hover:bg-[#135830] dark:bg-[#1E7D45] dark:hover:bg-[#176B3A] border-[#135830] dark:border-[#1E7D45]"
           >
             تصدير جميع المراحل (مصنف 3 أوراق عمل)
           </Button>
@@ -265,7 +257,7 @@ export function AdminWeeklyPreparationPage() {
       </div>
 
       {/* Grade Selector Tabs & Week Selector */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-[#DCE3E6] shadow-xs">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
         {/* Grade Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
           <button
@@ -276,12 +268,12 @@ export function AdminWeeklyPreparationPage() {
             }}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
               selectedGradeTab === 1
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <span>الأول الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 1 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] text-[#5F6B73]'}`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 1 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
               {grade1Classes.length} شعب
             </span>
           </button>
@@ -294,12 +286,12 @@ export function AdminWeeklyPreparationPage() {
             }}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
               selectedGradeTab === 2
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <span>الثاني الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 2 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] text-[#5F6B73]'}`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 2 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
               {grade2Classes.length} شعب
             </span>
           </button>
@@ -312,12 +304,12 @@ export function AdminWeeklyPreparationPage() {
             }}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
               selectedGradeTab === 3
-                ? 'bg-[#245B63] text-white shadow-xs'
-                : 'bg-[#F5F7F8] text-[#5F6B73] hover:text-[#17252B]'
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
             }`}
           >
             <span>الثالث الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 3 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] text-[#5F6B73]'}`}>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 3 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
               {grade3Classes.length} شعب
             </span>
           </button>
@@ -334,10 +326,10 @@ export function AdminWeeklyPreparationPage() {
       </div>
 
       {/* Class Selector Pills within Grade */}
-      <div className="bg-white p-3 rounded-xl border border-[#DCE3E6] shadow-xs">
+      <div className="bg-white dark:bg-[#182226] p-3 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
         <div className="flex items-center gap-2 mb-2">
-          <Layers className="w-4 h-4 text-[#245B63]" />
-          <span className="text-xs font-bold text-[#17252B]">اختر الشعبة للمعاينة المباشرة:</span>
+          <Layers className="w-4 h-4 text-[#245B63] dark:text-[#388B96]" />
+          <span className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">اختر الشعبة للمعاينة المباشرة:</span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {activeGradeClasses.map((c) => (
@@ -347,8 +339,8 @@ export function AdminWeeklyPreparationPage() {
               onClick={() => setPreviewClassId(c.classId)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 effectivePreviewClassId === c.classId
-                  ? 'bg-[#E8F1F1] text-[#245B63] border-2 border-[#245B63]'
-                  : 'bg-[#F5F7F8] text-[#5F6B73] border border-[#DCE3E6] hover:bg-[#EEF2F3]'
+                  ? 'bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] border-2 border-[#245B63] dark:border-[#388B96]'
+                  : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33]'
               }`}
             >
               {c.className || `شعبة ${c.classId}`}
@@ -359,27 +351,27 @@ export function AdminWeeklyPreparationPage() {
 
       {/* Preview Section */}
       {isInitialLoading || isEnrollmentsLoading || isRecordsLoading ? (
-        <div className="bg-white rounded-xl border border-[#DCE3E6] p-12 shadow-xs">
+        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] p-12 shadow-xs">
           <LoadingState message="جاري تجهيز جدول التحضير الأسبوعي للمعاينة..." />
         </div>
       ) : (
-        <div className="bg-white p-5 rounded-xl border border-[#DCE3E6] shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EEF2F3] pb-3">
+        <div className="bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-4 transition-colors">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EEF2F3] dark:border-[#28373D] pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base font-bold text-[#17252B]">
+                <span className="text-base font-bold text-[#17252B] dark:text-[#F0F4F6]">
                   معاينة التحضير: {activePreviewClass?.className || `شعبة ${effectivePreviewClassId}`}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded bg-[#E8F1F1] text-[#245B63] font-bold">
+                <span className="text-xs px-2 py-0.5 rounded bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] font-bold">
                   {activeGradeName}
                 </span>
               </div>
-              <span className="text-[11px] text-[#5F6B73] font-mono mt-0.5 block">
+              <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] font-mono mt-0.5 block">
                 الأسبوع {selectedWeek?.weekNumber} ({formatArabicDateShort(selectedWeek?.startDate)} - {formatArabicDateShort(selectedWeek?.endDate)})
               </span>
             </div>
 
-            <div className="text-xs text-[#5F6B73] font-mono bg-[#F5F7F8] px-3 py-1.5 rounded-lg border border-[#DCE3E6]">
+            <div className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] font-mono bg-[#F5F7F8] dark:bg-[#151E22] px-3 py-1.5 rounded-lg border border-[#DCE3E6] dark:border-[#28373D]">
               {previewEnrollments.length} طالب مقيد
             </div>
           </div>

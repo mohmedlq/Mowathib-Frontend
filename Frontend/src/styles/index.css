@@ -1,25 +1,28 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --font-sans: "IBM Plex Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Cairo", "IBM Plex Sans Arabic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  --color-primary: #245b63;
-  --color-primary-hover: #1d4b52;
-  --color-primary-soft: #e8f1f1;
+  --color-primary: #0b5d43;
+  --color-primary-hover: #084733;
+  --color-primary-soft: #e8f5f0;
+  --color-secondary-mint: #3e9b78;
 
-  --color-background: #f5f7f8;
+  --color-background: #f4f8f6;
   --color-surface: #ffffff;
-  --color-surface-muted: #eef2f3;
+  --color-surface-muted: #e2efe9;
 
-  --color-text-primary: #17252b;
-  --color-text-secondary: #5f6b73;
-  --color-text-muted: #89949a;
+  --color-text-primary: #122b23;
+  --color-text-secondary: #3e544c;
+  --color-text-muted: #718a80;
 
-  --color-border: #dce3e6;
-  --color-border-strong: #c8d2d7;
+  --color-border: #d8e5df;
+  --color-border-strong: #c2d5cd;
 
   --color-status-present-bg: #e8f5ec;
-  --color-status-present-text: #176b3a;
+  --color-status-present-text: #0b5d43;
   --color-status-present-border: #b7dec5;
 
   --color-status-absent-bg: #fdecec;
@@ -36,24 +39,26 @@
 }
 
 :root {
-  --color-primary: #245b63;
-  --color-primary-hover: #1d4b52;
-  --color-primary-soft: #e8f1f1;
+  color-scheme: light;
+  --color-primary: #0b5d43;
+  --color-primary-hover: #084733;
+  --color-primary-soft: #e8f5f0;
+  --color-secondary-mint: #3e9b78;
 
-  --color-background: #f5f7f8;
+  --color-background: #f4f8f6;
   --color-surface: #ffffff;
-  --color-surface-muted: #eef2f3;
+  --color-surface-muted: #e2efe9;
 
-  --color-text-primary: #17252b;
-  --color-text-secondary: #5f6b73;
-  --color-text-muted: #89949a;
+  --color-text-primary: #122b23;
+  --color-text-secondary: #3e544c;
+  --color-text-muted: #718a80;
 
-  --color-border: #dce3e6;
-  --color-border-strong: #c8d2d7;
+  --color-border: #d8e5df;
+  --color-border-strong: #c2d5cd;
 
   /* Attendance Status Colors */
   --status-present-bg: #e8f5ec;
-  --status-present-text: #077133;
+  --status-present-text: #0b5d43;
   --status-present-border: #b7dec5;
 
   --status-absent-bg: #fdecec;
@@ -79,7 +84,56 @@
   --color-danger-text: #a61b1b;
 
   --color-success-bg: #e8f5ec;
-  --color-success-text: #176b3a;
+  --color-success-text: #0b5d43;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-primary: #3e9b78;
+  --color-primary-hover: #50b28c;
+  --color-primary-soft: #153b2e;
+  --color-secondary-mint: #3e9b78;
+
+  --color-background: #0d1e18;
+  --color-surface: #122b23;
+  --color-surface-muted: #1a3b31;
+
+  --color-text-primary: #f4f8f6;
+  --color-text-secondary: #a3c7b9;
+  --color-text-muted: #6f9485;
+
+  --color-border: #1e4638;
+  --color-border-strong: #2a5a49;
+
+  /* Attendance Status Colors */
+  --status-present-bg: #122b1e;
+  --status-present-text: #4ade80;
+  --status-present-border: #1b4d32;
+
+  --status-absent-bg: #331518;
+  --status-absent-text: #f87171;
+  --status-absent-border: #592226;
+
+  --status-unmarked-bg: #1e292d;
+  --status-unmarked-text: #9baab1;
+  --status-unmarked-border: #2c3c43;
+
+  --status-discontinued-bg: #332712;
+  --status-discontinued-text: #facc15;
+  --status-discontinued-border: #594218;
+
+  /* Additional UI Colors */
+  --color-info-bg: #13273d;
+  --color-info-text: #60a5fa;
+
+  --color-warning-bg: #332712;
+  --color-warning-text: #facc15;
+
+  --color-danger-bg: #331518;
+  --color-danger-text: #f87171;
+
+  --color-success-bg: #122b1e;
+  --color-success-text: #4ade80;
 }
 
 body {
@@ -96,7 +150,7 @@ body {
 }
 
 ::selection {
-  background-color: #245b63;
+  background-color: #0b5d43;
   color: #ffffff;
 }
 
@@ -106,23 +160,319 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f3f5;
+  background: var(--color-surface-muted);
 }
 ::-webkit-scrollbar-thumb {
-  background: #c8d2d7;
+  background: var(--color-border-strong);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #89949a;
+  background: var(--color-text-muted);
 }
 
-/* Print CSS */
+/* ==========================================================================
+   Comprehensive Dark Mode Palette Remapping
+   Automatically converts all hardcoded white/light surfaces and borders across 
+   all components to suitable institutional dark colors when .dark is active.
+   ========================================================================== */
+
+html.dark body {
+  background-color: #0d1e18;
+  color: #f4f8f6;
+}
+
+/* White cards, panels, popups, and dropdowns */
+html.dark .bg-white:not([data-keep-white]):not(#printable-class-sign):not(#printable-class-sign *) {
+  background-color: #122b23 !important;
+}
+
+/* Light page and subpanel backgrounds */
+html.dark [class*="bg-[#F4F8F6]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#F5F7F8]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #0d1e18 !important;
+}
+
+html.dark [class*="bg-[#FAFCFD]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #151e22 !important;
+}
+
+html.dark [class*="bg-[#EEF2F3]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #212e33 !important;
+}
+
+html.dark [class*="bg-[#F0F7F7]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: rgba(36, 91, 99, 0.25) !important;
+}
+
+html.dark [class*="bg-[#F8FAFA]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #151e22 !important;
+}
+
+html.dark [class*="bg-[#F5F9F9]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #1d2a2f !important;
+}
+
+/* Primary soft / tint backgrounds */
+html.dark [class*="bg-[#E8F1F1]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#D5E7E8]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#D8E8E9]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #19383e !important;
+}
+
+/* Status light backgrounds */
+html.dark [class*="bg-[#E8F5EC]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#D7EEDB]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #122b1e !important;
+}
+
+html.dark [class*="bg-[#FDECEC]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#F8D2D2]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#F8DADA]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#F9D6D6]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#FAD9D9]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#FDF6F6]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #331518 !important;
+}
+
+html.dark [class*="bg-[#F1F3F5]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#ECEFF1]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#E4E7EA]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#F0F4F5]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#EEF2F6]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#FAFCFC]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #1e292d !important;
+}
+
+html.dark [class*="bg-[#FFF4DA]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="bg-[#FDE6B3]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #332712 !important;
+}
+
+html.dark [class*="bg-[#EAF2FF]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #13273d !important;
+}
+
+html.dark [class*="bg-[#F2EFF7]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #231c33 !important;
+}
+
+html.dark .bg-gray-50:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .bg-slate-50:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .bg-neutral-50:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #121b1f !important;
+}
+
+html.dark .bg-gray-100:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .bg-slate-100:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #1c282d !important;
+}
+
+/* Hover States in Dark Mode */
+html.dark [class*="hover:bg-white"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #212e33 !important;
+}
+html.dark [class*="hover:bg-[#F5F7F8]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #1e292d !important;
+}
+html.dark [class*="hover:bg-[#EEF2F3]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #28373d !important;
+}
+html.dark [class*="hover:bg-[#FAFCFD]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#F8FAFA]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #202e34 !important;
+}
+html.dark [class*="hover:bg-[#F0F7F7]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: rgba(36, 91, 99, 0.35) !important;
+}
+html.dark [class*="hover:bg-[#E8F1F1]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#D5E7E8]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#D8E8E9]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #24464e !important;
+}
+html.dark [class*="hover:bg-[#E8F5EC]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#D7EEDB]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #183b28 !important;
+}
+html.dark [class*="hover:bg-[#FDECEC]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#F8D2D2]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#F8DADA]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#F9D6D6]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#FAD9D9]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#FDF6F6]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #451c20 !important;
+}
+html.dark [class*="hover:bg-[#FFF4DA]"]:hover:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="hover:bg-[#FDE6B3]"]:hover:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #453418 !important;
+}
+
+/* Light border colors */
+html.dark [class*="border-[#DCE3E6]"]:not([data-keep-light]):not(#printable-class-sign):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="border-[#EEF2F3]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="border-[#C8D2D7]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #374a52 !important;
+}
+
+html.dark [class*="border-[#CDE0E2]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="border-[#D2E4E6]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="border-[#B8C4C9]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #374a52 !important;
+}
+
+html.dark [class*="border-[#FAFCFD]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="border-[#B7DEC5]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #1b4d32 !important;
+}
+
+html.dark [class*="border-[#F1C3C3]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="border-[#F5C2C2]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #592226 !important;
+}
+
+html.dark [class*="border-[#D9DEE3]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #2c3c43 !important;
+}
+
+html.dark [class*="border-[#EDD38C]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #594218 !important;
+}
+
+html.dark [class*="border-[#C3D9FF]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #1e3a5f !important;
+}
+
+html.dark .border-gray-200:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .border-gray-300:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .border-slate-200:not([data-keep-light]):not(#printable-class-sign *) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="divide-[#DCE3E6]"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #28373d !important;
+}
+
+html.dark [class*="divide-[#EEF2F3]"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #28373d !important;
+}
+
+/* Typography contrast */
+html.dark [class*="text-[#17252B]"]:not([data-keep-light]):not(#printable-class-sign):not(#printable-class-sign *) {
+  color: #f0f4f6 !important;
+}
+
+html.dark [class*="text-[#5F6B73]"]:not([data-keep-light]):not(#printable-class-sign):not(#printable-class-sign *) {
+  color: #9baab1 !important;
+}
+
+html.dark [class*="text-[#89949A]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #6e7f87 !important;
+}
+
+html.dark [class*="text-[#59636E]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #9baab1 !important;
+}
+
+html.dark [class*="text-[#176B3A]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="text-[#135830]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #4ade80 !important;
+}
+
+html.dark [class*="text-[#A61B1B]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #f87171 !important;
+}
+
+html.dark [class*="text-[#855500]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #facc15 !important;
+}
+
+html.dark [class*="text-[#28559A]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="text-[#2C4A6F]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #60a5fa !important;
+}
+
+html.dark [class*="text-[#245B63]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="text-[#174349]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="text-[#1D4B52]"]:not([data-keep-light]):not(#printable-class-sign *),
+html.dark [class*="text-[#1d494f]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #4ebac9 !important;
+}
+
+html.dark [class*="text-[#553C7B]"]:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #c084fc !important;
+}
+
+html.dark .text-gray-900:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .text-slate-900:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #f0f4f6 !important;
+}
+
+html.dark .text-gray-800:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .text-slate-800:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .text-gray-700:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .text-slate-700:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #d5dee2 !important;
+}
+
+html.dark .text-gray-600:not([data-keep-light]):not(#printable-class-sign *),
+html.dark .text-slate-600:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #9baab1 !important;
+}
+
+html.dark .text-gray-500:not([data-keep-light]):not(#printable-class-sign *) {
+  color: #7d8d95 !important;
+}
+
+/* Inputs, Selects, and Textareas */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([data-keep-light]):not(#printable-class-sign *),
+html.dark select:not([data-keep-light]):not(#printable-class-sign *),
+html.dark textarea:not([data-keep-light]):not(#printable-class-sign *) {
+  background-color: #182226 !important;
+  color: #f0f4f6 !important;
+  border-color: #28373d !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #6e7f87 !important;
+}
+
+/* Strict Print & PDF CSS: Force pristine white paper and dark crisp ink */
 @media print {
+  :root,
+  .dark,
+  html,
   body {
     background: #ffffff !important;
+    background-color: #ffffff !important;
     color: #000000 !important;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
+    color-scheme: light !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+  .dark * {
+    color-scheme: light !important;
+    background-color: transparent !important;
+    color: #000000 !important;
+  }
+  #printable-class-sign,
+  #printable-class-sign * {
+    background-color: white !important;
+    color: black !important;
   }
   .no-print {
     display: none !important;
@@ -135,4 +485,3 @@ body {
     size: auto;
   }
 }
-

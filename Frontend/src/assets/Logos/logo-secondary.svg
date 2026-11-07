@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 130" width="100%" height="100%">
+  <defs>
+    <style>
+      
+      .brand-title-light {
+        font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
+        font-weight: 800;
+        font-size: 62px;
+        fill: #FFFFFF;
+      }
+    </style>
+    <linearGradient id="darkBadgeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#153B2E" />
+      <stop offset="100%" stop-color="#0D261D" />
+    </linearGradient>
+    <linearGradient id="lightSwoosh" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3E9B78" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+  </defs>
+
+  <!-- الخلفية الداكنة بحواف ناعمة -->
+  <rect x="4" y="4" width="432" height="122" rx="22" fill="url(#darkBadgeBg)" />
+
+  <!-- قسم الأيقونة باللون الأبيض -->
+  <g transform="translate(22, 9)">
+    <!-- جسم التقويم -->
+    <rect x="28" y="26" width="64" height="54" rx="12" fill="#FFFFFF" />
+    <!-- تفريغ التقويم الداخلي -->
+    <rect x="35" y="43" width="50" height="30" rx="6" fill="#123327" />
+
+    <!-- حلقات التقويم العلوية -->
+    <rect x="42" y="16" width="8.5" height="17" rx="4.25" fill="#FFFFFF" stroke="#14372B" stroke-width="3" />
+    <rect x="69" y="16" width="8.5" height="17" rx="4.25" fill="#FFFFFF" stroke="#14372B" stroke-width="3" />
+
+    <!-- مربعات الأيام -->
+    <g fill="#63B999">
+      <rect x="41" y="49" width="8.5" height="7.5" rx="2" />
+      <rect x="55" y="49" width="8.5" height="7.5" rx="2" />
+      <rect x="69" y="49" width="8.5" height="7.5" rx="2" />
+      <rect x="41" y="60" width="8.5" height="7.5" rx="2" />
+      <rect x="55" y="60" width="8.5" height="7.5" rx="2" />
+    </g>
+
+    <!-- القوس الانسيابي -->
+    <path d="M 28 60 C 13 73, 20 95, 49 92 C 59 91, 66 88, 70 84 C 60 85, 47 85, 37 80 C 27 75, 25 67, 28 60 Z" fill="url(#lightSwoosh)" />
+
+    <!-- علامة الصح البيضاء -->
+    <path d="M 65 70 L 76 82 L 103 53" fill="none" stroke="#123126" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 65 70 L 76 82 L 103 53" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- الخط الفاصل العمودي -->
+  <rect x="158" y="30" width="2" height="70" rx="1" fill="#3E9B78" opacity="0.7" />
+
+  <!-- النص العربي باللون الأبيض -->
+  <text x="184" y="85" class="brand-title-light">مواظب</text>
+</svg>

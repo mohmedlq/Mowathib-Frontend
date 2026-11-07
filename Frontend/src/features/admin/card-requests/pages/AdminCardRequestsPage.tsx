@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { FileQuestion, CheckCircle2, XCircle } from 'lucide-react';
 import { CardRequestBadge } from '../../../../shared/components/ui/Badge';
+import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 import type { CardRequestStatus } from '../../../../shared/types';
 
@@ -85,11 +86,7 @@ export function AdminCardRequestsPage() {
             </thead>
             <tbody className="divide-y divide-[#EEF2F3]">
               {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-[#5F6B73]">
-                    جاري تحميل الطلبات...
-                  </td>
-                </tr>
+                <MuwathibTableLoading colSpan={8} message="جاري استرجاع سجل طلبات البطاقات المدرسية..." />
               ) : filteredRequests.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-[#89949A]">

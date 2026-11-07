@@ -16,7 +16,6 @@ import {
   AdminAcademicYearsPage,
   AdminCardsPage,
   AdminCardRequestsPage,
-  AdminNotificationsPage,
   AdminSettingsPage,
   AdminMonthlyPreparationPage,
   AdminWeeklyPreparationPage,
@@ -29,6 +28,7 @@ import { ReportCenterPage } from '../../features/reports';
 // Representative Pages
 import {
   RepresentativeDashboardPage,
+  RepresentativeAttendancePage,
   RepresentativeAttendanceHistoryPage,
   RepresentativeStudentsPage,
   RepresentativeDeputyPage,
@@ -36,11 +36,14 @@ import {
   RepresentativeProfilePage,
 } from '../../features/representative';
 
+// Landing Page
+import { LandingPage } from '../../components/landing';
+
 // Guard: Root index redirect
 function RootIndexRedirect() {
   const { user } = useAuth();
   if (!user) {
-    return <Navigate to="/representative/login" replace />;
+    return <LandingPage />;
   }
   if (user.role === 'Admin') {
     return <Navigate to="/admin/dashboard" replace />;
@@ -78,6 +81,10 @@ export const router = createBrowserRouter([
     element: <RootIndexRedirect />,
   },
   {
+    path: '/landing',
+    element: <LandingPage />,
+  },
+  {
     path: '/admin/login',
     element: <AdminLoginPage />,
   },
@@ -108,7 +115,6 @@ export const router = createBrowserRouter([
       { path: 'academic-years', element: <AdminAcademicYearsPage /> },
       { path: 'cards', element: <AdminCardsPage /> },
       { path: 'card-requests', element: <AdminCardRequestsPage /> },
-      { path: 'notifications', element: <AdminNotificationsPage /> },
       { path: 'settings', element: <AdminSettingsPage /> },
     ],
   },
@@ -124,7 +130,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/representative/dashboard" replace /> },
       { path: 'dashboard', element: <RepresentativeDashboardPage /> },
-      { path: 'attendance', element: <Navigate to="/representative/dashboard" replace /> },
+      { path: 'daily-attendance', element: <RepresentativeAttendancePage /> },
+      { path: 'attendance', element: <RepresentativeAttendancePage /> },
       { path: 'weekly-attendance', element: <RepresentativeAttendanceHistoryPage /> },
       { path: 'attendance-history', element: <RepresentativeAttendanceHistoryPage /> },
       { path: 'students', element: <RepresentativeStudentsPage /> },

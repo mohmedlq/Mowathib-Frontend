@@ -35,6 +35,7 @@ import {
 } from '../../../shared/utils/date';
 
 import { FileText } from 'lucide-react';
+import { BrandLogo } from '../../../components/common/BrandLogo';
 
 /**
  * Builds the exact StudentWeeklyAttendance structure used by WeeklyReportView
@@ -517,19 +518,27 @@ export function ReportCenterPage() {
       )}
 
       {/* Active Report Header for Print */}
-      <div className="hidden print-only mb-6 border-b pb-4 text-center">
-        <h2 className="text-lg font-bold">{schoolName}</h2>
-        <h3 className="text-base font-semibold mt-1">
-          {filters.periodType === 'daily'
-            ? `تقرير الحضور والغياب اليومي (${currentDayName} - ${currentDayDate})`
-            : filters.periodType === 'weekly'
-              ? `تقرير الحضور الأسبوعي — الأسبوع ${selectedWeek?.weekNumber}`
-              : `تقرير الحضور الشهري — شهر ${filters.month}`}
-        </h3>
-        <p className="text-xs text-gray-600 mt-1">
-          العام الدراسي: 2026-2027 | {classNameTitle} | تاريخ الطباعة:{' '}
-          {new Date().toLocaleDateString('ar-SA')}
-        </p>
+      <div className="hidden print-only mb-6 border-b pb-4">
+        <div className="flex items-center justify-between pb-3 border-b mb-3">
+          <div className="text-right">
+            <h2 className="text-lg font-bold">{schoolName}</h2>
+            <p className="text-xs text-gray-500">إدارة شؤون الطلاب — نظام مواظب المدرسي</p>
+          </div>
+          <BrandLogo variant="wordmark" className="h-10 w-auto object-contain" />
+        </div>
+        <div className="text-center">
+          <h3 className="text-base font-semibold mt-1">
+            {filters.periodType === 'daily'
+              ? `تقرير الحضور والغياب اليومي (${currentDayName} - ${currentDayDate})`
+              : filters.periodType === 'weekly'
+                ? `تقرير الحضور الأسبوعي — الأسبوع ${selectedWeek?.weekNumber}`
+                : `تقرير الحضور الشهري — شهر ${filters.month}`}
+          </h3>
+          <p className="text-xs text-gray-600 mt-1">
+            العام الدراسي: 2026-2027 | {classNameTitle} | تاريخ الطباعة:{' '}
+            {new Date().toLocaleDateString('ar-SA')}
+          </p>
+        </div>
       </div>
 
       {/* Dynamic Report Content */}

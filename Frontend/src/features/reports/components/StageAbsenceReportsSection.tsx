@@ -4,11 +4,11 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
-  Loader2,
   FileCheck2,
   AlertCircle,
   Building2,
 } from 'lucide-react';
+import { Spinner } from '../../../shared/components/ui/Spinner';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import { excelExportService } from '../services/excelExportService';
@@ -450,7 +450,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
                   >
                     {isDailyExporting ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <Spinner size="sm" />
                         <span>جاري التصدير...</span>
                       </>
                     ) : (
@@ -493,7 +493,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
                   >
                     {isWeeklyExporting ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <Spinner size="sm" />
                         <span>جاري التصدير...</span>
                       </>
                     ) : (
@@ -536,7 +536,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
                   >
                     {isMonthlyExporting ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <Spinner size="sm" />
                         <span>جاري التصدير...</span>
                       </>
                     ) : (

@@ -1,13 +1,16 @@
-import type { NotificationItem } from '../../../shared/types';
+export type ToastType = 'success' | 'danger' | 'info' | 'warning';
 
-export interface NotificationsContextType {
-  notifications: NotificationItem[];
-  unreadCount: number;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  addNotification: (item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => void;
+export interface ToastState {
+  id: number;
+  message: string;
+  type: ToastType;
+}
+
+export interface ToastContextType {
   toast: {
-    show: (message: string, type?: 'success' | 'danger' | 'info' | 'warning') => void;
+    show: (message: string, type?: ToastType) => void;
   };
 }
 
+// Backwards compatibility alias
+export type NotificationsContextType = ToastContextType;

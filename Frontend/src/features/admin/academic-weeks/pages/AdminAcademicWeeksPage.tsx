@@ -5,6 +5,7 @@ import { CalendarRange, Plus, Pencil, Trash2, CheckCircle2, AlertTriangle, Calen
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 import { formatArabicDateShort } from '../../../../shared/utils/date';
 import type { AttendanceWeek } from '../../../../shared/types';
@@ -174,7 +175,9 @@ export function AdminAcademicWeeksPage() {
         </div>
 
         {isLoading ? (
-          <div className="p-12 text-center text-xs text-[#5F6B73]">جاري تحميل الأسابيع الدراسية...</div>
+          <div className="p-12">
+            <MuwathibLoading message="جاري استرجاع الأسابيع الدراسية المعتمدة..." />
+          </div>
         ) : sortedWeeks.length === 0 ? (
           <div className="p-12 text-center text-xs text-[#89949A]">
             لا توجد أسابيع دراسية مسجلة حالياً. اضغط "إضافة أسبوع جديد" لإضافة أسبوع.

@@ -1,335 +1,344 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { useNavigate } from 'react-router-dom';
+import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { excelExportService } from '../../../reports/services/excelExportService';
+import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
+import { useNotifications } from '../../../notifications';
+import { formatArabicDateShort } from '../../../../shared/utils/date';
 import {
-  Users,
+  GraduationCap,
   Building2,
   CalendarCheck,
-  CreditCard,
+  FileSpreadsheet,
   CalendarRange,
-  Search,
-  Percent,
+  Download,
+  ChevronLeft,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
-import { AdminStatsCard } from '../components/AdminStatsCard';
-import { ClassOverviewCard } from '../components/ClassOverviewCard';
-import { AttendanceAlertsWidget } from '../components/AttendanceAlertsWidget';
-import { QuickActionsWidget } from '../components/QuickActionsWidget';
+import { Spinner } from '../../../../shared/components/ui/Spinner';
+import type { ClassItem } from '../../../../shared/types';
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
-  const [selectedGradeTab, setSelectedGradeTab] = useState<1 | 2 | 3>(1);
-  const [classSearch, setClassSearch] = useState('');
+  const { toast } = useNotifications();
+  const [isExportingGrades, setIsExportingGrades] = useState(false);
 
-  // 1. Fetch Classes
-  const { data: classes = [] } = useQuery({
-    queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
-  });
-
-  // 2. Fetch Students Count (Fast aggregation instead of downloading full student table)
-  const { data: studentsCount = 0 } = useQuery({
+  // 1. Fetch Students Count (Fast aggregation)
+  const { data: studentsCount = 0, isLoading: isStudentsLoading } = useQuery({
     queryKey: ['students_count'],
     queryFn: () => schoolDataService.getStudentsCount(),
   });
 
-  // 3. Fetch Representatives
-  const { data: reps = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+  // 2. Fetch Classes
+  const { data: classes = [], isLoading: isClassesLoading } = useQuery({
+    queryKey: ['classes'],
+    queryFn: () => schoolDataService.getClasses(),
   });
 
-  // 4. Fetch Card Requests
-  const { data: cardRequests = [] } = useQuery({
-    queryKey: ['card_requests'],
-    queryFn: () => schoolDataService.getCardRequests(),
-  });
-
-  // 5. Fetch Active Academic Year
+  // 3. Fetch Active Academic Year
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
     queryFn: () => schoolDataService.getActiveAcademicYear(),
-    staleTime: 1000 * 60 * 10,
   });
 
-  // 6. Fetch Attendance Weeks
+  // 4. Fetch Attendance Weeks
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  const activeWeek = weeks[0] || { weekNumber: 11, attendanceWeekId: 11 };
-  const pendingRequests = cardRequests.filter((r) => r.status === 'Pending').length;
+  const activeWeek = weeks[0] || { weekNumber: 11, attendanceWeekId: 11, startDate: '2026-11-01', endDate: '2026-11-05' };
 
-  // Split classes by grade:
-  // Split classes by grade:
-  // Grade 1: 101 to 110
-  // Grade 2: 201 to 210
-  // Grade 3: 301 to 310
-  const getClassNum = (c: { classNumber?: number; className?: string | number; classId: number }) => {
-    const val = Number(c.classNumber ?? c.className ?? c.classId);
-    return Number.isFinite(val) ? val : c.classId;
+  // Helper to extract numeric class identifier
+  const getClassNum = (c: ClassItem) => {
+    if (c.classNumber && !isNaN(Number(c.classNumber))) return Number(c.classNumber);
+    const match = String(c.className || '').match(/\d+/);
+    if (match) return Number(match[0]);
+    return Number(c.classId);
   };
 
-  const grade1Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 101 && getClassNum(c) <= 110),
-    [classes]
-  );
-  const grade2Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 201 && getClassNum(c) <= 210),
-    [classes]
-  );
-  const grade3Classes = useMemo(
-    () => classes.filter((c) => getClassNum(c) >= 301 && getClassNum(c) <= 310),
-    [classes]
-  );
+  // Fast direct download for all grades weekly attendance
+  const handleDownloadGradesWeekly = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      setIsExportingGrades(true);
+      toast.show('جاري تجميع بيانات المراحل الدراسية وتجهيز مصنف Excel...', 'info');
 
-  const activeGradeClasses = useMemo(() => {
-    const list =
-      selectedGradeTab === 1
-        ? grade1Classes
-        : selectedGradeTab === 2
-        ? grade2Classes
-        : grade3Classes;
+      // 1. Fetch all enrollments once in bulk
+      const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+      const enrollsMap = new Map<number, typeof allEnrolls>();
+      allEnrolls.forEach((item) => {
+        const list = enrollsMap.get(item.classId) || [];
+        list.push(item);
+        enrollsMap.set(item.classId, list);
+      });
 
-    if (!classSearch.trim()) return list;
-    return list.filter(
-      (c) =>
-        String(c.className ?? c.classId).toLowerCase().includes(classSearch.toLowerCase()) ||
-        c.classId.toString().includes(classSearch)
-    );
-  }, [selectedGradeTab, grade1Classes, grade2Classes, grade3Classes, classSearch]);
+      // 2. Split classes into 3 grades
+      const grade1Classes = classes.filter((c) => getClassNum(c) >= 101 && getClassNum(c) <= 110);
+      const grade2Classes = classes.filter((c) => getClassNum(c) >= 201 && getClassNum(c) <= 210);
+      const grade3Classes = classes.filter((c) => getClassNum(c) >= 301 && getClassNum(c) <= 310);
 
-  // Overall attendance calculation
-  const overallAttendanceRate = useMemo(() => {
-    return 94.6; // Average stable attendance percentage based on active records
-  }, []);
+      const targetWeek = activeWeek;
+
+      const fetchGradeData = async (classList: ClassItem[]) => {
+        return await Promise.all(
+          classList.map(async (cls) => {
+            let enrolls = enrollsMap.get(cls.classId);
+            if (!enrolls || enrolls.length === 0) {
+              enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
+            }
+            const recs = await schoolDataService
+              .getAttendanceRecords(cls.classId, targetWeek.attendanceWeekId)
+              .catch(() => []);
+            const attendances = buildWeeklyAttendanceRows(enrolls, recs);
+            return {
+              classItem: cls,
+              className: String(cls.className || `شعبة ${cls.classId}`),
+              classNumber: Number(cls.classNumber || cls.classId),
+              attendances,
+            };
+          })
+        );
+      };
+
+      const [g1Data, g2Data, g3Data] = await Promise.all([
+        fetchGradeData(grade1Classes),
+        fetchGradeData(grade2Classes),
+        fetchGradeData(grade3Classes),
+      ]);
+
+      const academicYearLabel = activeYear?.yearName || '1446-1447هـ';
+      const weekRange = `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
+
+      // 3. Generate 3-grade unified workbook
+      await excelExportService.exportAllGradesWeeklyPreparation({
+        weekNumber: targetWeek.weekNumber,
+        weekRange,
+        academicYear: academicYearLabel,
+        gradesData: [
+          { gradeName: 'الأول الثانوي', classesData: g1Data },
+          { gradeName: 'الثاني الثانوي', classesData: g2Data },
+          { gradeName: 'الثالث الثانوي', classesData: g3Data },
+        ],
+      });
+
+      toast.show('تم تحميل كشف التحضير الأسبوعي للمراحل بنجاح!', 'success');
+    } catch (err: any) {
+      console.error('Failed to export grades weekly attendance:', err);
+      toast.show(err.message || 'تعذر تصدير كشوف المراحل، يرجى المحاولة لاحقاً', 'danger');
+    } finally {
+      setIsExportingGrades(false);
+    }
+  };
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* 1. Header Banner & Context */}
-      <div className="bg-white p-5 sm:p-6 rounded-xl border border-[#DCE3E6] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+    <div className="space-y-6">
+      {/* 1. Header Overview */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-[#DCE3E6] dark:border-[#28373D]">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold text-[#245B63] bg-[#E8F1F1] px-2 py-0.5 rounded border border-[#CDE0E2]">
-              {activeYear?.yearName || 'العام الدراسي 1446-1447هـ'}
-            </span>
-            <span className="text-xs text-[#5F6B73]">
-              الأسبوع الدراسي رقم {activeWeek.weekNumber}
-            </span>
-          </div>
-          <h1 className="text-xl font-bold text-[#17252B]">لوحة المتابعة الإدارية الشاملة</h1>
-          <p className="text-xs text-[#5F6B73] mt-0.5">
-            متابعة دقيقة لحضور وغياب الطلاب وشعب المدرسة (30 شعبة معتمدة)
+          <h1 className="text-2xl font-bold text-[#17252B] dark:text-[#F0F4F6] tracking-tight">
+            لوحة الإدارة والتحكم الرئيسية
+          </h1>
+          <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-1 max-w-xl">
+            متابعة إحصائيات المدرسة، إدارة الطلاب والشعب، والوصول المباشر إلى سجلات وكشوف الحضور الأسبوعية
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            icon={<CalendarRange className="w-4 h-4" />}
-            onClick={() => navigate('/admin/reports')}
-          >
-            مركز التقارير والتصدير
-          </Button>
-
-          <Button
-            type="button"
-            variant="primary"
-            size="md"
-            icon={<CalendarCheck className="w-4 h-4" />}
-            onClick={() => navigate('/admin/attendance')}
-          >
-            رصد حضور الحصة الآن
-          </Button>
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          <span className="text-xs font-medium text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC] dark:bg-[#122B1E] px-3 py-1.5 rounded-lg border border-[#B7DEC5] dark:border-[#1B4D32] flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-[#176B3A] dark:text-[#4ADE80]" />
+            <span>النظام متصل وجاهز للعمل</span>
+          </span>
         </div>
       </div>
 
-      {/* 2. Top KPI Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Students */}
-        <AdminStatsCard
-          title="إجمالي الطلاب المقيدين"
-          value={studentsCount > 0 ? studentsCount : 350}
-          subtitle="في السجلات الرسمية"
-          icon={<Users className="w-5 h-5" />}
-          badge={{ text: 'جميعهم بقيد نشط', variant: 'success' }}
+      {/* 2. Primary 5 Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {/* Card 1: Total Students */}
+        <div
           onClick={() => navigate('/admin/students')}
-        />
+          className="group bg-white dark:bg-[#182226] p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#245B63] dark:hover:border-[#388B96] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#245B63] to-[#40838D] opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        {/* Overall Attendance Rate */}
-        <AdminStatsCard
-          title="معدل الحضور العام للمدرسة"
-          value={`${overallAttendanceRate}%`}
-          subtitle="متوسط نسب الحضور للأسبوع الحالي"
-          icon={<Percent className="w-5 h-5" />}
-          badge={{ text: 'أعلى من المعدل المستهدف', variant: 'teal' }}
-          onClick={() => navigate('/admin/attendance')}
-        />
-
-        {/* Total Classes */}
-        <AdminStatsCard
-          title="فصول المدرسة المعتمدة"
-          value={classes.length > 0 ? classes.length : 30}
-          subtitle="10 شعب لكل مرحلة دراسية"
-          icon={<Building2 className="w-5 h-5" />}
-          badge={{ text: '3 مراحل ثانوية', variant: 'neutral' }}
-          onClick={() => navigate('/admin/classes')}
-        />
-
-        {/* Pending Card Requests */}
-        <AdminStatsCard
-          title="طلبات البطاقات المعلقة"
-          value={pendingRequests}
-          subtitle="تنتظر فحص واعتماد الإدارة"
-          icon={<CreditCard className="w-5 h-5" />}
-          badge={{
-            text: pendingRequests > 0 ? 'تتطلب إجراءً' : 'لا توجد طلبات معلقة',
-            variant: pendingRequests > 0 ? 'danger' : 'success',
-          }}
-          onClick={() => navigate('/admin/card-requests')}
-        />
-      </div>
-
-      {/* 3. Actionable Widgets: Alerts & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <AttendanceAlertsWidget
-          classes={classes}
-          cardRequests={cardRequests}
-          representatives={reps}
-        />
-        <QuickActionsWidget />
-      </div>
-
-      {/* 4. Complete 30 Classes Directory */}
-      <div className="bg-white rounded-xl border border-[#DCE3E6] shadow-xs overflow-hidden">
-        {/* Directory Header & Controls */}
-        <div className="p-4 sm:p-5 border-b border-[#DCE3E6] flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-[#17252B]">
-                دليل الفصول والشعب الدراسية
-              </h2>
-              <span className="text-xs font-mono font-bold text-[#245B63] bg-[#E8F1F1] px-2 py-0.5 rounded border border-[#CDE0E2]">
-                30 شعبة
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-bold text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC] dark:bg-[#122B1E] px-2.5 py-0.5 rounded-full border border-[#B7DEC5] dark:border-[#1B4D32]">
+                قيد نشط
               </span>
             </div>
-            <p className="text-xs text-[#5F6B73] mt-0.5">
-              انقر على أي شعبة للاطلاع المباشر على جدول حضورها، قائمتها، وعرفائها
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">إجمالي الطلاب</span>
+            <div className="text-3xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] font-mono mt-1 mb-2">
+              {isStudentsLoading ? (
+                <span className="text-sm font-normal text-[#89949A] dark:text-[#6E7F87] inline-flex items-center gap-1.5">
+                  <Spinner size="xs" /> جاري الحساب...
+                </span>
+              ) : (
+                <span>{studentsCount} <span className="text-sm font-bold text-[#5F6B73] dark:text-[#9BAAB1]">طالباً</span></span>
+              )}
+            </div>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed">
+              إدارة بيانات الطلاب المقيدين في المدرسة، البحث برقم الهوية، وتعديل وتسكين الشعب.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Search Input */}
-            <div className="relative min-w-[200px]">
-              <Search className="w-4 h-4 text-[#89949A] absolute right-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="ابحث برقم الشعبة (مثال: 105)..."
-                value={classSearch}
-                onChange={(e) => setClassSearch(e.target.value)}
-                className="w-full h-9 pr-9 pl-3 text-xs bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg focus:bg-white focus:border-[#245B63] outline-none transition-colors"
-              />
-            </div>
-
-            {/* Grade Tabs */}
-            <div className="flex items-center bg-[#F5F7F8] p-1 rounded-lg border border-[#DCE3E6]">
-              <button
-                type="button"
-                onClick={() => setSelectedGradeTab(1)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                  selectedGradeTab === 1
-                    ? 'bg-[#245B63] text-white shadow-xs'
-                    : 'text-[#5F6B73] hover:text-[#17252B]'
-                }`}
-              >
-                الأول الثانوي ({grade1Classes.length || 10})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGradeTab(2)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                  selectedGradeTab === 2
-                    ? 'bg-[#245B63] text-white shadow-xs'
-                    : 'text-[#5F6B73] hover:text-[#17252B]'
-                }`}
-              >
-                الثاني الثانوي ({grade2Classes.length || 10})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedGradeTab(3)}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                  selectedGradeTab === 3
-                    ? 'bg-[#245B63] text-white shadow-xs'
-                    : 'text-[#5F6B73] hover:text-[#17252B]'
-                }`}
-              >
-                الثالث الثانوي ({grade3Classes.length || 10})
-              </button>
-            </div>
+          <div className="pt-4 mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#245B63] dark:text-[#388B96] group-hover:text-[#174349] dark:group-hover:text-[#52B4C2]">
+            <span>الانتقال لإدارة الطلاب</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           </div>
         </div>
 
-        {/* Classes Cards Grid */}
-        <div className="p-4 sm:p-5">
-          {activeGradeClasses.length === 0 ? (
-            <div className="py-12 text-center text-xs text-[#5F6B73]">
-              لا توجد شعب مطابقة لبحثك في هذا المستوى الدراسي
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-              {activeGradeClasses.map((c) => (
-                <ClassOverviewCard
-                  key={c.classId}
-                  classItem={c}
-                  attendanceRate={94.5 + ((c.classId % 7) * 0.7)}
-                  enrolledCount={30 + (c.classId % 5)}
-                  representatives={reps}
-                  onClick={() => navigate(`/admin/attendance?classId=${c.classId}`)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+        {/* Card 2: Total Classes */}
+        <div
+          onClick={() => navigate('/admin/classes')}
+          className="group bg-white dark:bg-[#182226] p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#245B63] dark:hover:border-[#388B96] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#245B63] to-[#40838D] opacity-0 group-hover:opacity-100 transition-opacity" />
 
-      {/* 5. Fast Workflow Callout */}
-      <div className="bg-[#245B63] text-white rounded-xl p-5 sm:p-6 flex flex-col md:flex-row items-center justify-between gap-4 border border-[#1D4B52] shadow-xs">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full bg-[#176B3A] border border-white"></span>
-            <span className="text-xs text-white/90 font-medium">سير عمل التحضير فائق السرعة</span>
+          <div>
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-bold text-[#245B63] dark:text-[#388B96] bg-[#E8F1F1] dark:bg-[#19383E] px-2.5 py-0.5 rounded-full border border-[#CDE0E2] dark:border-[#28373D]">
+                3 مراحل ثانوية
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">إجمالي الشعب والفصول</span>
+            <div className="text-3xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] font-mono mt-1 mb-2">
+              {isClassesLoading ? (
+                <span className="text-sm font-normal text-[#89949A] dark:text-[#6E7F87] inline-flex items-center gap-1.5">
+                  <Spinner size="xs" /> جاري التحميل...
+                </span>
+              ) : (
+                <span>{classes.length} <span className="text-sm font-bold text-[#5F6B73] dark:text-[#9BAAB1]">شعبة</span></span>
+              )}
+            </div>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed">
+              استعراض الشعب الدراسية الـ 30، توزيع بطاقات الاستئذان، وتعيين عرفاء ونواب الفصول.
+            </p>
           </div>
-          <h3 className="text-base font-bold">بدء رصد حضور الحصة الدراسية الحالية</h3>
-          <p className="text-xs text-white/80 mt-1 max-w-xl">
-            استخدم نمط التحضير السريع لرصد حضور أي شعبة بضغطة زر واحدة (تحضير الكل حاضر) مع تسجيل الغياب الاستثنائي وحفظه فورياً.
-          </p>
+
+          <div className="pt-4 mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#245B63] dark:text-[#388B96] group-hover:text-[#174349] dark:group-hover:text-[#52B4C2]">
+            <span>الانتقال لإدارة الشعب</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            className="bg-white text-[#245B63] hover:bg-[#EEF2F3] font-bold"
-            onClick={() => navigate('/admin/attendance')}
-          >
-            <span>فتح شاشة التحضير</span>
-          </Button>
+        {/* Card 3: Manage Attendance */}
+        <div
+          onClick={() => navigate('/admin/attendance')}
+          className="group bg-white dark:bg-[#182226] p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#245B63] dark:hover:border-[#388B96] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#245B63] to-[#40838D] opacity-0 group-hover:opacity-100 transition-opacity" />
 
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            className="border-white/30 text-white hover:bg-white/10 font-bold"
-            onClick={() => navigate('/admin/reports')}
-          >
-            <span>سجل التقارير</span>
-          </Button>
+          <div>
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <CalendarCheck className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-bold text-[#28559A] dark:text-[#60A5FA] bg-[#EAF2FF] dark:bg-[#13273D] px-2.5 py-0.5 rounded-full border border-[#C3D9FF] dark:border-[#1E3A5F]">
+                رصد فوري
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">إدارة ورصد الحضور</span>
+            <div className="text-xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] mt-2 mb-2">
+              تسجيل ومتابعة الغياب
+            </div>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed">
+              شاشة الرصد التفاعلي لجميع الحصص (7 حصص الأحد-الثلاثاء، 6 الأربعاء والخميس) وكشف الغائبين.
+            </p>
+          </div>
+
+          <div className="pt-4 mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#245B63] dark:text-[#388B96] group-hover:text-[#174349] dark:group-hover:text-[#52B4C2]">
+            <span>فتح شاشة إدارة الحضور</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          </div>
+        </div>
+
+        {/* Card 4: Download Weekly Attendance by Grades */}
+        <div
+          onClick={() => navigate('/admin/weekly-preparation')}
+          className="group bg-white dark:bg-[#182226] p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#176B3A] dark:hover:border-[#4ADE80] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#176B3A] to-[#259754] opacity-0 group-hover:opacity-100 transition-opacity" />
+
+          <div>
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-bold text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC] dark:bg-[#122B1E] px-2.5 py-0.5 rounded-full border border-[#B7DEC5] dark:border-[#1B4D32]">
+                مصنف Excel (3 مراحل)
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">التحضير الأسبوعي للمراحل</span>
+            <div className="text-xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] mt-2 mb-2">
+              تنزيل التحضير حسب المراحل
+            </div>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed mb-3">
+              تصدير كشوف التحضير الأسبوعية المعتمدة للمراحل الثلاث (أول، ثاني، ثالث ثانوي) في مصنف واحد أو بشكل منفصل.
+            </p>
+
+            {/* Direct Instant Download Button */}
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon={isExportingGrades ? <Spinner size="sm" /> : <Download className="w-4 h-4" />}
+              onClick={handleDownloadGradesWeekly}
+              disabled={isExportingGrades}
+              className="w-full bg-[#176B3A] hover:bg-[#135830] dark:bg-[#1E7D45] dark:hover:bg-[#176B3A] border-[#135830] dark:border-[#1E7D45] text-xs font-bold shadow-xs justify-center"
+            >
+              <span>{isExportingGrades ? 'جاري التحميل والتصدير...' : 'اضغط لتنزيل ملف Excel للمراحل'}</span>
+            </Button>
+          </div>
+
+          <div className="pt-4 mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#176B3A] dark:text-[#4ADE80] group-hover:text-[#135830] dark:group-hover:text-[#6EE7B7]">
+            <span>عرض صفحة تحضير المراحل</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          </div>
+        </div>
+
+        {/* Card 5: Weekly Attendance by Per Class */}
+        <div
+          onClick={() => navigate('/admin/monthly-preparation')}
+          className="group bg-white dark:bg-[#182226] p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#245B63] dark:hover:border-[#388B96] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#245B63] to-[#40838D] opacity-0 group-hover:opacity-100 transition-opacity" />
+
+          <div>
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <CalendarRange className="w-6 h-6" />
+              </div>
+              <span className="text-[11px] font-bold text-[#855500] dark:text-[#FACC15] bg-[#FFF4DA] dark:bg-[#332712] px-2.5 py-0.5 rounded-full border border-[#EDD38C] dark:border-[#594218]">
+                كشف الشعبة (5 أسابيع)
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">التحضير الأسبوعي للشعبة</span>
+            <div className="text-xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] mt-2 mb-2">
+              التحضير الأسبوعي حسب الشعب
+            </div>
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed">
+              استعراض وطباعة وتصدير سجل التحضير الأسبوعي والتراكمي لـ 5 أسابيع متتالية لكل شعبة مستقلة بنمط الكشف المعتمد.
+            </p>
+          </div>
+
+          <div className="pt-4 mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#245B63] dark:text-[#388B96] group-hover:text-[#174349] dark:group-hover:text-[#52B4C2]">
+            <span>الانتقال لتحضير الشعبة</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          </div>
         </div>
       </div>
     </div>

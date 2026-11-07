@@ -14,6 +14,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
+import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 
 interface StudentFormData {
@@ -321,11 +322,7 @@ const handleEditStudent = (
 
             <tbody className="divide-y divide-[#DCE3E6]">
               {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-[#5F6B73]">
-                    جاري تحميل بيانات طلاب الشعبة...
-                  </td>
-                </tr>
+                <MuwathibTableLoading colSpan={5} message="جاري استرجاع بيانات طلاب الشعبة..." />
               ) : filteredEnrollments.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-[#89949A]">

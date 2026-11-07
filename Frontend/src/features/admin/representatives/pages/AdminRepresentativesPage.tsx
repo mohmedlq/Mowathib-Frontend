@@ -5,6 +5,7 @@ import { Users2, Copy, Check, Plus, Info, KeyRound } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
+import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 import type { Representative } from '../../../../shared/types';
 
@@ -134,11 +135,7 @@ export function AdminRepresentativesPage() {
             </thead>
             <tbody className="divide-y divide-[#EEF2F3]">
               {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-[#5F6B73]">
-                    جاري تحميل الحسابات...
-                  </td>
-                </tr>
+                <MuwathibTableLoading colSpan={7} message="جاري استرجاع سجل حسابات العرفاء والنواب..." />
               ) : reps.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-[#89949A]">

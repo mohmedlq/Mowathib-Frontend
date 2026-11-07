@@ -165,16 +165,6 @@ export function isValidPeriodForDay(dayNumber: number, periodNumber: number): bo
   return periodNumber >= 1 && periodNumber <= max;
 }
 
-export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'success' | 'danger';
-  timestamp: string;
-  read: boolean;
-  targetRole?: UserRole;
-  link?: string;
-}
 
 export interface WeeklyAttendanceSummary {
   classId: number;

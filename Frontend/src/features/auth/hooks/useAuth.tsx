@@ -3,6 +3,7 @@ import type { AuthUser } from '../../../shared/types';
 import type { AuthContextType, LoginCredentials } from '../types/auth.types';
 import { authApi } from '../api/authApi';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { SplashScreen } from '../../../components/common/SplashScreen';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'mowathib_auth_user';
@@ -17,6 +18,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -124,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
        activeAcademicYear,
       }}
     >
-      {children}
+      {isInitializing ? <SplashScreen /> : children}
     </AuthContext.Provider>
   );
 }

@@ -1,18 +1,22 @@
 import { RouterProvider } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
 import { AuthProvider } from '../features/auth';
-import { NotificationsProvider } from '../features/notifications';
+import { ToastProvider } from '../features/notifications';
+import { ThemeProvider } from '../shared/context/ThemeContext';
 import { router } from './router';
 
 export function App() {
   return (
-    <QueryProvider>
-      <AuthProvider>
-        <NotificationsProvider>
-          <RouterProvider router={router} />
-        </NotificationsProvider>
-      </AuthProvider>
-    </QueryProvider>
+    <ThemeProvider>
+      <QueryProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </AuthProvider>
+      </QueryProvider>
+    </ThemeProvider>
   );
 }
 
+export default App;

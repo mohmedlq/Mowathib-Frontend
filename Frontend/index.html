@@ -1,20 +1,40 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" class="dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logos/favicon.svg" />
+    <link rel="apple-touch-icon" href="/assets/logos/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>مواظب — نظام إدارة الحضور المدرسي</title>
+    <meta name="theme-color" content="#0B5D43" />
+    <meta name="description" content="منصة مواظب الذكية لإدارة الحضور والانضباط المدرسي — حضور منظم.. لبيئة تعليمية أفضل" />
+    <title>مواظب — حضور منظم.. لبيئة تعليمية أفضل</title>
+    <!-- Prevent Flash of Unstyled Content (FOUC) / Activate Dark Mode -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('mowathib-theme');
+          if (saved === 'light') {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.setAttribute('data-theme', 'light');
+            document.documentElement.style.colorScheme = 'light';
+          } else {
+            // Default to dark mode
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.style.colorScheme = 'dark';
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>
-  <body class="bg-[#F5F7F8] text-[#17252B] font-sans antialiased min-h-screen">
+  <body class="bg-[#F4F8F6] text-[#122B23] dark:bg-[#0D1E18] dark:text-[#F4F8F6] font-sans antialiased min-h-screen selection:bg-[#0B5D43] selection:text-white transition-colors duration-150">
     <div id="root"></div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
 </html>
-

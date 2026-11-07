@@ -18,10 +18,14 @@ export function PeriodStatusBox({
   size = 'md',
 }: PeriodStatusBoxProps) {
   const statusStyles: Record<AttendanceStatus, string> = {
-    Present: 'bg-[#E8F5EC] text-[#176B3A] border-[#B7DEC5] hover:bg-[#D7EEDB] hover:border-[#176B3A]/40',
-    Absent: 'bg-[#FDECEC] text-[#A61B1B] border-[#F1C3C3] hover:bg-[#F8D2D2] hover:border-[#A61B1B]/40',
-    Discontinued: 'bg-[#FFF4DA] text-[#855500] border-[#EDD38C] hover:bg-[#FDE6B3] hover:border-[#855500]/40',
-    Unmarked: 'bg-[#F1F3F5] text-[#59636E] border-[#D9DEE3] hover:bg-[#E4E7EA] hover:border-[#89949A]',
+    Present:
+      'bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] border-[#B7DEC5] dark:border-[#1B4D32] hover:bg-[#D7EEDB] dark:hover:bg-[#1A3D2A] hover:border-[#176B3A]/40',
+    Absent:
+      'bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border-[#F1C3C3] dark:border-[#592226] hover:bg-[#F8D2D2] dark:hover:bg-[#451C20] hover:border-[#A61B1B]/40',
+    Discontinued:
+      'bg-[#FFF4DA] dark:bg-[#332712] text-[#855500] dark:text-[#FACC15] border-[#EDD38C] dark:border-[#594218] hover:bg-[#FDE6B3] dark:hover:bg-[#453418] hover:border-[#855500]/40',
+    Unmarked:
+      'bg-[#F1F3F5] dark:bg-[#1E292D] text-[#59636E] dark:text-[#9BAAB1] border-[#D9DEE3] dark:border-[#2C3C43] hover:bg-[#E4E7EA] dark:hover:bg-[#2A393E] hover:border-[#89949A]',
   };
 
   const sizes = {

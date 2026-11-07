@@ -7,6 +7,7 @@ import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
 import { CardRequestBadge } from '../../../../shared/components/ui/Badge';
+import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
 import { useNotifications } from '../../../notifications';
 
 export function RepresentativeCardRequestsPage() {
@@ -109,11 +110,7 @@ export function RepresentativeCardRequestsPage() {
             </thead>
             <tbody className="divide-y divide-[#DCE3E6]">
               {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[#5F6B73]">
-                    جاري تحميل سجل الطلبات...
-                  </td>
-                </tr>
+                <MuwathibTableLoading colSpan={6} message="جاري استرجاع سجل طلبات البطاقات البديلة..." />
               ) : myRequests.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-[#89949A]">

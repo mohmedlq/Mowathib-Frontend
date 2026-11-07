@@ -13,17 +13,17 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 export function Badge({ className, variant = 'default', size = 'sm', children, ...props }: BadgeProps) {
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-md border select-none';
+  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-md border select-none transition-colors';
 
   const variants = {
-    default: 'bg-[#EEF2F3] text-[#5F6B73] border-[#DCE3E6]',
-    present: 'bg-[#E8F5EC] text-[#176B3A] border-[#B7DEC5]',
-    absent: 'bg-[#FDECEC] text-[#A61B1B] border-[#F1C3C3]',
-    unmarked: 'bg-[#F1F3F5] text-[#59636E] border-[#D9DEE3]',
-    discontinued: 'bg-[#FFF4DA] text-[#855500] border-[#EDD38C]',
-    info: 'bg-[#EAF2FF] text-[#28559A] border-[#C3D9FF]',
-    warning: 'bg-[#FFF4DA] text-[#855500] border-[#EDD38C]',
-    danger: 'bg-[#FDECEC] text-[#A61B1B] border-[#F1C3C3]',
+    default: 'bg-[#EEF2F3] dark:bg-[#212E33] text-[#5F6B73] dark:text-[#9BAAB1] border-[#DCE3E6] dark:border-[#28373D]',
+    present: 'bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] border-[#B7DEC5] dark:border-[#1B4D32]',
+    absent: 'bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border-[#F1C3C3] dark:border-[#592226]',
+    unmarked: 'bg-[#F1F3F5] dark:bg-[#1E292D] text-[#59636E] dark:text-[#9BAAB1] border-[#D9DEE3] dark:border-[#2C3C43]',
+    discontinued: 'bg-[#FFF4DA] dark:bg-[#332712] text-[#855500] dark:text-[#FACC15] border-[#EDD38C] dark:border-[#594218]',
+    info: 'bg-[#EAF2FF] dark:bg-[#13273D] text-[#28559A] dark:text-[#60A5FA] border-[#C3D9FF] dark:border-[#1E3A5F]',
+    warning: 'bg-[#FFF4DA] dark:bg-[#332712] text-[#855500] dark:text-[#FACC15] border-[#EDD38C] dark:border-[#594218]',
+    danger: 'bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border-[#F1C3C3] dark:border-[#592226]',
   };
 
   const sizes = {
@@ -61,9 +61,8 @@ export function CardRequestBadge({ status, size = 'sm' }: { status: CardRequestS
   };
 
   return (
-    <Badge variant={variantMap[status] || 'default'} size={size}>
-      {CARD_REQUEST_STATUS_ARABIC[status] || status}
+    <Badge variant={variantMap[status]} size={size}>
+      {CARD_REQUEST_STATUS_ARABIC[status]}
     </Badge>
   );
 }
-
