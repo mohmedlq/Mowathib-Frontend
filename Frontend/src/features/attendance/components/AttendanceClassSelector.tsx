@@ -40,7 +40,6 @@ export function AttendanceClassSelector({
         onChange={(e) => onSelectClass(Number(e.target.value))}
         className="w-full h-10 px-3 bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] text-xs font-medium rounded-lg border border-[#DCE3E6] dark:border-[#28373D] focus:border-[#245B63] dark:focus:border-[#388B96] focus:ring-1 focus:ring-[#245B63] outline-none cursor-pointer transition-colors"
       >
-        {allowAllOption && <option value={0} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">جميع فصول المدرسة (30 شعبة)</option>}
 
         {grade1.length > 0 && (
           <optgroup label="الصف الأول الثانوي (101 - 109)" className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">

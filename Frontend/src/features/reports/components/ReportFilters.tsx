@@ -83,7 +83,6 @@ export function ReportFilters({ filters, onChange, classes, weeks, isAdmin = tru
             disabled={!isAdmin && filters.classId > 0}
             className="w-full h-10 px-3 bg-white text-xs font-medium rounded-lg border border-[#DCE3E6] focus:border-[#245B63] outline-none cursor-pointer disabled:bg-[#EEF2F3]"
           >
-            {isAdmin && <option value={0}>جميع فصول المدرسة (30 شعبة)</option>}
             {classes.map((c) => (
               <option key={c.classId} value={c.classId}>
                 {c.className}

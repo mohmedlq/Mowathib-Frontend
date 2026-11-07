@@ -19,7 +19,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7273/api';
+const BASE_URL ='https://mowathib-api.onrender.com/api';
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
