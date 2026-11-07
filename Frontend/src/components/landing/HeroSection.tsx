@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Users,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '../../shared/components/ui/Button';
 

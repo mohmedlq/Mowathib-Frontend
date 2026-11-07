@@ -13,7 +13,6 @@ export function AttendanceClassSelector({
   selectedClassId,
   onSelectClass,
   className,
-  allowAllOption = false,
 }: AttendanceClassSelectorProps) {
   // Helper to reliably extract class number
   const getClassNum = (c: ClassItem) => {
