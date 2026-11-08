@@ -19,7 +19,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL ='https://mowathib-api.onrender.com/api';
+const BASE_URL ='https://www.mowathib-api.somee.com/api';
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,

@@ -17,7 +17,7 @@ export function RepresentativeAttendancePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const classId = user?.classId || 105;
+  const classId = user?.classId||0;
   const className = user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : `شعبة ${classId}`);
 
   // Calculate current school day in Saudi Arabia (Sunday = 1 ... Thursday = 5)
