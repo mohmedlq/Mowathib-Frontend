@@ -59,6 +59,15 @@ export interface Student {
   lastName: string;
   fullName: string;
   nationalId: string;
+  parentId?: string | null;
+  parentName?: string | null;
+}
+
+export interface Parent {
+  id: string; // Guid
+  fullName: string;
+  phoneNumber: string;
+  studentsCount?: number;
 }
 
 export interface ClassEnrollment {

@@ -20,6 +20,7 @@ import {
   AdminMonthlyPreparationPage,
   AdminWeeklyPreparationPage,
   AdminAcademicWeeksPage,
+  AdminSendNotificationsPage,
 } from '../../features/admin';
 
 // Report Center
@@ -108,6 +109,7 @@ export const router = createBrowserRouter([
       { path: 'monthly-preparation', element: <AdminMonthlyPreparationPage /> },
       { path: 'weekly-preparation', element: <AdminWeeklyPreparationPage /> },
       { path: 'reports', element: <ReportCenterPage /> },
+      { path: 'send-notifications', element: <AdminSendNotificationsPage /> },
       { path: 'classes', element: <AdminClassesPage /> },
       { path: 'academic-weeks', element: <AdminAcademicWeeksPage /> },
       { path: 'students', element: <AdminStudentsPage /> },

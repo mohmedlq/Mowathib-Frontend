@@ -10,3 +10,4 @@ export { AdminSettingsPage } from './settings/pages/AdminSettingsPage';
 export { AdminMonthlyPreparationPage } from './monthly-preparation/pages/AdminMonthlyPreparationPage';
 export { AdminWeeklyPreparationPage } from './weekly-preparation/pages/AdminWeeklyPreparationPage';
 export { AdminAcademicWeeksPage } from './academic-weeks/pages/AdminAcademicWeeksPage';
+export { AdminSendNotificationsPage } from './send-notifications/pages/AdminSendNotificationsPage';

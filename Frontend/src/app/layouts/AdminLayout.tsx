@@ -25,6 +25,7 @@ import {
   X,
   ChevronLeft,
   Calendar,
+  BellRing,
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -61,6 +62,7 @@ export function AdminLayout() {
         // { to: '/admin/monthly-preparation', label: 'التحضير الشهري (5 أسابيع)', icon: CalendarRange },
         { to: '/admin/weekly-preparation', label: 'التحضير الأسبوعي (المراحل)', icon: FileSpreadsheet },
         { to: '/admin/reports', label: 'تقارير الحضور والغياب', icon: CalendarDays },
+        { to: '/admin/send-notifications', label: 'إشعارات أولياء الأمور', icon: BellRing },
       ],
     },
     {

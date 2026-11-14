@@ -9,6 +9,7 @@ import type {
   AttendanceRecord,
   Representative,
   CardRequest,
+  Parent,
   BackendAttendanceStatus,
   CardRequestStatus,
   WeeklyAttendanceSummary,
@@ -136,15 +137,23 @@ export const schoolDataService = {
       ...e,
       classNumber: e.classNumber,
       className: e.className ?? e.classNumber ?? '',
-      student: e.student || {
-        studentId: e.studentId,
-        firstName: '',
-        secondName: '',
-        thirdName: '',
-        lastName: '',
-        fullName: e.studentName || '',
-        nationalId: (e as unknown as { nationalId?: string }).nationalId || '',
-      },
+      student: e.student
+        ? {
+            ...e.student,
+            parentId: e.student.parentId || (e as any).parentId,
+            parentName: e.student.parentName || (e as any).parentName,
+          }
+        : {
+            studentId: e.studentId,
+            firstName: '',
+            secondName: '',
+            thirdName: '',
+            lastName: '',
+            fullName: e.studentName || '',
+            nationalId: (e as unknown as { nationalId?: string }).nationalId || '',
+            parentId: (e as any).parentId,
+            parentName: (e as any).parentName,
+          },
     }));
   },
 
@@ -154,15 +163,23 @@ export const schoolDataService = {
       ...e,
       classNumber: e.classNumber,
       className: e.className ?? e.classNumber ?? '',
-      student: e.student || {
-        studentId: e.studentId,
-        firstName: '',
-        secondName: '',
-        thirdName: '',
-        lastName: '',
-        fullName: e.studentName || '',
-        nationalId: (e as unknown as { nationalId?: string }).nationalId || '',
-      },
+      student: e.student
+        ? {
+            ...e.student,
+            parentId: e.student.parentId || (e as any).parentId,
+            parentName: e.student.parentName || (e as any).parentName,
+          }
+        : {
+            studentId: e.studentId,
+            firstName: '',
+            secondName: '',
+            thirdName: '',
+            lastName: '',
+            fullName: e.studentName || '',
+            nationalId: (e as unknown as { nationalId?: string }).nationalId || '',
+            parentId: (e as any).parentId,
+            parentName: (e as any).parentName,
+          },
     }));
   },
 
@@ -341,5 +358,32 @@ export const schoolDataService = {
 
   async updateCardRequestStatus(requestId: number, status: CardRequestStatus): Promise<void> {
     await apiClient.put(`/CardRequests/${requestId}/status`, { status });
+  },
+
+  // ==========================================
+  // PARENTS (Connected to ParentsController)
+  // ==========================================
+  async getParents(): Promise<Parent[]> {
+    try {
+      return await apiClient.get<Parent[]>('/Parents');
+    } catch {
+      return [];
+    }
+  },
+
+  async getParentById(id: string): Promise<Parent | null> {
+    try {
+      return await apiClient.get<Parent>(`/Parents/${id}`);
+    } catch {
+      return null;
+    }
+  },
+
+  async getParentByPhone(phoneNumber: string): Promise<Parent | null> {
+    try {
+      return await apiClient.get<Parent>(`/Parents/by-phone/${phoneNumber}`);
+    } catch {
+      return null;
+    }
   },
 };
