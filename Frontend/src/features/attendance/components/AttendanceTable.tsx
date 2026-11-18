@@ -5,6 +5,7 @@ import { AttendanceDayCell } from './AttendanceDayCell';
 import { AttendanceLegend } from './AttendanceLegend';
 import { Search, Filter } from 'lucide-react';
 import { calculateDateForDay, formatArabicDateShort } from '../../../shared/utils/date';
+import { PaginationControls } from '../../../shared/components/ui/PaginationControls';
 
 export interface AttendanceTableProps {
   attendances: StudentWeeklyAttendance[];
@@ -25,6 +26,18 @@ export function AttendanceTable({
 }: AttendanceTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | AttendanceStatus>('all');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setPageNumber(1);
+  };
+
+  const handleStatusFilterChange = (status: 'all' | AttendanceStatus) => {
+    setStatusFilter(status);
+    setPageNumber(1);
+  };
 
   const filteredList = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -49,6 +62,13 @@ export function AttendanceTable({
     });
   }, [attendances, searchQuery, statusFilter]);
 
+  const totalCount = filteredList.length;
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const paginatedList = useMemo(() => {
+    const start = (pageNumber - 1) * pageSize;
+    return filteredList.slice(start, start + pageSize);
+  }, [filteredList, pageNumber, pageSize]);
+
   return (
     <div className="space-y-4">
       {/* Search and Filters Bar */}
@@ -57,7 +77,7 @@ export function AttendanceTable({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="بحث باسم الطالب أو رقم الهوية الوطنية..."
             className="w-full h-9.5 pr-9 pl-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-lg focus:bg-white dark:focus:bg-[#182226] focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none transition-all placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
           />
@@ -73,7 +93,7 @@ export function AttendanceTable({
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'all' | AttendanceStatus)}
+              onChange={(e) => handleStatusFilterChange(e.target.value as 'all' | AttendanceStatus)}
               className="h-9 px-3 bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-xs text-[#17252B] dark:text-[#F0F4F6] font-medium outline-none cursor-pointer hover:border-[#0B5D43] dark:hover:border-[#3E9B78] transition-colors"
             >
               <option value="all">جميع الحالات</option>
@@ -137,7 +157,7 @@ export function AttendanceTable({
                 </td>
               </tr>
             ) : (
-              filteredList.map((item, idx) => {
+              paginatedList.map((item, idx) => {
                 const rowBg = idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]';
                 return (
                   <tr
@@ -191,6 +211,21 @@ export function AttendanceTable({
             )}
           </tbody>
         </table>
+
+        {totalCount > pageSize && (
+          <PaginationControls
+            pageNumber={pageNumber}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            onPageChange={(page) => setPageNumber(page)}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPageNumber(1);
+            }}
+            itemLabel="طالب"
+          />
+        )}
       </div>
 
       {/* Attendance Legend */}

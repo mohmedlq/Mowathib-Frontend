@@ -200,3 +200,29 @@ export interface DailyAttendanceSummary {
   attendanceRatePercentage: number;
 }
 
+export interface PagedResult<T> {
+  items: T[];
+  pageNumber: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+export interface AbsenteeNotification {
+  attendanceRecordId: number;
+  enrollmentId: number;
+  studentId: number;
+  studentName: string;
+  nationalId: string;
+  classId: number;
+  className: string;
+  attendanceDate: string;
+  parentId: string | null;
+  parentName: string | null;
+  parentPhone: string | null;
+  hasValidPhone: boolean;
+}
+
+

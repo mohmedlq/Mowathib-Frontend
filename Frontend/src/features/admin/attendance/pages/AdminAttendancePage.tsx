@@ -12,6 +12,7 @@ import {
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
+import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { resolveDefaultAttendanceWeek, formatArabicDateShort } from '../../../../shared/utils/date';
 import {
   CalendarCheck,
@@ -50,6 +51,10 @@ export function AdminAttendancePage() {
 
   // Quick attendance slots
   const [quickDay, setQuickDay] = useState<number>(1);
+
+  // Absence list pagination
+  const [absentPage, setAbsentPage] = useState(1);
+  const [absentPageSize, setAbsentPageSize] = useState(10);
 
   // Classes query
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
@@ -160,8 +165,15 @@ export function AdminAttendancePage() {
       .sort((a, b) => b.absentCount - a.absentCount);
   }, [matrix]);
 
+  const totalAbsentPages = Math.ceil(absentStudents.length / absentPageSize) || 1;
+  const paginatedAbsentStudents = useMemo(() => {
+    const start = (absentPage - 1) * absentPageSize;
+    return absentStudents.slice(start, start + absentPageSize);
+  }, [absentStudents, absentPage, absentPageSize]);
+
   const handleClassChange = (newClassId: number) => {
     setSelectedClassId(newClassId);
+    setAbsentPage(1);
     const params = new URLSearchParams(window.location.search);
     params.set('classId', String(newClassId));
     window.history.replaceState(null, '', `?${params.toString()}`);
@@ -169,6 +181,7 @@ export function AdminAttendancePage() {
 
   const handleGradeChange = (grade: number) => {
     setSelectedGrade(grade);
+    setAbsentPage(1);
     const inGrade = classes.filter((c) => {
       const num = getClassNum(c);
       if (grade === 1) return num >= 101 && num <= 110;
@@ -431,53 +444,70 @@ export function AdminAttendancePage() {
               نسبة الحضور مكتملة 100% في هذه الشعبة خلال هذا الأسبوع.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-b border-[#DCE3E6] dark:border-[#28373D]">
-                    <th className="px-4 py-3 font-bold w-12 text-center">#</th>
-                    <th className="px-4 py-3 font-bold">اسم الطالب</th>
-                    <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
-                    <th className="px-4 py-3 font-bold text-center">إجمالي الحصص المتغيب عنها</th>
-                    <th className="px-4 py-3 font-bold">تفاصيل الحصص والأيام</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EEF2F3] dark:divide-[#28373D]">
-                  {absentStudents.map((item, idx) => (
-                    <tr
-                      key={item.enrollment.enrollmentId}
-                      className={`hover:bg-[#FDF6F6] dark:hover:bg-[#331518]/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]'}`}
-                    >
-                      <td className="px-4 py-3 text-center font-mono text-[#5F6B73] dark:text-[#9BAAB1]">{idx + 1}</td>
-                      <td className="px-4 py-3 font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                        {item.enrollment.studentName}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">
-                        {item.enrollment.student?.nationalId || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
-                          {item.absentCount} يوم
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {item.absentDetails.map((det, dIdx) => (
-                            <span
-                              key={dIdx}
-                              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border border-[#DCE3E6] dark:border-[#28373D]"
-                            >
-                              <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">{det.dayName}</span>
-                              {det.date && <span className="text-[#5F6B73] dark:text-[#9BAAB1] font-mono">{det.date}</span>}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-b border-[#DCE3E6] dark:border-[#28373D]">
+                      <th className="px-4 py-3 font-bold w-12 text-center">#</th>
+                      <th className="px-4 py-3 font-bold">اسم الطالب</th>
+                      <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
+                      <th className="px-4 py-3 font-bold text-center">إجمالي الحصص المتغيب عنها</th>
+                      <th className="px-4 py-3 font-bold">تفاصيل الحصص والأيام</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-[#EEF2F3] dark:divide-[#28373D]">
+                    {paginatedAbsentStudents.map((item, idx) => (
+                      <tr
+                        key={item.enrollment.enrollmentId}
+                        className={`hover:bg-[#FDF6F6] dark:hover:bg-[#331518]/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]'}`}
+                      >
+                        <td className="px-4 py-3 text-center font-mono text-[#5F6B73] dark:text-[#9BAAB1]">{(absentPage - 1) * absentPageSize + idx + 1}</td>
+                        <td className="px-4 py-3 font-bold text-[#17252B] dark:text-[#F0F4F6]">
+                          {item.enrollment.studentName}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">
+                          {item.enrollment.student?.nationalId || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
+                            {item.absentCount} يوم
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.absentDetails.map((det, dIdx) => (
+                              <span
+                                key={dIdx}
+                                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border border-[#DCE3E6] dark:border-[#28373D]"
+                              >
+                                <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">{det.dayName}</span>
+                                {det.date && <span className="text-[#5F6B73] dark:text-[#9BAAB1] font-mono">{det.date}</span>}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {absentStudents.length > absentPageSize && (
+                <PaginationControls
+                  pageNumber={absentPage}
+                  totalPages={totalAbsentPages}
+                  totalCount={absentStudents.length}
+                  pageSize={absentPageSize}
+                  onPageChange={(page) => setAbsentPage(page)}
+                  onPageSizeChange={(newSize) => {
+                    setAbsentPageSize(newSize);
+                    setAbsentPage(1);
+                  }}
+                  itemLabel="طالب متغيب"
+                />
+              )}
+            </>
           )}
         </div>
       ) : (

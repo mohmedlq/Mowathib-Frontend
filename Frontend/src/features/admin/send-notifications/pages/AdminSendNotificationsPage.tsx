@@ -22,13 +22,7 @@ import {
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { useSchoolSettings } from '../../../../shared/services/schoolSettingsService';
 import { useNotifications } from '../../../notifications';
-import {
-  SCHOOL_DAYS,
-  type ClassEnrollment,
-  type AttendanceRecord,
-  type Student,
-  type Parent,
-} from '../../../../shared/types';
+import { SCHOOL_DAYS } from '../../../../shared/types';
 import {
   calculateDateForDay,
   formatArabicDate,
@@ -38,6 +32,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
+import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 
 interface AbsentStudentRow {
   enrollmentId: number;
@@ -72,6 +67,8 @@ export function AdminSendNotificationsPage() {
   const [selectedDayNumber, setSelectedDayNumber] = useState<number>(getInitialDay);
   const [selectedClassId, setSelectedClassId] = useState<number>(0); // 0 = All Classes
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Track simulation state for sent notifications (set of enrollmentIds)
   const [sentStudentIds, setSentStudentIds] = useState<Set<number>>(new Set());
@@ -104,186 +101,65 @@ export function AdminSendNotificationsPage() {
     return resolveDefaultAttendanceWeek(weeks) || weeks[0];
   }, [weeks]);
 
-  // 3. Fetch All Enrollments
-  const { data: enrollments = [], isLoading: isLoadingEnrollments } = useQuery({
-    queryKey: ['all_enrollments'],
-    queryFn: () => schoolDataService.getAllEnrollments(),
-    staleTime: 1000 * 60 * 15,
-  });
-
-  // 4. Fetch All Students (to get ParentId relationships)
-  const { data: students = [], isLoading: isLoadingStudents } = useQuery({
-    queryKey: ['all_students'],
-    queryFn: () => schoolDataService.getAllStudents(),
-    staleTime: 1000 * 60 * 15,
-  });
-
-  // 5. Fetch All Parents (from existing Parent table)
-  const { data: parents = [], isLoading: isLoadingParents } = useQuery({
-    queryKey: ['all_parents'],
-    queryFn: () => schoolDataService.getParents(),
-    staleTime: 1000 * 60 * 15,
-  });
-
-  // 6. Fetch Attendance Records for Active Week
-  const { data: records = [], isLoading: isLoadingRecords } = useQuery({
-    queryKey: ['notification_attendance_records', activeWeek?.attendanceWeekId, selectedClassId],
-    queryFn: async () => {
-      if (!activeWeek?.attendanceWeekId) return [];
-
-      // If a specific class is selected, fetch only that class's records
-      if (selectedClassId > 0) {
-        return await schoolDataService
-          .getAttendanceRecords(selectedClassId, activeWeek.attendanceWeekId)
-          .catch(() => []);
-      }
-
-      // If all classes selected, attempt single fast week fetch
-      try {
-        const weekRecords = await schoolDataService.getAttendanceRecordsByWeek(activeWeek.attendanceWeekId);
-        if (weekRecords && weekRecords.length > 0) {
-          return weekRecords;
-        }
-      } catch {
-        // Fallback to chunked class requests if bulk fails
-      }
-
-      // If all classes selected, fetch records across classes in chunks of 5
-      const targetClasses = classes.length > 0 ? classes : [];
-      const allFetchedRecords: AttendanceRecord[] = [];
-      const chunkSize = 5;
-
-      for (let i = 0; i < targetClasses.length; i += chunkSize) {
-        const chunk = targetClasses.slice(i, i + chunkSize);
-        const chunkResults = await Promise.all(
-          chunk.map((cls) =>
-            schoolDataService
-              .getAttendanceRecords(cls.classId, activeWeek.attendanceWeekId)
-              .catch(() => [])
-          )
-        );
-        chunkResults.forEach((res) => allFetchedRecords.push(...res));
-      }
-
-      return allFetchedRecords;
-    },
-    enabled: Boolean(activeWeek?.attendanceWeekId && (classes.length > 0 || selectedClassId > 0)),
-    staleTime: 1000 * 60 * 5,
-  });
-
-  // ---------------------------------------------------------------------------
-  // Data Mappings & Calculations
-  // ---------------------------------------------------------------------------
-
-  // Map: studentId -> Student (contains parentId)
-  const studentMap = useMemo(() => {
-    const map = new Map<number, Student>();
-    students.forEach((s) => map.set(s.studentId, s));
-    return map;
-  }, [students]);
-
-  // Map: parentId (Guid string) -> Parent (contains FullName, PhoneNumber)
-  const parentMap = useMemo(() => {
-    const map = new Map<string, Parent>();
-    parents.forEach((p) => {
-      if (p.id) {
-        map.set(String(p.id).toLowerCase(), p);
-      }
-    });
-    return map;
-  }, [parents]);
-
-  // Map: enrollmentId -> ClassEnrollment
-  const enrollmentMap = useMemo(() => {
-    const map = new Map<number, ClassEnrollment>();
-    enrollments.forEach((e) => map.set(e.enrollmentId, e));
-    return map;
-  }, [enrollments]);
-
   // Current Date string formatted for the selected school day
   const currentDayName = getArabicDayName(selectedDayNumber);
   const currentDayDate = activeWeek?.startDate
     ? calculateDateForDay(activeWeek.startDate, selectedDayNumber)
     : '';
 
-  // Identify absent students on the selected day
-  const absentStudentsList: AbsentStudentRow[] = useMemo(() => {
-    if (!records.length || !enrollmentMap.size) return [];
+  // 3. Fetch Paged Absentees directly from Backend API
+  const { data: pagedData, isLoading: isLoadingAbsentees } = useQuery({
+    queryKey: ['paged_absentees', currentDayDate, selectedClassId, searchQuery, pageNumber, pageSize],
+    queryFn: () =>
+      schoolDataService.getPagedAbsentees({
+        date: currentDayDate,
+        classId: selectedClassId > 0 ? selectedClassId : undefined,
+        search: searchQuery.trim() || undefined,
+        pageNumber,
+        pageSize,
+      }),
+    enabled: Boolean(currentDayDate),
+  });
 
-    // Filter records for the selected day where status === 'Absent'
-    const dayAbsentRecords = records.filter(
-      (r) => r.dayNumber === selectedDayNumber && r.status === 'Absent'
-    );
+  const displayedStudents: AbsentStudentRow[] = useMemo(() => {
+    return (pagedData?.items ?? []).map((item) => ({
+      enrollmentId: item.enrollmentId,
+      studentId: item.studentId,
+      studentName: item.studentName,
+      nationalId: item.nationalId,
+      classId: item.classId,
+      className: item.className,
+      absentPeriods: [],
+      parentId: item.parentId,
+      parentName: item.parentName,
+      parentPhone: item.parentPhone,
+      hasValidPhone: item.hasValidPhone,
+    }));
+  }, [pagedData]);
 
-    const rows: AbsentStudentRow[] = [];
+  const totalCount = pagedData?.totalCount ?? 0;
+  const totalPages = pagedData?.totalPages ?? 1;
 
-    dayAbsentRecords.forEach((r) => {
-      const enrollment = enrollmentMap.get(r.enrollmentId);
-      if (!enrollment) return;
+  const handleDayChange = (dayNumber: number) => {
+    setSelectedDayNumber(dayNumber);
+    setPageNumber(1);
+  };
 
-      // Filter by selected class if specified
-      if (selectedClassId > 0 && enrollment.classId !== selectedClassId) {
-        return;
-      }
+  const handleClassChange = (classId: number) => {
+    setSelectedClassId(classId);
+    setPageNumber(1);
+  };
 
-      const studentId = enrollment.studentId;
-      const studentObj = studentMap.get(studentId) || enrollment.student;
-
-      // Retrieve Parent via Student's ParentId Foreign Key
-      const rawParentId = studentObj?.parentId;
-      const parentIdStr = rawParentId ? String(rawParentId).toLowerCase() : null;
-      const parentObj = parentIdStr ? parentMap.get(parentIdStr) : null;
-
-      // Determine Parent Name & Phone Number
-      const parentName = parentObj?.fullName || studentObj?.parentName || null;
-      const parentPhone = parentObj?.phoneNumber || null;
-      const hasValidPhone = Boolean(parentPhone && parentPhone.trim().length >= 7);
-
-      const className =
-        enrollment.className ||
-        (enrollment.classNumber ? `شعبة ${enrollment.classNumber}` : `شعبة ${enrollment.classId}`);
-
-      rows.push({
-        enrollmentId: r.enrollmentId,
-        studentId,
-        studentName: enrollment.studentName || studentObj?.fullName || 'طالب غير محدد',
-        nationalId: studentObj?.nationalId || (enrollment as any).nationalId || 'غير متوفر',
-        classId: enrollment.classId,
-        className: String(className),
-        absentPeriods: [],
-        parentId: parentIdStr,
-        parentName,
-        parentPhone,
-        hasValidPhone,
-      });
-    });
-
-    // Sort by class name then student name
-    return rows.sort((a, b) => {
-      if (a.className !== b.className) return a.className.localeCompare(b.className);
-      return a.studentName.localeCompare(b.studentName);
-    });
-  }, [records, enrollmentMap, selectedDayNumber, selectedClassId, studentMap, parentMap]);
-
-  // Apply search query filter
-  const displayedStudents = useMemo(() => {
-    if (!searchQuery.trim()) return absentStudentsList;
-    const q = searchQuery.trim().toLowerCase();
-    return absentStudentsList.filter(
-      (s) =>
-        s.studentName.toLowerCase().includes(q) ||
-        s.nationalId.toLowerCase().includes(q) ||
-        (s.parentName && s.parentName.toLowerCase().includes(q)) ||
-        (s.parentPhone && s.parentPhone.includes(q)) ||
-        s.className.toLowerCase().includes(q)
-    );
-  }, [absentStudentsList, searchQuery]);
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setPageNumber(1);
+  };
 
   // KPI Metrics
-  const totalAbsentCount = absentStudentsList.length;
-  const eligibleParentsCount = absentStudentsList.filter((s) => s.hasValidPhone).length;
-  const missingPhoneCount = totalAbsentCount - eligibleParentsCount;
-  const totalSimulatedSent = absentStudentsList.filter((s) => sentStudentIds.has(s.enrollmentId)).length;
+  const totalAbsentCount = totalCount;
+  const eligibleParentsCount = displayedStudents.filter((s) => s.hasValidPhone).length;
+  const missingPhoneCount = displayedStudents.filter((s) => !s.hasValidPhone).length;
+  const totalSimulatedSent = displayedStudents.filter((s) => sentStudentIds.has(s.enrollmentId)).length;
 
   // ---------------------------------------------------------------------------
   // Handlers for Sending Simulations
@@ -342,13 +218,7 @@ export function AdminSendNotificationsPage() {
     );
   };
 
-  const isLoading =
-    isLoadingClasses ||
-    isLoadingWeeks ||
-    isLoadingEnrollments ||
-    isLoadingStudents ||
-    isLoadingParents ||
-    isLoadingRecords;
+  const isLoading = isLoadingClasses || isLoadingWeeks || isLoadingAbsentees;
 
   return (
     <div className="space-y-6">
@@ -492,7 +362,7 @@ export function AdminSendNotificationsPage() {
                 <button
                   key={day.dayNumber}
                   type="button"
-                  onClick={() => setSelectedDayNumber(day.dayNumber)}
+                  onClick={() => handleDayChange(day.dayNumber)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                     isSelected
                       ? 'bg-[#0B5D43] text-white shadow-xs'
@@ -518,7 +388,7 @@ export function AdminSendNotificationsPage() {
               <Building2 className="w-4 h-4 text-[#89949A] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={selectedClassId}
-                onChange={(e) => setSelectedClassId(Number(e.target.value))}
+                onChange={(e) => handleClassChange(Number(e.target.value))}
                 className="w-full pl-3 pr-9 py-2 rounded-lg bg-[#F8FAFA] dark:bg-[#141E22] border border-[#DCE3E6] dark:border-[#28373D] text-xs font-semibold text-[#17252B] dark:text-[#F0F4F6] focus:outline-none focus:ring-1 focus:ring-[#0B5D43] cursor-pointer"
               >
                 <option value={0}>جميع الشعب المدرسية ({classes.length} شعبة)</option>
@@ -541,14 +411,14 @@ export function AdminSendNotificationsPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="ابحث باسم الطالب، رقم الهوية الوطنية، اسم ولي الأمر، أو رقم الهاتف..."
                 className="w-full pl-3 pr-9 py-2 rounded-lg bg-[#F8FAFA] dark:bg-[#141E22] border border-[#DCE3E6] dark:border-[#28373D] text-xs font-medium text-[#17252B] dark:text-[#F0F4F6] focus:outline-none focus:ring-1 focus:ring-[#0B5D43]"
               />
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => handleSearchChange('')}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-[#89949A] hover:text-[#17252B] dark:hover:text-white"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -628,7 +498,7 @@ export function AdminSendNotificationsPage() {
                       key={row.enrollmentId}
                       className="hover:bg-[#F9FBFA] dark:hover:bg-[#1B272C] transition-colors"
                     >
-                      <td className="py-3 px-4 font-mono text-[#89949A]">{idx + 1}</td>
+                      <td className="py-3 px-4 font-mono text-[#89949A]">{(pageNumber - 1) * pageSize + idx + 1}</td>
 
                       {/* Student Name */}
                       <td className="py-3 px-4">
@@ -727,6 +597,20 @@ export function AdminSendNotificationsPage() {
             </table>
           </div>
         )}
+
+        <PaginationControls
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={(page) => setPageNumber(page)}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPageNumber(1);
+          }}
+          isLoading={isLoading}
+          itemLabel="طالب غائب"
+        />
       </div>
 
       {/* --------------------------------------------------------------------------- */}

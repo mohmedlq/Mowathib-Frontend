@@ -15,6 +15,7 @@ import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
 import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 
 interface StudentFormData {
@@ -33,6 +34,8 @@ export function RepresentativeStudentsPage() {
   const classId = user?.classId || 105;
 
   const [search, setSearch] = useState('');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<number | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{
@@ -62,11 +65,27 @@ export function RepresentativeStudentsPage() {
     resetForm();
   };
 
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPageNumber(1);
+  };
+
   // تحميل طلاب الشعبة
-  const { data: enrollments = [], isLoading } = useQuery({
-    queryKey: ['enrollments', classId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(classId),
+  const { data: pagedData, isLoading } = useQuery({
+    queryKey: ['enrollments_paged', classId, search, pageNumber, pageSize],
+    queryFn: () =>
+      schoolDataService.getPagedEnrollments({
+        classId,
+        search: search.trim() || undefined,
+        pageNumber,
+        pageSize,
+        isActive: true,
+      }),
   });
+
+  const enrollments = pagedData?.items ?? [];
+  const totalCount = pagedData?.totalCount ?? 0;
+  const totalPages = pagedData?.totalPages ?? 1;
 
   // إضافة طالب
   const addMutation = useMutation({
@@ -85,6 +104,9 @@ export function RepresentativeStudentsPage() {
     },
 
     onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['enrollments_paged', classId],
+      });
       queryClient.invalidateQueries({
         queryKey: ['enrollments', classId],
       });
@@ -111,6 +133,9 @@ export function RepresentativeStudentsPage() {
 
     onSuccess: () => {
       queryClient.invalidateQueries({
+        queryKey: ['enrollments_paged', classId],
+      });
+      queryClient.invalidateQueries({
         queryKey: ['enrollments', classId],
       });
 
@@ -130,6 +155,9 @@ export function RepresentativeStudentsPage() {
     },
 
     onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['enrollments_paged', classId],
+      });
       queryClient.invalidateQueries({
         queryKey: ['enrollments', classId],
       });
@@ -230,22 +258,6 @@ const handleEditStudent = (
   };
 
   // البحث
-  const filteredEnrollments = enrollments.filter((en) => {
-    if (!search.trim()) return true;
-
-    const query = search.trim().toLowerCase();
-
-    const studentName = (en.studentName ?? '').toLowerCase();
-    const studentNationalId = String(
-      en.student?.nationalId ?? ''
-    ).toLowerCase();
-
-    return (
-      studentName.includes(query) ||
-      studentNationalId.includes(query)
-    );
-  });
-
   const isSaving = addMutation.isPending || updateMutation.isPending;
 
   const isFormValid =
@@ -293,7 +305,7 @@ const handleEditStudent = (
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="بحث بالاسم أو رقم الهوية..."
             className="w-full h-9 pr-9 pl-3 text-xs bg-[#F5F7F8] border border-[#DCE3E6] rounded-md focus:bg-white focus:border-[#245B63] outline-none"
           />
@@ -302,7 +314,7 @@ const handleEditStudent = (
         </div>
 
         <span className="text-xs text-[#5F6B73] font-mono shrink-0">
-          {filteredEnrollments.length} طالب مسجل
+          {totalCount} طالب مسجل
         </span>
       </div>
 
@@ -323,20 +335,20 @@ const handleEditStudent = (
             <tbody className="divide-y divide-[#DCE3E6]">
               {isLoading ? (
                 <MuwathibTableLoading colSpan={5} message="جاري استرجاع بيانات طلاب الشعبة..." />
-              ) : filteredEnrollments.length === 0 ? (
+              ) : enrollments.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-[#89949A]">
                     لا يوجد طلاب مطابقون لمعايير البحث
                   </td>
                 </tr>
               ) : (
-                filteredEnrollments.map((en, idx) => (
+                enrollments.map((en, idx) => (
                   <tr
                     key={en.enrollmentId}
                     className="transition-colors hover:bg-[#F0F7F7]"
                   >
                     <td className="px-4 py-3 text-center font-mono text-[#89949A]">
-                      {idx + 1}
+                      {(pageNumber - 1) * pageSize + idx + 1}
                     </td>
 
                     <td className="px-4 py-3 font-mono font-medium">
@@ -390,6 +402,20 @@ const handleEditStudent = (
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={(page) => setPageNumber(page)}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPageNumber(1);
+          }}
+          isLoading={isLoading}
+          itemLabel="طالب"
+        />
       </div>
 
       {/* نافذة إضافة / تعديل الطالب */}

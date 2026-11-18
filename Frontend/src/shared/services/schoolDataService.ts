@@ -13,6 +13,8 @@ import type {
   CardRequestStatus,
   WeeklyAttendanceSummary,
   DailyAttendanceSummary,
+  PagedResult,
+  AbsenteeNotification,
 } from '../types';
 
 export const schoolDataService = {
@@ -126,6 +128,34 @@ export const schoolDataService = {
   // ==========================================
   // STUDENTS & ENROLLMENTS (Connected to StudentsController & ClassEnrollmentsController)
   // ==========================================
+  async getPagedEnrollments(params: {
+    pageNumber?: number;
+    pageSize?: number;
+    classId?: number;
+    academicYearId?: number;
+    search?: string;
+    isActive?: boolean;
+  }): Promise<PagedResult<ClassEnrollment>> {
+    const raw = await apiClient.get<PagedResult<any>>('/ClassEnrollments/paged', params);
+    return {
+      ...raw,
+      items: (raw.items || []).map((e) => ({
+        ...e,
+        classNumber: e.classNumber,
+        className: e.className ?? (e.classNumber ? `شعبة ${e.classNumber}` : ''),
+        student: e.student ?? {
+          studentId: e.studentId,
+          firstName: '',
+          secondName: '',
+          thirdName: '',
+          lastName: '',
+          fullName: e.studentName || '',
+          nationalId: e.nationalId || '',
+        },
+      })),
+    };
+  },
+
   async getEnrollmentsByClass(classId: number, academicYearId: number = 1): Promise<ClassEnrollment[]> {
     const enrollments = await apiClient.get<any[]>('/ClassEnrollments/active-by-class', {
       classId,
@@ -237,6 +267,28 @@ export const schoolDataService = {
   // ==========================================
   // ATTENDANCE RECORDS (Connected to AttendanceRecordsController)
   // ==========================================
+  async getPagedAttendanceRecords(params: {
+    pageNumber?: number;
+    pageSize?: number;
+    classId?: number;
+    attendanceWeekId?: number;
+    date?: string;
+    status?: BackendAttendanceStatus;
+    search?: string;
+  }): Promise<PagedResult<AttendanceRecord>> {
+    return await apiClient.get<PagedResult<AttendanceRecord>>('/AttendanceRecords/paged', params);
+  },
+
+  async getPagedAbsentees(params: {
+    date: string;
+    classId?: number;
+    search?: string;
+    pageNumber?: number;
+    pageSize?: number;
+  }): Promise<PagedResult<AbsenteeNotification>> {
+    return await apiClient.get<PagedResult<AbsenteeNotification>>('/AttendanceRecords/absentees/paged', params);
+  },
+
   async getAttendanceRecords(classId: number, attendanceWeekId: number): Promise<AttendanceRecord[]> {
     return await apiClient.get<AttendanceRecord[]>('/AttendanceRecords/by-class-and-week', {
       classId,
@@ -312,6 +364,17 @@ export const schoolDataService = {
   // ==========================================
   // REPRESENTATIVES (Connected to RepresentativesController)
   // ==========================================
+  async getPagedRepresentatives(params: {
+    pageNumber?: number;
+    pageSize?: number;
+    search?: string;
+    classId?: number;
+    activeOnly?: boolean;
+    role?: string;
+  }): Promise<PagedResult<Representative>> {
+    return await apiClient.get<PagedResult<Representative>>('/Representatives/paged', params);
+  },
+
   async getRepresentatives(activeOnly?: boolean): Promise<Representative[]> {
     return await apiClient.get<Representative[]>('/Representatives', { activeOnly });
   },

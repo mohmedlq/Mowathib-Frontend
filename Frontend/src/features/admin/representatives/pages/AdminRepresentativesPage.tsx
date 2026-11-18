@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
-import { Users2, Copy, Check, Plus, Info, KeyRound } from 'lucide-react';
+import { Users2, Copy, Check, Plus, Info, KeyRound, Search } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
 import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 import type { Representative } from '../../../../shared/types';
 
@@ -17,6 +18,12 @@ export function AdminRepresentativesPage() {
   const [selectedClassId, setSelectedClassId] = useState<number>(105);
   const [roleType, setRoleType] = useState<'Representative' | 'Deputy'>('Representative');
   const [phoneNumber, setPhoneNumber] = useState('0551234567');
+
+  // Search and Pagination state
+  const [search, setSearch] = useState('');
+  const [filterRole, setFilterRole] = useState<'all' | 'Representative' | 'Deputy'>('all');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Generated credential display modal
   const [generatedCreds, setGeneratedCreds] = useState<{
@@ -31,10 +38,30 @@ export function AdminRepresentativesPage() {
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  const { data: reps = [], isLoading } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+  const { data: pagedData, isLoading } = useQuery({
+    queryKey: ['representatives_paged', search, filterRole, pageNumber, pageSize],
+    queryFn: () =>
+      schoolDataService.getPagedRepresentatives({
+        search: search.trim() || undefined,
+        role: filterRole !== 'all' ? filterRole : undefined,
+        pageNumber,
+        pageSize,
+      }),
   });
+
+  const reps = pagedData?.items ?? [];
+  const totalCount = pagedData?.totalCount ?? 0;
+  const totalPages = pagedData?.totalPages ?? 1;
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPageNumber(1);
+  };
+
+  const handleRoleFilterChange = (role: 'all' | 'Representative' | 'Deputy') => {
+    setFilterRole(role);
+    setPageNumber(1);
+  };
 
   // Assign mutation
   const assignMutation = useMutation({
@@ -57,6 +84,7 @@ export function AdminRepresentativesPage() {
       return { created, tempPass, username };
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['representatives_paged'] });
       queryClient.invalidateQueries({ queryKey: ['representatives'] });
       setIsAssignModalOpen(false);
       setGeneratedCreds({
@@ -115,6 +143,33 @@ export function AdminRepresentativesPage() {
             العريف الأساسي للشعبة 105 يحمل اسم المستخدم <span className="font-mono font-bold">105_1</span>، بينما نائب العريف يحمل اسم{' '}
             <span className="font-mono font-bold">105_2</span>. يُلزم العريف بتغيير كلمة المرور المؤقتة عند أول تسجيل دخول لضمان الخصوصية والمسؤولية.
           </span>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-[#DCE3E6] shadow-xs">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <label className="text-xs font-semibold text-[#5F6B73] shrink-0">الصفة:</label>
+          <select
+            value={filterRole}
+            onChange={(e) => handleRoleFilterChange(e.target.value as 'all' | 'Representative' | 'Deputy')}
+            className="h-9.5 px-3 bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg text-xs font-medium text-[#17252B] outline-none cursor-pointer hover:border-[#245B63] transition-colors"
+          >
+            <option value="all">جميع الصفات</option>
+            <option value="Representative">عريف الصف الأساسي</option>
+            <option value="Deputy">نائب العريف</option>
+          </select>
+        </div>
+
+        <div className="relative w-full sm:w-80">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="بحث باسم المستخدم أو الطالب أو الجوال..."
+            className="w-full h-9.5 pr-9 pl-3 text-xs bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg focus:bg-white focus:border-[#245B63] focus:ring-2 focus:ring-[#245B63]/15 outline-none transition-all placeholder:text-[#89949A]"
+          />
+          <Search className="w-4 h-4 text-[#89949A] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
       </div>
 
@@ -192,6 +247,20 @@ export function AdminRepresentativesPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={(page) => setPageNumber(page)}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPageNumber(1);
+          }}
+          isLoading={isLoading}
+          itemLabel="عريف / نائب"
+        />
       </div>
 
       {/* Assign Modal */}

@@ -7,6 +7,7 @@ import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
 import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 
 export function AdminStudentsPage() {
@@ -17,6 +18,8 @@ export function AdminStudentsPage() {
   const classIdParam = searchParams.get('classId');
   const [selectedClassId, setSelectedClassId] = useState<number>(classIdParam ? Number(classIdParam) : 0);
   const [search, setSearch] = useState('');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // Form state
@@ -32,25 +35,31 @@ export function AdminStudentsPage() {
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  const { isLoading } = useQuery({
-    queryKey: ['all_students', search],
-    queryFn: () => schoolDataService.getAllStudents(search),
+  const { data: pagedData, isLoading } = useQuery({
+    queryKey: ['paged_enrollments', selectedClassId, search, pageNumber, pageSize],
+    queryFn: () =>
+      schoolDataService.getPagedEnrollments({
+        classId: selectedClassId > 0 ? selectedClassId : undefined,
+        search: search.trim() || undefined,
+        pageNumber,
+        pageSize,
+        isActive: true,
+      }),
   });
 
-  const { data: enrollments = [] } = useQuery({
-    queryKey: ['class_enrollments_all', selectedClassId],
-    queryFn: async () => {
-      if (selectedClassId > 0) {
-        return await schoolDataService.getEnrollmentsByClass(selectedClassId);
-      } else {
-        const results = await Promise.all(
-          classes.slice(0, 10).map((c) => schoolDataService.getEnrollmentsByClass(c.classId).catch(() => []))
-        );
-        return results.flat();
-      }
-    },
-    enabled: classes.length > 0,
-  });
+  const enrollments = pagedData?.items ?? [];
+  const totalCount = pagedData?.totalCount ?? 0;
+  const totalPages = pagedData?.totalPages ?? 1;
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPageNumber(1);
+  };
+
+  const handleClassChange = (classId: number) => {
+    setSelectedClassId(classId);
+    setPageNumber(1);
+  };
 
   // Create student mutation
   const createMutation = useMutation({
@@ -62,7 +71,7 @@ export function AdminStudentsPage() {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all_students'] });
+      queryClient.invalidateQueries({ queryKey: ['paged_enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['class_enrollments_all'] });
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       toast.show('تم إضافة الطالب وقيده في الشعبة بنجاح', 'success');
@@ -85,6 +94,7 @@ export function AdminStudentsPage() {
       await schoolDataService.removeStudentFromClass(enrollmentId);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['paged_enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['class_enrollments_all'] });
       toast.show('تم إنهاء قيد الطالب من الشعبة وفق النظام', 'info');
     },
@@ -126,7 +136,7 @@ export function AdminStudentsPage() {
           <label className="text-xs font-semibold text-[#5F6B73] shrink-0">الشعبة:</label>
           <select
             value={selectedClassId}
-            onChange={(e) => setSelectedClassId(Number(e.target.value))}
+            onChange={(e) => handleClassChange(Number(e.target.value))}
             className="h-9.5 px-3 bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg text-xs font-medium text-[#17252B] outline-none cursor-pointer hover:border-[#245B63] transition-colors"
           >
             <option value={0}>جميع الفصول والشعب</option>
@@ -142,7 +152,7 @@ export function AdminStudentsPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="بحث بالاسم أو رقم الهوية الوطنية..."
             className="w-full h-9.5 pr-9 pl-3 text-xs bg-[#F5F7F8] border border-[#DCE3E6] rounded-lg focus:bg-white focus:border-[#245B63] focus:ring-2 focus:ring-[#245B63]/15 outline-none transition-all placeholder:text-[#89949A]"
           />
@@ -177,7 +187,7 @@ export function AdminStudentsPage() {
               ) : (
                 enrollments.map((en, idx) => (
                   <tr key={en.enrollmentId} className="hover:bg-[#F5F9F9] transition-colors">
-                    <td className="px-4 py-3 font-mono text-[#89949A] text-center">{idx + 1}</td>
+                    <td className="px-4 py-3 font-mono text-[#89949A] text-center">{(pageNumber - 1) * pageSize + idx + 1}</td>
                     <td className="px-4 py-3 font-mono font-medium text-[#5F6B73]">
                       <span className="px-2 py-0.5 rounded bg-[#F5F7F8] border border-[#EEF2F3]">
                         {en.student?.nationalId}
@@ -215,6 +225,20 @@ export function AdminStudentsPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          onPageChange={(page) => setPageNumber(page)}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPageNumber(1);
+          }}
+          isLoading={isLoading}
+          itemLabel="طالب"
+        />
       </div>
 
       {/* Add Student Modal */}
