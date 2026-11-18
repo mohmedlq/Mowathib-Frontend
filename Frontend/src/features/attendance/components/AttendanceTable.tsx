@@ -177,9 +177,16 @@ export function AttendanceTable({
                     >
                       <div className="flex flex-col">
                         <span className="truncate font-bold text-xs">{item.enrollment.studentName}</span>
-                        <span className="sm:hidden text-[10px] font-mono text-[#89949A] dark:text-[#6E7F87] mt-0.5">
-                          {item.enrollment.student?.nationalId ?? '—'}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {(item.enrollment.className || item.enrollment.classNumber) && (
+                            <span className="inline-flex items-center text-[10px] px-1.5 py-0.2 rounded font-semibold bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#52B4C2] border border-[#245B63]/20">
+                              {item.enrollment.className || `شعبة ${item.enrollment.classNumber}`}
+                            </span>
+                          )}
+                          <span className="sm:hidden text-[10px] font-mono text-[#89949A] dark:text-[#6E7F87]">
+                            {item.enrollment.student?.nationalId ?? '—'}
+                          </span>
+                        </div>
                       </div>
                     </td>
 

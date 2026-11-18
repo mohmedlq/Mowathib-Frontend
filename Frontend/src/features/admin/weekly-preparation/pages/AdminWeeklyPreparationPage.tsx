@@ -21,7 +21,7 @@ import type { StudentWeeklyAttendance } from '../../../attendance';
 
 export function AdminWeeklyPreparationPage() {
   const { toast } = useNotifications();
-  const [selectedGradeTab, setSelectedGradeTab] = useState<1 | 2 | 3>(1);
+  const [selectedGradeTab, setSelectedGradeTab] = useState<0 | 1 | 2 | 3>(0);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [previewClassId, setPreviewClassId] = useState<number | null>(null);
   const [isExportingGrade, setIsExportingGrade] = useState(false);
@@ -81,12 +81,14 @@ export function AdminWeeklyPreparationPage() {
   const grade3Classes = useMemo(() => getClassesForGrade(3), [classes]);
 
   const activeGradeClasses = useMemo(() => {
+    if (selectedGradeTab === 0) return classes;
     if (selectedGradeTab === 1) return grade1Classes;
     if (selectedGradeTab === 2) return grade2Classes;
     return grade3Classes;
-  }, [selectedGradeTab, grade1Classes, grade2Classes, grade3Classes]);
+  }, [selectedGradeTab, classes, grade1Classes, grade2Classes, grade3Classes]);
 
   const activeGradeName = useMemo(() => {
+    if (selectedGradeTab === 0) return 'جميع طلاب المدرسة';
     if (selectedGradeTab === 1) return 'الصف الأول الثانوي';
     if (selectedGradeTab === 2) return 'الصف الثاني الثانوي';
     return 'الصف الثالث الثانوي';
@@ -94,27 +96,38 @@ export function AdminWeeklyPreparationPage() {
 
   // Set default preview class
   const activePreviewClass = useMemo(() => {
-    if (previewClassId) {
-      const found = activeGradeClasses.find((c) => c.classId === previewClassId);
+    if (previewClassId !== null && previewClassId > 0) {
+      const found = classes.find((c) => c.classId === previewClassId);
       if (found) return found;
     }
+    if (selectedGradeTab === 0) {
+      return null;
+    }
     return activeGradeClasses[0];
-  }, [previewClassId, activeGradeClasses]);
+  }, [previewClassId, selectedGradeTab, classes, activeGradeClasses]);
 
-  const effectivePreviewClassId = activePreviewClass?.classId ?? 0;
+  const effectivePreviewClassId =
+    selectedGradeTab === 0 && (!previewClassId || previewClassId === 0)
+      ? 0
+      : (activePreviewClass?.classId ?? previewClassId ?? 0);
 
   // 4. Fetch preview class enrollments & records
   const { data: previewEnrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
     queryKey: ['enrollments', effectivePreviewClassId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(effectivePreviewClassId),
-    enabled: effectivePreviewClassId > 0,
+    queryFn: () =>
+      effectivePreviewClassId > 0
+        ? schoolDataService.getEnrollmentsByClass(effectivePreviewClassId)
+        : schoolDataService.getAllEnrollments(),
+    enabled: effectivePreviewClassId >= 0,
   });
 
   const { data: previewRecords = [], isLoading: isRecordsLoading } = useQuery({
     queryKey: ['attendance_records', effectivePreviewClassId, selectedWeek?.attendanceWeekId],
     queryFn: () =>
-      schoolDataService.getAttendanceRecords(effectivePreviewClassId, selectedWeek!.attendanceWeekId),
-    enabled: effectivePreviewClassId > 0 && !!selectedWeek?.attendanceWeekId,
+      effectivePreviewClassId > 0
+        ? schoolDataService.getAttendanceRecords(effectivePreviewClassId, selectedWeek!.attendanceWeekId)
+        : schoolDataService.getAttendanceRecordsByWeek(selectedWeek!.attendanceWeekId),
+    enabled: effectivePreviewClassId >= 0 && !!selectedWeek?.attendanceWeekId,
   });
 
   const previewAttendances = useMemo(() => {
@@ -218,6 +231,10 @@ export function AdminWeeklyPreparationPage() {
   const handleExportCurrentGrade = async () => {
     if (!selectedWeek) {
       toast.show('يرجى تحديد أسبوع دراسي أولاً', 'warning');
+      return;
+    }
+    if (selectedGradeTab === 0) {
+      await handleExportAllGrades();
       return;
     }
     if (activeGradeClasses.length === 0) {
@@ -341,7 +358,7 @@ export function AdminWeeklyPreparationPage() {
             isLoading={isExportingGrade}
             className="text-xs font-bold"
           >
-            تصدير {activeGradeName} (Excel)
+            {selectedGradeTab === 0 ? 'تصدير كشف المدرسة (Excel)' : `تصدير ${activeGradeName} (Excel)`}
           </Button>
 
           <Button
@@ -362,6 +379,24 @@ export function AdminWeeklyPreparationPage() {
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
         {/* Grade Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedGradeTab(0);
+              setPreviewClassId(null);
+            }}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              selectedGradeTab === 0
+                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
+            }`}
+          >
+            <span>جميع طلاب المدرسة</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 0 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
+              كافة الشعب ({classes.length})
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -434,6 +469,17 @@ export function AdminWeeklyPreparationPage() {
           <span className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">اختر الشعبة للمعاينة المباشرة:</span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setPreviewClassId(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              !previewClassId || previewClassId === 0
+                ? 'bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] border-2 border-[#245B63] dark:border-[#388B96]'
+                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33]'
+            }`}
+          >
+            {selectedGradeTab === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : `جميع شعب ${activeGradeName}`}
+          </button>
           {activeGradeClasses.map((c) => (
             <button
               key={c.classId}
@@ -462,10 +508,13 @@ export function AdminWeeklyPreparationPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                  معاينة التحضير: {activePreviewClass?.className || `شعبة ${effectivePreviewClassId}`}
+                  معاينة التحضير:{' '}
+                  {effectivePreviewClassId === 0
+                    ? 'جميع طلاب المدرسة (كافة الشعب)'
+                    : activePreviewClass?.className || `شعبة ${effectivePreviewClassId}`}
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] font-bold">
-                  {activeGradeName}
+                  {effectivePreviewClassId === 0 ? 'كافة المراحل' : activeGradeName}
                 </span>
               </div>
               <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] font-mono mt-0.5 block">

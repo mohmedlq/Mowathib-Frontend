@@ -15,8 +15,8 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
   // Fetch enrollments (parallel query)
   const enrollmentsQuery = useQuery({
     queryKey: ['enrollments', classId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(classId),
-    enabled: classId > 0,
+    queryFn: () => (classId > 0 ? schoolDataService.getEnrollmentsByClass(classId) : schoolDataService.getAllEnrollments()),
+    enabled: classId >= 0,
     staleTime: 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 30,
     refetchOnWindowFocus: false,
@@ -25,8 +25,8 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
   // Fetch records (parallel query, only when week is identified)
   const recordsQuery = useQuery({
     queryKey: ['attendance_records', classId, attendanceWeekId],
-    queryFn: () => schoolDataService.getAttendanceRecords(classId, attendanceWeekId!),
-    enabled: classId > 0 && isWeekReady,
+    queryFn: () => (classId > 0 ? schoolDataService.getAttendanceRecords(classId, attendanceWeekId!) : schoolDataService.getAttendanceRecordsByWeek(attendanceWeekId!)),
+    enabled: classId >= 0 && isWeekReady,
     staleTime: 1000 * 60 * 2, // 2 minutes
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
@@ -143,6 +143,9 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
       queryClient.invalidateQueries({
         queryKey: ['attendance_records', classId, attendanceWeekId],
         exact: true,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['attendance_records'],
       });
       toast.show(`تم حفظ تحضير ${count} طالب بنجاح`, 'success');
     },

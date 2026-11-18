@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { MonthlyStudentSummaryRow, MonthlyDetailedAbsenceRow } from '../types/report.types';
+import { PaginationControls } from '../../../shared/components/ui/PaginationControls';
 import { cn } from '../../../shared/utils/cn';
 
 export interface MonthlyReportViewProps {
@@ -16,6 +17,22 @@ export function MonthlyReportView({
   classNameTitle,
 }: MonthlyReportViewProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'detailed'>('summary');
+  const [summaryPage, setSummaryPage] = useState(1);
+  const [summaryPageSize, setSummaryPageSize] = useState(15);
+  const [detailedPage, setDetailedPage] = useState(1);
+  const [detailedPageSize, setDetailedPageSize] = useState(15);
+
+  const totalSummaryPages = Math.ceil(summaryRows.length / summaryPageSize) || 1;
+  const paginatedSummaryRows = useMemo(() => {
+    const start = (summaryPage - 1) * summaryPageSize;
+    return summaryRows.slice(start, start + summaryPageSize);
+  }, [summaryRows, summaryPage, summaryPageSize]);
+
+  const totalDetailedPages = Math.ceil(detailedAbsences.length / detailedPageSize) || 1;
+  const paginatedDetailedAbsences = useMemo(() => {
+    const start = (detailedPage - 1) * detailedPageSize;
+    return detailedAbsences.slice(start, start + detailedPageSize);
+  }, [detailedAbsences, detailedPage, detailedPageSize]);
 
   return (
     <div className="space-y-4">
@@ -82,7 +99,7 @@ export function MonthlyReportView({
                     </td>
                   </tr>
                 ) : (
-                  summaryRows.map((row) => (
+                  paginatedSummaryRows.map((row) => (
                     <tr key={row.enrollmentId} className="hover:bg-[#F5F7F8]">
                       <td className="px-3 py-2.5 font-mono text-[11px] text-[#5F6B73] sticky right-0 bg-inherit border-l border-[#DCE3E6]">
                         {row.nationalId}
@@ -124,6 +141,23 @@ export function MonthlyReportView({
               </tbody>
             </table>
           </div>
+
+          {summaryRows.length > summaryPageSize && (
+            <div className="border-t border-[#DCE3E6]">
+              <PaginationControls
+                pageNumber={summaryPage}
+                totalPages={totalSummaryPages}
+                totalCount={summaryRows.length}
+                pageSize={summaryPageSize}
+                onPageChange={(p) => setSummaryPage(p)}
+                onPageSizeChange={(s) => {
+                  setSummaryPageSize(s);
+                  setSummaryPage(1);
+                }}
+                itemLabel="طالب"
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#DCE3E6] overflow-hidden shadow-xs">
@@ -148,9 +182,9 @@ export function MonthlyReportView({
                     </td>
                   </tr>
                 ) : (
-                  detailedAbsences.map((r, idx) => (
+                  paginatedDetailedAbsences.map((r, idx) => (
                     <tr key={`${r.enrollmentId}-${r.date}-${idx}`} className="hover:bg-[#FDECEC]/10">
-                      <td className="px-4 py-2.5 font-mono text-[#89949A]">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-mono text-[#89949A]">{(detailedPage - 1) * detailedPageSize + idx + 1}</td>
                       <td className="px-4 py-2.5 font-mono text-[#5F6B73]">{r.nationalId}</td>
                       <td className="px-4 py-2.5 font-bold text-[#17252B]">{r.studentName}</td>
                       <td className="px-4 py-2.5 text-[#5F6B73]">{r.className}</td>
@@ -163,6 +197,23 @@ export function MonthlyReportView({
               </tbody>
             </table>
           </div>
+
+          {detailedAbsences.length > detailedPageSize && (
+            <div className="border-t border-[#DCE3E6]">
+              <PaginationControls
+                pageNumber={detailedPage}
+                totalPages={totalDetailedPages}
+                totalCount={detailedAbsences.length}
+                pageSize={detailedPageSize}
+                onPageChange={(p) => setDetailedPage(p)}
+                onPageSizeChange={(s) => {
+                  setDetailedPageSize(s);
+                  setDetailedPage(1);
+                }}
+                itemLabel="حالة غياب"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

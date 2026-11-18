@@ -1,7 +1,9 @@
+import { useState, useMemo } from 'react';
 import type { DailyAttendanceRow, DailyAbsenceRecord } from '../types/report.types';
 import type { AttendanceStatus } from '../../../shared/types';
 import { ATTENDANCE_STATUS_ARABIC } from '../../../shared/types';
 import { AttendanceLegend } from '../../attendance';
+import { PaginationControls } from '../../../shared/components/ui/PaginationControls';
 import { Check, X, Minus, AlertCircle } from 'lucide-react';
 import { cn } from '../../../shared/utils/cn';
 
@@ -55,6 +57,23 @@ export function DailyReportView({
   dayName,
   dateStr,
 }: DailyReportViewProps) {
+  const [absencePage, setAbsencePage] = useState(1);
+  const [absencePageSize, setAbsencePageSize] = useState(15);
+  const [rowsPage, setRowsPage] = useState(1);
+  const [rowsPageSize, setRowsPageSize] = useState(15);
+
+  const totalAbsencePages = Math.ceil(absenceRecords.length / absencePageSize) || 1;
+  const paginatedAbsenceRecords = useMemo(() => {
+    const start = (absencePage - 1) * absencePageSize;
+    return absenceRecords.slice(start, start + absencePageSize);
+  }, [absenceRecords, absencePage, absencePageSize]);
+
+  const totalRowsPages = Math.ceil(rows.length / rowsPageSize) || 1;
+  const paginatedRows = useMemo(() => {
+    const start = (rowsPage - 1) * rowsPageSize;
+    return rows.slice(start, start + rowsPageSize);
+  }, [rows, rowsPage, rowsPageSize]);
+
   if (isAbsenceOnly) {
     return (
       <div className="space-y-4">
@@ -95,9 +114,9 @@ export function DailyReportView({
                     </td>
                   </tr>
                 ) : (
-                  absenceRecords.map((r, idx) => (
+                  paginatedAbsenceRecords.map((r, idx) => (
                     <tr key={`${r.enrollmentId}-${idx}`} className="hover:bg-[#FDECEC]/10 dark:hover:bg-[#331518]/20">
-                      <td className="px-4 py-2.5 font-mono text-[#89949A]">{idx + 1}</td>
+                      <td className="px-4 py-2.5 font-mono text-[#89949A]">{(absencePage - 1) * absencePageSize + idx + 1}</td>
                       <td className="px-4 py-2.5 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">{r.nationalId}</td>
                       <td className="px-4 py-2.5 font-bold text-[#17252B] dark:text-[#F0F4F6]">{r.studentName}</td>
                       <td className="px-4 py-2.5 text-[#5F6B73] dark:text-[#9BAAB1]">{r.className}</td>
@@ -114,6 +133,23 @@ export function DailyReportView({
               </tbody>
             </table>
           </div>
+
+          {absenceRecords.length > absencePageSize && (
+            <div className="border-t border-[#EEF2F3] dark:border-[#28373D]">
+              <PaginationControls
+                pageNumber={absencePage}
+                totalPages={totalAbsencePages}
+                totalCount={absenceRecords.length}
+                pageSize={absencePageSize}
+                onPageChange={(p) => setAbsencePage(p)}
+                onPageSizeChange={(s) => {
+                  setAbsencePageSize(s);
+                  setAbsencePage(1);
+                }}
+                itemLabel="طالب متغيب"
+              />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -179,7 +215,7 @@ export function DailyReportView({
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => {
+                paginatedRows.map((row) => {
                   const conf = statusStyles[row.status] || statusStyles.Unmarked;
                   const Icon = conf.icon;
 
@@ -217,6 +253,23 @@ export function DailyReportView({
             </tbody>
           </table>
         </div>
+
+        {rows.length > rowsPageSize && (
+          <div className="border-t border-[#EEF2F3] dark:border-[#28373D]">
+            <PaginationControls
+              pageNumber={rowsPage}
+              totalPages={totalRowsPages}
+              totalCount={rows.length}
+              pageSize={rowsPageSize}
+              onPageChange={(p) => setRowsPage(p)}
+              onPageSizeChange={(s) => {
+                setRowsPageSize(s);
+                setRowsPage(1);
+              }}
+              itemLabel="طالب"
+            />
+          </div>
+        )}
       </div>
 
       <AttendanceLegend />

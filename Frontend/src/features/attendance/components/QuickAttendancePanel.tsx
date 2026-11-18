@@ -11,6 +11,7 @@ import { SCHOOL_DAYS } from '../../../shared/types';
 import { Button } from '../../../shared/components/ui/Button';
 import { AttendanceProgressSummary } from './AttendanceProgressSummary';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
+import { PaginationControls } from '../../../shared/components/ui/PaginationControls';
 import { Search, CheckCircle2, Save, AlertTriangle } from 'lucide-react';
 import { cn } from '../../../shared/utils/cn';
 
@@ -104,6 +105,8 @@ export function QuickAttendancePanel({
 }: QuickAttendancePanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isConfirmBulkOpen, setIsConfirmBulkOpen] = useState(false);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
@@ -225,6 +228,13 @@ export function QuickAttendancePanel({
     );
   }, [enrollments, searchQuery]);
 
+  const totalCount = filteredStudents.length;
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const paginatedStudents = useMemo(() => {
+    const start = (pageNumber - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, pageNumber, pageSize]);
+
   const currentDayName = SCHOOL_DAYS.find((d) => d.dayNumber === selectedDay)?.nameAr || '';
 
   return (
@@ -295,6 +305,7 @@ export function QuickAttendancePanel({
                     onSelectDay(day.dayNumber);
                     setHasUnsavedChanges(false);
                     setLocalStatuses({});
+                    setPageNumber(1);
                   }}
                   className={cn(
                     'min-h-[40px] py-1.5 px-1 text-center rounded-xl text-xs font-bold transition-all cursor-pointer border truncate flex items-center justify-center active:scale-95 select-none',
@@ -329,8 +340,11 @@ export function QuickAttendancePanel({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="بحث في طلاب الشعبة..."
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPageNumber(1);
+              }}
+              placeholder="بحث باسم الطالب أو رقم الهوية الوطنية..."
               className="w-full h-9 pr-9 pl-3 text-xs bg-white dark:bg-[#111A1E] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-lg focus:border-[#0B5D43] dark:focus:border-[#3E9B78] outline-none transition-all placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
             />
             <Search className="w-4 h-4 text-[#89949A] dark:text-[#6E7F87] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -345,12 +359,12 @@ export function QuickAttendancePanel({
 
         {/* Student Rows List */}
         <div className="divide-y divide-[#EEF2F3] dark:divide-[#24343B] max-h-[600px] overflow-y-auto">
-          {filteredStudents.length === 0 ? (
+          {paginatedStudents.length === 0 ? (
             <div className="p-12 text-center text-xs text-[#89949A] dark:text-[#6E7F87]">
               لا يوجد طلاب مطابقون لبحثك
             </div>
           ) : (
-            filteredStudents.map((enrollment, index) => {
+            paginatedStudents.map((enrollment, index) => {
               const currentStatus = effectiveStatuses[enrollment.enrollmentId] || 'Unmarked';
               const config = STATUS_CONFIG[currentStatus];
 
@@ -367,13 +381,18 @@ export function QuickAttendancePanel({
                   {/* Student Basic Info */}
                   <div className="flex items-center gap-3">
                     <span className="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/5 text-[#5F6B73] dark:text-[#95A7AF] text-[11px] font-mono font-bold flex items-center justify-center shrink-0">
-                      {index + 1}
+                      {(pageNumber - 1) * pageSize + index + 1}
                     </span>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-black text-[#17252B] dark:text-[#F0F4F6]">
                           {enrollment.studentName}
                         </span>
+                        {(enrollment.className || enrollment.classNumber) && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#E8F1F1] dark:bg-[#18353B] text-[#0B5D43] dark:text-[#4DB4C2] border border-[#CDE0E2] dark:border-[#234D56]">
+                            {enrollment.className || `شعبة ${enrollment.classNumber}`}
+                          </span>
+                        )}
                         <span
                           className={cn(
                             'text-[10px] px-2 py-0.5 rounded-full font-bold border transition-colors',
@@ -415,6 +434,23 @@ export function QuickAttendancePanel({
             })
           )}
         </div>
+
+        {totalCount > pageSize && (
+          <div className="border-t border-[#EEF2F3] dark:border-[#24343B]">
+            <PaginationControls
+              pageNumber={pageNumber}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={pageSize}
+              onPageChange={(page) => setPageNumber(page)}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setPageNumber(1);
+              }}
+              itemLabel="طالب"
+            />
+          </div>
+        )}
       </div>
 
       {/* Confirmation Dialog for Overwriting Absent/Discontinued on Bulk Mark Present */}

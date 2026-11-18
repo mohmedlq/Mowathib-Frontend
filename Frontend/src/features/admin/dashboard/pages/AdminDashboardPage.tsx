@@ -8,6 +8,9 @@ import { useNotifications } from '../../../notifications';
 import {
   formatArabicDateShort,
   resolveDefaultAttendanceWeek,
+  getRiyadhDateOnly,
+  calculateDateForDay,
+  normalizeDateOnly,
 } from '../../../../shared/utils/date';
 import {
   GraduationCap,
@@ -17,6 +20,7 @@ import {
   Download,
   ChevronLeft,
   CheckCircle2,
+  BellRing,
 } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Spinner } from '../../../../shared/components/ui/Spinner';
@@ -84,6 +88,41 @@ export function AdminDashboardPage() {
       }
     );
   }, [weeks]);
+
+  // 5.5 Fetch Today's Absent Count for Current Day
+  const todayStr = useMemo(() => {
+    const riyadhToday = getRiyadhDateOnly(new Date());
+    if (activeWeek?.startDate && activeWeek?.endDate) {
+      const start = normalizeDateOnly(activeWeek.startDate);
+      const end = normalizeDateOnly(activeWeek.endDate);
+      if (riyadhToday >= start && riyadhToday <= end) {
+        return riyadhToday;
+      }
+    }
+    const jsDay = new Date().getDay();
+    const schoolDayNum = jsDay >= 0 && jsDay <= 4 ? jsDay + 1 : 1;
+    if (activeWeek?.startDate) {
+      return calculateDateForDay(activeWeek.startDate, schoolDayNum);
+    }
+    return riyadhToday;
+  }, [activeWeek]);
+
+  const {
+    data: todayAbsenteesData,
+    isLoading: isTodayAbsentsLoading,
+  } = useQuery({
+    queryKey: ['dashboard_today_absentees', todayStr],
+    queryFn: () =>
+      schoolDataService.getPagedAbsentees({
+        date: todayStr,
+        pageNumber: 1,
+        pageSize: 1,
+      }),
+    enabled: Boolean(todayStr),
+    staleTime: 1000 * 60 * 2,
+  });
+
+  const todayAbsentsCount = todayAbsenteesData?.totalCount ?? 0;
 
   // 6. Extract Numeric Class Identifier
   const getClassNum = (c: ClassItem): number => {
@@ -446,7 +485,7 @@ export function AdminDashboardPage() {
       </div>
 
       {/* 2. Primary Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
 
         {/* Card 1: Total Students */}
         <div
@@ -493,6 +532,61 @@ export function AdminDashboardPage() {
 
           <div className="pt-3 sm:pt-4 mt-4 sm:mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#245B63] dark:text-[#388B96] group-hover:text-[#174349] dark:group-hover:text-[#52B4C2]">
             <span>الانتقال لإدارة الطلاب</span>
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          </div>
+        </div>
+
+        {/* Card 2: Today's Absents & Parent Notifications */}
+        <div
+          onClick={() => navigate('/admin/send-notifications')}
+          className="group bg-white dark:bg-[#182226] p-4 sm:p-6 rounded-2xl border border-[#DCE3E6] dark:border-[#28373D] hover:border-[#A61B1B] dark:hover:border-[#F87171] hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-[#A61B1B] to-[#F87171] opacity-0 group-hover:opacity-100 transition-opacity" />
+
+          <div>
+            <div className="flex items-start justify-between mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] flex items-center justify-center font-bold shadow-2xs group-hover:scale-105 transition-transform">
+                <BellRing className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+
+              <span
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                  todayAbsentsCount > 0
+                    ? 'text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] border-[#FAD9D9] dark:border-[#451C20]'
+                    : 'text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC] dark:bg-[#122B1E] border-[#B7DEC5] dark:border-[#1B4D32]'
+                }`}
+              >
+                {todayAbsentsCount > 0 ? 'يتطلب إشعار' : 'لا يوجد غياب'}
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block">
+              غياب اليوم المسجل
+            </span>
+
+            <div className="text-2xl sm:text-3xl font-extrabold text-[#17252B] dark:text-[#F0F4F6] font-mono mt-1 mb-2">
+              {isTodayAbsentsLoading ? (
+                <span className="text-sm font-normal text-[#89949A] dark:text-[#6E7F87] inline-flex items-center gap-1.5">
+                  <Spinner size="xs" />
+                  جاري الحساب...
+                </span>
+              ) : (
+                <span className={todayAbsentsCount > 0 ? 'text-[#A61B1B] dark:text-[#F87171]' : ''}>
+                  {todayAbsentsCount}{' '}
+                  <span className="text-sm font-bold text-[#5F6B73] dark:text-[#9BAAB1]">
+                    طالباً غائباً
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] leading-relaxed">
+              متابعة كشف الطلاب الغائبين لهذا اليوم، والربط المباشر مع واتساب لإرسال الإشعارات وتوثيقها.
+            </p>
+          </div>
+
+          <div className="pt-3 sm:pt-4 mt-4 sm:mt-5 border-t border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between text-xs font-bold text-[#A61B1B] dark:text-[#F87171] group-hover:text-[#841212] dark:group-hover:text-[#FCA5A5]">
+            <span>إشعارات أولياء الأمور</span>
             <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           </div>
         </div>

@@ -79,7 +79,7 @@ export function buildAbsenceNotificationMessage(
   schoolName?: string
 ): string {
   const schoolGreeting = schoolName ? `من إدارة ${schoolName}` : 'من إدارة المدرسة';
-  return `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب/ـة (${studentName})، نود إشعاركم ${schoolGreeting} بغياب ابنكم اليوم الموافق ${absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب عبر المنصة.\nشاكرين ومقدرين حسن تعاونكم.`;
+  return `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب (${studentName})، نود إشعاركم ${schoolGreeting} بغياب ابنكم اليوم الموافق ${absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب عبر المنصة.\nشاكرين ومقدرين حسن تعاونكم.`;
 }
 
 /**

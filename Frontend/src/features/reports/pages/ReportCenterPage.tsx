@@ -157,7 +157,7 @@ export function ReportCenterPage() {
     academicYearId: 1,
     periodType: 'daily',
     reportKind: 'attendance',
-    classId: isAdmin ? 105 : user?.classId || 105,
+    classId: isAdmin ? 0 : user?.classId || 0,
     weekId: 1,
     dayNumber: 1,
     month: '2026-11',
@@ -198,18 +198,9 @@ export function ReportCenterPage() {
       if (targetClassId > 0) {
         return schoolDataService.getEnrollmentsByClass(targetClassId);
       }
-
-      // Keep the existing all-classes preview behavior.
-      const list: ClassEnrollment[] = [];
-      for (const classItem of classes.slice(0, 10)) {
-        const classEnrollments = await schoolDataService.getEnrollmentsByClass(
-          classItem.classId
-        );
-        list.push(...classEnrollments);
-      }
-      return list;
+      return await schoolDataService.getAllEnrollments();
     },
-    enabled: classes.length > 0,
+    enabled: true,
   });
 
   const {
@@ -221,19 +212,9 @@ export function ReportCenterPage() {
       if (targetClassId > 0) {
         return schoolDataService.getAttendanceRecords(targetClassId, targetWeekId);
       }
-
-      // Keep the existing all-classes preview behavior for the selected week.
-      const list: AttendanceRecord[] = [];
-      for (const classItem of classes.slice(0, 5)) {
-        const classRecords = await schoolDataService.getAttendanceRecords(
-          classItem.classId,
-          targetWeekId
-        );
-        list.push(...classRecords);
-      }
-      return list;
+      return await schoolDataService.getAttendanceRecordsByWeek(targetWeekId);
     },
-    enabled: targetWeekId > 0 && classes.length > 0,
+    enabled: targetWeekId > 0,
   });
 
   const selectedWeek = useMemo(() => {
@@ -246,7 +227,7 @@ export function ReportCenterPage() {
 
   const classNameTitle =
     filters.classId === 0
-      ? 'جميع الشعب'
+      ? 'جميع طلاب المدرسة (كافة الشعب)'
       : selectedClass?.className
         ? String(selectedClass.className)
         : selectedClass

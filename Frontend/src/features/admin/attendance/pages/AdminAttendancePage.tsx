@@ -40,11 +40,13 @@ function getClassNum(c: ClassItem): number {
 export function AdminAttendancePage() {
   const [searchParams] = useSearchParams();
 
-  const urlClassParam = Number(searchParams.get('classId'));
+  const urlClassParam = searchParams.get('classId');
   const initialClassId =
-    Number.isFinite(urlClassParam) && urlClassParam > 0 ? urlClassParam : null;
+    urlClassParam !== null && Number.isFinite(Number(urlClassParam))
+      ? Number(urlClassParam)
+      : 0;
 
-  const [selectedClassId, setSelectedClassId] = useState<number | null>(initialClassId);
+  const [selectedClassId, setSelectedClassId] = useState<number>(initialClassId);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
   const [selectedGrade, setSelectedGrade] = useState<number>(0); // 0 = all, 1 = 1st, 2 = 2nd, 3 = 3rd
   const [viewMode, setViewMode] = useState<'matrix' | 'absences' | 'quick'>('matrix');
@@ -96,22 +98,23 @@ export function AdminAttendancePage() {
     });
   }, [classes, selectedGrade]);
 
-  // Resolve selected class (defaults automatically to Class 101 on initial load)
+  // Resolve selected class (defaults to 0 for all school students)
   const selectedClass = useMemo(() => {
+    if (selectedClassId === 0) return null;
     const pool = gradeFilteredClasses.length > 0 ? gradeFilteredClasses : classes;
     if (pool.length === 0) return undefined;
 
-    if (selectedClassId !== null) {
+    if (selectedClassId > 0) {
       const matched = pool.find(
         (c) => c.classId === selectedClassId || getClassNum(c) === selectedClassId
       );
       if (matched) return matched;
     }
 
-    return pool.find((c) => getClassNum(c) === 101) || pool[0];
+    return null;
   }, [classes, gradeFilteredClasses, selectedClassId]);
 
-  const effectiveClassId = selectedClass?.classId ?? selectedClassId ?? 101;
+  const effectiveClassId = selectedClassId === 0 ? 0 : (selectedClass?.classId ?? selectedClassId);
 
   // Resolve active week automatically using centralized policy
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
@@ -182,6 +185,10 @@ export function AdminAttendancePage() {
   const handleGradeChange = (grade: number) => {
     setSelectedGrade(grade);
     setAbsentPage(1);
+    if (grade === 0) {
+      handleClassChange(0);
+      return;
+    }
     const inGrade = classes.filter((c) => {
       const num = getClassNum(c);
       if (grade === 1) return num >= 101 && num <= 110;
@@ -190,11 +197,7 @@ export function AdminAttendancePage() {
       return true;
     });
     if (inGrade.length > 0 && !inGrade.some((c) => c.classId === effectiveClassId)) {
-      const preferred =
-        grade === 0
-          ? inGrade.find((c) => getClassNum(c) === 101) || inGrade[0]
-          : inGrade[0];
-      handleClassChange(preferred.classId);
+      handleClassChange(inGrade[0].classId);
     }
   };
 
@@ -208,8 +211,8 @@ export function AdminAttendancePage() {
   };
 
   const handleExportCurrentClass = async () => {
-    if (!selectedClass || matrix.length === 0) {
-      toast.show('لا توجد بيانات حضور متاحة للتصدير لهذه الشعبة', 'warning');
+    if (matrix.length === 0) {
+      toast.show('لا توجد بيانات حضور متاحة للتصدير', 'warning');
       return;
     }
     try {
@@ -217,7 +220,10 @@ export function AdminAttendancePage() {
       const weekRange = selectedWeek
         ? `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(selectedWeek.endDate)}`
         : '';
-      const cname = String(selectedClass.className || selectedClass.classNumber || `شعبة ${selectedClass.classId}`);
+      const cname =
+        effectiveClassId === 0
+          ? 'جميع طلاب المدرسة'
+          : String(selectedClass?.className || selectedClass?.classNumber || `شعبة ${effectiveClassId}`);
       await excelExportService.exportWeeklyAttendance(matrix, {
         className: cname,
         weekNumber: selectedWeek?.weekNumber || 1,
@@ -262,7 +268,7 @@ export function AdminAttendancePage() {
             isLoading={isExportingExcel}
             className="text-xs font-bold border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EAF6EE] dark:hover:bg-[#143224]"
           >
-            تصدير الشعبة (Excel)
+            {effectiveClassId === 0 ? 'تصدير كشف المدرسة (Excel)' : 'تصدير الشعبة (Excel)'}
           </Button>
 
           {/* View Mode Toggle */}
@@ -372,6 +378,9 @@ export function AdminAttendancePage() {
               onChange={(e) => handleClassChange(Number(e.target.value))}
               className="w-full h-10 px-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-[#17252B] dark:text-[#F0F4F6] font-medium focus:bg-white dark:focus:bg-[#182226] focus:border-[#245B63] outline-none cursor-pointer transition-colors"
             >
+              <option value={0} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] font-bold">
+                جميع طلاب المدرسة (كافة الشعب)
+              </option>
               {gradeFilteredClasses.map((c) => (
                 <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
                   {c.className || `شعبة ${c.classId}`}
@@ -427,7 +436,7 @@ export function AdminAttendancePage() {
             <div className="flex items-center gap-2">
               <UserX className="w-4 h-4 text-[#A61B1B] dark:text-[#F87171]" />
               <h2 className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                كشف الطلاب المتغيبين في {selectedClass?.className || `شعبة ${effectiveClassId}`} — الأسبوع {selectedWeek?.weekNumber}
+                كشف الطلاب المتغيبين في {effectiveClassId === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : (selectedClass?.className || `شعبة ${effectiveClassId}`)} — الأسبوع {selectedWeek?.weekNumber}
               </h2>
             </div>
             <span className="text-xs font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2.5 py-1 rounded-md border border-[#F5C2C2] dark:border-[#592226] font-mono">
@@ -441,7 +450,7 @@ export function AdminAttendancePage() {
                 ✓
               </div>
               <strong className="block text-sm mb-1">لا يوجد غياب مسجل!</strong>
-              نسبة الحضور مكتملة 100% في هذه الشعبة خلال هذا الأسبوع.
+              نسبة الحضور مكتملة 100% {effectiveClassId === 0 ? 'في المدرسة' : 'في هذه الشعبة'} خلال هذا الأسبوع.
             </div>
           ) : (
             <>
@@ -452,6 +461,9 @@ export function AdminAttendancePage() {
                       <th className="px-4 py-3 font-bold w-12 text-center">#</th>
                       <th className="px-4 py-3 font-bold">اسم الطالب</th>
                       <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
+                      {effectiveClassId === 0 && (
+                        <th className="px-4 py-3 font-bold w-28">الشعبة</th>
+                      )}
                       <th className="px-4 py-3 font-bold text-center">إجمالي الحصص المتغيب عنها</th>
                       <th className="px-4 py-3 font-bold">تفاصيل الحصص والأيام</th>
                     </tr>
@@ -469,6 +481,11 @@ export function AdminAttendancePage() {
                         <td className="px-4 py-3 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">
                           {item.enrollment.student?.nationalId || '—'}
                         </td>
+                        {effectiveClassId === 0 && (
+                          <td className="px-4 py-3 font-bold text-[#245B63] dark:text-[#388B96]">
+                            {item.enrollment.className || (item.enrollment.classNumber ? `شعبة ${item.enrollment.classNumber}` : '—')}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-center">
                           <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
                             {item.absentCount} يوم
@@ -512,7 +529,7 @@ export function AdminAttendancePage() {
         </div>
       ) : (
         <QuickAttendancePanel
-          classNameTitle={selectedClass?.className || 'شعبة 101'}
+          classNameTitle={effectiveClassId === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : (selectedClass?.className || `شعبة ${effectiveClassId}`)}
           weekNumber={selectedWeek?.weekNumber || 1}
           selectedDay={quickDay}
           onSelectDay={setQuickDay}
