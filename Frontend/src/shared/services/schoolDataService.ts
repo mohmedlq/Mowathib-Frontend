@@ -244,6 +244,12 @@ export const schoolDataService = {
     });
   },
 
+  async getAttendanceRecordsByWeek(attendanceWeekId: number): Promise<AttendanceRecord[]> {
+    return await apiClient.get<AttendanceRecord[]>('/AttendanceRecords/by-week', {
+      attendanceWeekId,
+    });
+  },
+
   async getWeeklyClassSummary(classId: number, attendanceWeekId: number): Promise<WeeklyAttendanceSummary> {
     return await apiClient.get<WeeklyAttendanceSummary>('/AttendanceRecords/summary/by-class-and-week', {
       classId,

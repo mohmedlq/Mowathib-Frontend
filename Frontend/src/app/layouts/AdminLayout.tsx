@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../features/auth';
 import { ThemeToggle } from '../../shared/components/ui/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { MuwathibLoading } from '../../shared/components/ui/Spinner';
 import { useSchoolSettings } from '../../shared/services/schoolSettingsService';
 import { schoolDataService } from '../../shared/services/schoolDataService';
 import { resolveDefaultAttendanceWeek } from '../../shared/utils/date';
@@ -325,7 +326,9 @@ export function AdminLayout() {
 
         {/* Dynamic Page Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          <Outlet />
+          <Suspense fallback={<MuwathibLoading size="fullscreen" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: res.adminId,
           username: res.username,
           role: 'Admin',
-          fullName: ' مساعد بن مبشر الشهري',
+          fullName: ' تجريبي',
         };
         setUser(authUser);
       } else {

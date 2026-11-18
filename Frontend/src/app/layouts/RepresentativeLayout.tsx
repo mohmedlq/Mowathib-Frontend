@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../features/auth';
 import { ThemeToggle } from '../../shared/components/ui/ThemeToggle';
 import { ChangePasswordModal } from '../../features/auth';
 import { PrintClassNumberModal } from '../../features/representative/components/PrintClassNumberModal';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { MuwathibLoading } from '../../shared/components/ui/Spinner';
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -301,7 +302,9 @@ export function RepresentativeLayout() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          <Outlet />
+          <Suspense fallback={<MuwathibLoading size="fullscreen" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

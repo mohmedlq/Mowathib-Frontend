@@ -141,6 +141,25 @@ export function AdminWeeklyPreparationPage() {
       });
     }
 
+    // 1. Try fetching all week records in one fast batch
+    let weekRecordsByClass: Map<number, typeof previewRecords> | null = null;
+    try {
+      const allWeekRecs = await schoolDataService.getAttendanceRecordsByWeek(weekId);
+      if (allWeekRecs && allWeekRecs.length > 0) {
+        weekRecordsByClass = new Map();
+        allWeekRecs.forEach((r) => {
+          const cId = r.classId;
+          if (cId) {
+            const list = weekRecordsByClass!.get(cId) || [];
+            list.push(r);
+            weekRecordsByClass!.set(cId, list);
+          }
+        });
+      }
+    } catch {
+      weekRecordsByClass = null;
+    }
+
     const results: Array<{
       classItem: ClassItem;
       className: string;
@@ -148,7 +167,26 @@ export function AdminWeeklyPreparationPage() {
       attendances: StudentWeeklyAttendance[];
     }> = [];
 
-    // Process classes in chunks of 5 to avoid connection pool starvation or timeouts
+    // If batch succeeded, assemble results instantly in memory
+    if (weekRecordsByClass && weekRecordsByClass.size > 0) {
+      for (const cls of classList) {
+        let enrolls = enrollsMap!.get(cls.classId);
+        if (!enrolls || enrolls.length === 0) {
+          enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
+        }
+        const recs = weekRecordsByClass.get(cls.classId) || [];
+        const attendances = buildWeeklyAttendanceRows(enrolls, recs);
+        results.push({
+          classItem: cls,
+          className: String(cls.className || cls.classNumber || `شعبة ${cls.classId}`),
+          classNumber: getClassNum(cls),
+          attendances,
+        });
+      }
+      return results;
+    }
+
+    // Fallback: Process classes in chunks of 5
     const chunkSize = 5;
     for (let i = 0; i < classList.length; i += chunkSize) {
       const chunk = classList.slice(i, i + chunkSize);

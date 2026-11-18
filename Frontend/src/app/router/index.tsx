@@ -1,3 +1,4 @@
+import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth';
 import { AdminLayout } from '../layouts/AdminLayout';
@@ -6,36 +7,32 @@ import { RepresentativeLayout } from '../layouts/RepresentativeLayout';
 // Auth Pages
 import { AdminLoginPage, RepresentativeLoginPage } from '../../features/auth';
 
-// Admin Pages
-import {
-  AdminDashboardPage,
-  AdminAttendancePage,
-  AdminClassesPage,
-  AdminStudentsPage,
-  AdminRepresentativesPage,
-  AdminAcademicYearsPage,
-  AdminCardsPage,
-  AdminCardRequestsPage,
-  AdminSettingsPage,
-  AdminMonthlyPreparationPage,
-  AdminWeeklyPreparationPage,
-  AdminAcademicWeeksPage,
-  AdminSendNotificationsPage,
-} from '../../features/admin';
+// Lazy Admin Pages
+const AdminDashboardPage = React.lazy(() => import('../../features/admin/dashboard/pages/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
+const AdminAttendancePage = React.lazy(() => import('../../features/admin/attendance/pages/AdminAttendancePage').then(m => ({ default: m.AdminAttendancePage })));
+const AdminClassesPage = React.lazy(() => import('../../features/admin/classes/pages/AdminClassesPage').then(m => ({ default: m.AdminClassesPage })));
+const AdminStudentsPage = React.lazy(() => import('../../features/admin/students/pages/AdminStudentsPage').then(m => ({ default: m.AdminStudentsPage })));
+const AdminRepresentativesPage = React.lazy(() => import('../../features/admin/representatives/pages/AdminRepresentativesPage').then(m => ({ default: m.AdminRepresentativesPage })));
+const AdminAcademicYearsPage = React.lazy(() => import('../../features/admin/academic-years/pages/AdminAcademicYearsPage').then(m => ({ default: m.AdminAcademicYearsPage })));
+const AdminCardsPage = React.lazy(() => import('../../features/admin/cards/pages/AdminCardsPage').then(m => ({ default: m.AdminCardsPage })));
+const AdminCardRequestsPage = React.lazy(() => import('../../features/admin/card-requests/pages/AdminCardRequestsPage').then(m => ({ default: m.AdminCardRequestsPage })));
+const AdminSettingsPage = React.lazy(() => import('../../features/admin/settings/pages/AdminSettingsPage').then(m => ({ default: m.AdminSettingsPage })));
+const AdminMonthlyPreparationPage = React.lazy(() => import('../../features/admin/monthly-preparation/pages/AdminMonthlyPreparationPage').then(m => ({ default: m.AdminMonthlyPreparationPage })));
+const AdminWeeklyPreparationPage = React.lazy(() => import('../../features/admin/weekly-preparation/pages/AdminWeeklyPreparationPage').then(m => ({ default: m.AdminWeeklyPreparationPage })));
+const AdminAcademicWeeksPage = React.lazy(() => import('../../features/admin/academic-weeks/pages/AdminAcademicWeeksPage').then(m => ({ default: m.AdminAcademicWeeksPage })));
+const AdminSendNotificationsPage = React.lazy(() => import('../../features/admin/send-notifications/pages/AdminSendNotificationsPage').then(m => ({ default: m.AdminSendNotificationsPage })));
 
-// Report Center
-import { ReportCenterPage } from '../../features/reports';
+// Lazy Report Center
+const ReportCenterPage = React.lazy(() => import('../../features/reports/pages/ReportCenterPage').then(m => ({ default: m.ReportCenterPage })));
 
-// Representative Pages
-import {
-  RepresentativeDashboardPage,
-  RepresentativeAttendancePage,
-  RepresentativeAttendanceHistoryPage,
-  RepresentativeStudentsPage,
-  RepresentativeDeputyPage,
-  RepresentativeCardRequestsPage,
-  RepresentativeProfilePage,
-} from '../../features/representative';
+// Lazy Representative Pages
+const RepresentativeDashboardPage = React.lazy(() => import('../../features/representative/dashboard/pages/RepresentativeDashboardPage').then(m => ({ default: m.RepresentativeDashboardPage })));
+const RepresentativeAttendancePage = React.lazy(() => import('../../features/representative/attendance/pages/RepresentativeAttendancePage').then(m => ({ default: m.RepresentativeAttendancePage })));
+const RepresentativeAttendanceHistoryPage = React.lazy(() => import('../../features/representative/attendance-history/pages/RepresentativeAttendanceHistoryPage').then(m => ({ default: m.RepresentativeAttendanceHistoryPage })));
+const RepresentativeStudentsPage = React.lazy(() => import('../../features/representative/students/pages/RepresentativeStudentsPage').then(m => ({ default: m.RepresentativeStudentsPage })));
+const RepresentativeDeputyPage = React.lazy(() => import('../../features/representative/deputy/pages/RepresentativeDeputyPage').then(m => ({ default: m.RepresentativeDeputyPage })));
+const RepresentativeCardRequestsPage = React.lazy(() => import('../../features/representative/card-requests/pages/RepresentativeCardRequestsPage').then(m => ({ default: m.RepresentativeCardRequestsPage })));
+const RepresentativeProfilePage = React.lazy(() => import('../../features/representative/profile/pages/RepresentativeProfilePage').then(m => ({ default: m.RepresentativeProfilePage })));
 
 // Landing Page
 import { LandingPage } from '../../components/landing';

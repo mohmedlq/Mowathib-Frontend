@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Spinner } from '../../../../shared/components/ui/Spinner';
-import type { ClassItem } from '../../../../shared/types';
+import type { ClassItem, AttendanceRecord } from '../../../../shared/types';
 
 type GradeClassExportData = {
   classItem: ClassItem;
@@ -226,6 +226,24 @@ export function AdminDashboardPage() {
       const targetWeek = activeWeek;
       const academicYearId = activeYear.academicYearId;
 
+      // 3.5 Attempt bulk attendance fetch for the active week
+      let weekRecordsByClass: Map<number, AttendanceRecord[]> | null = null;
+      try {
+        const allWeekRecs = await schoolDataService.getAttendanceRecordsByWeek(targetWeek.attendanceWeekId);
+        if (allWeekRecs && allWeekRecs.length > 0) {
+          weekRecordsByClass = new Map();
+          allWeekRecs.forEach((r) => {
+            if (r.classId) {
+              const list = weekRecordsByClass!.get(r.classId) || [];
+              list.push(r);
+              weekRecordsByClass!.set(r.classId, list);
+            }
+          });
+        }
+      } catch {
+        weekRecordsByClass = null;
+      }
+
       const resultsByClassId = new Map<
         number,
         GradeClassExportData
@@ -248,10 +266,12 @@ export function AdminDashboardPage() {
               );
 
         const recordsPromise =
-          schoolDataService.getAttendanceRecords(
-            cls.classId,
-            targetWeek.attendanceWeekId
-          );
+          weekRecordsByClass && weekRecordsByClass.has(cls.classId)
+            ? Promise.resolve(weekRecordsByClass.get(cls.classId)!)
+            : schoolDataService.getAttendanceRecords(
+                cls.classId,
+                targetWeek.attendanceWeekId
+              );
 
         const [enrollments, records] =
           await Promise.all([

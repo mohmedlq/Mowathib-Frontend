@@ -138,6 +138,16 @@ export function AdminSendNotificationsPage() {
           .catch(() => []);
       }
 
+      // If all classes selected, attempt single fast week fetch
+      try {
+        const weekRecords = await schoolDataService.getAttendanceRecordsByWeek(activeWeek.attendanceWeekId);
+        if (weekRecords && weekRecords.length > 0) {
+          return weekRecords;
+        }
+      } catch {
+        // Fallback to chunked class requests if bulk fails
+      }
+
       // If all classes selected, fetch records across classes in chunks of 5
       const targetClasses = classes.length > 0 ? classes : [];
       const allFetchedRecords: AttendanceRecord[] = [];

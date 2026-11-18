@@ -102,6 +102,7 @@ export interface AttendanceRecord {
   periodNumber: number; // 1 to 7
   status: BackendAttendanceStatus;
   studentName?: string;
+  classId?: number;
 }
 
 export interface Representative {
