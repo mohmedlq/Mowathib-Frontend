@@ -92,6 +92,10 @@ export const apiClient = {
     return axiosInstance.put(url, data, config) as unknown as Promise<T>;
   },
 
+  patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return axiosInstance.patch(url, data, config) as unknown as Promise<T>;
+  },
+
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return axiosInstance.delete(url, config) as unknown as Promise<T>;
   },

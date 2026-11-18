@@ -225,4 +225,27 @@ export interface AbsenteeNotification {
   hasValidPhone: boolean;
 }
 
+export interface ParentNotification {
+  id: number;
+  parentId: string;
+  studentId: number;
+  studentName: string;
+  nationalId?: string;
+  className?: string;
+  parentName: string;
+  phoneNumber: string;
+  absentDate: string;
+  isSent: boolean;
+  createdAt: string;
+}
+
+export interface GenerateNotificationsResponse {
+  totalAbsent: number;
+  generatedCount: number;
+  skippedCount: number;
+  alreadyExistingCount: number;
+  skippedReasons: string[];
+}
+
+
 
