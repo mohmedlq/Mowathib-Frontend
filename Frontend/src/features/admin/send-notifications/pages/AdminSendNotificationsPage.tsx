@@ -215,20 +215,10 @@ export function AdminSendNotificationsPage() {
       (r) => r.dayNumber === selectedDayNumber && r.status === 'Absent'
     );
 
-    // Group absent periods by enrollmentId
-    const enrollmentAbsenceMap = new Map<number, number[]>();
-    dayAbsentRecords.forEach((r) => {
-      const existing = enrollmentAbsenceMap.get(r.enrollmentId) || [];
-      if (!existing.includes(r.periodNumber)) {
-        existing.push(r.periodNumber);
-      }
-      enrollmentAbsenceMap.set(r.enrollmentId, existing);
-    });
-
     const rows: AbsentStudentRow[] = [];
 
-    enrollmentAbsenceMap.forEach((periods, enrollmentId) => {
-      const enrollment = enrollmentMap.get(enrollmentId);
+    dayAbsentRecords.forEach((r) => {
+      const enrollment = enrollmentMap.get(r.enrollmentId);
       if (!enrollment) return;
 
       // Filter by selected class if specified
@@ -254,13 +244,13 @@ export function AdminSendNotificationsPage() {
         (enrollment.classNumber ? `شعبة ${enrollment.classNumber}` : `شعبة ${enrollment.classId}`);
 
       rows.push({
-        enrollmentId,
+        enrollmentId: r.enrollmentId,
         studentId,
         studentName: enrollment.studentName || studentObj?.fullName || 'طالب غير محدد',
         nationalId: studentObj?.nationalId || (enrollment as any).nationalId || 'غير متوفر',
         classId: enrollment.classId,
         className: String(className),
-        absentPeriods: periods.sort((a, b) => a - b),
+        absentPeriods: [],
         parentId: parentIdStr,
         parentName,
         parentPhone,
@@ -350,13 +340,6 @@ export function AdminSendNotificationsPage() {
       `تمت محاكاة إرسال إشعارات الغياب بنجاح إلى ${sentCount} من أولياء الأمور — وضع العرض التجريبي (Demo Simulation)`,
       'success'
     );
-  };
-
-  // Helper to format absent periods
-  const formatPeriodsText = (periods: number[]) => {
-    if (periods.length === 0) return 'كامل اليوم';
-    if (periods.length >= 6) return 'كامل اليوم الدراسي';
-    return `الحصص: ${periods.join('، ')}`;
   };
 
   const isLoading =
@@ -697,15 +680,10 @@ export function AdminSendNotificationsPage() {
 
                       {/* Absence Status Badge */}
                       <td className="py-3 px-4">
-                        <div className="space-y-1">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2 py-0.5 rounded-full border border-[#FAD9D9] dark:border-[#451C20]">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#A61B1B] dark:bg-[#F87171]" />
-                            غائب
-                          </span>
-                          <span className="block text-[10px] text-[#5F6B73] dark:text-[#9BAAB1]">
-                            {formatPeriodsText(row.absentPeriods)}
-                          </span>
-                        </div>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2.5 py-0.5 rounded-full border border-[#FAD9D9] dark:border-[#451C20]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#A61B1B] dark:bg-[#F87171]" />
+                          غائب (كامل اليوم)
+                        </span>
                       </td>
 
                       {/* Notification Status */}
@@ -802,7 +780,7 @@ export function AdminSendNotificationsPage() {
               <div className="flex items-center justify-between">
                 <span className="text-[#5F6B73] dark:text-[#9BAAB1]">فترة الغياب:</span>
                 <span className="font-semibold text-[#A61B1B] dark:text-[#F87171]">
-                  يوم {currentDayName} — {formatPeriodsText(singleStudentModal.absentPeriods)}
+                  يوم {currentDayName} (كامل اليوم الدراسي)
                 </span>
               </div>
             </div>
@@ -820,8 +798,7 @@ export function AdminSendNotificationsPage() {
                 <p className="mt-1">
                   السلام عليكم ورحمة الله وبركاته،
                   <br />
-                  نفيدكم بتسجيل غياب ابنكم عن الحضور للمدرسة اليوم (<strong>{currentDayName}</strong>) في{' '}
-                  {formatPeriodsText(singleStudentModal.absentPeriods)}. نأمل منكم التكرم بمتابعة وموافاتنا بسبب الغياب لتوثيقه نظامياً في منصة مواظب.
+                  نفيدكم بتسجيل غياب ابنكم عن الحضور للمدرسة اليوم (<strong>{currentDayName}</strong>). نأمل منكم التكرم بمتابعة وموافاتنا بسبب الغياب لتوثيقه نظامياً في منصة مواظب.
                 </p>
                 <p className="mt-2 text-[11px] text-[#5F6B73] dark:text-[#9BAAB1]">
                   إدارة مدرسة: {schoolName} — منصة مواظب

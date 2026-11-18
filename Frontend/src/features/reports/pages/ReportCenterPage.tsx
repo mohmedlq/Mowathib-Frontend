@@ -22,7 +22,6 @@ import type { ReportFilterOptions } from '../types/report.types';
 import type { StudentWeeklyAttendance } from '../../attendance';
 import {
   SCHOOL_DAYS,
-  getPeriodsForDay,
   type AttendanceStatus,
   type AttendanceRecord,
   type ClassEnrollment,
@@ -45,12 +44,10 @@ function buildWeeklyAttendanceRows(
   enrollments: ClassEnrollment[],
   records: AttendanceRecord[]
 ): StudentWeeklyAttendance[] {
-  // Index records once instead of searching the complete array for every slot.
-  // Keep the first record for a slot, matching the previous Array.find behavior.
   const recordBySlot = new Map<string, AttendanceRecord>();
 
   records.forEach((record) => {
-    const key = `${record.enrollmentId}:${record.dayNumber}:${record.periodNumber}`;
+    const key = `${record.enrollmentId}:${record.dayNumber}`;
     if (!recordBySlot.has(key)) {
       recordBySlot.set(key, record);
     }
@@ -59,7 +56,7 @@ function buildWeeklyAttendanceRows(
   return enrollments.map((enrollment) => {
     const slots: Record<
       number,
-      Record<number, { status: AttendanceStatus; recordId?: number }>
+      { status: AttendanceStatus; recordId?: number; attendanceDate?: string }
     > = {};
 
     let present = 0;
@@ -68,32 +65,29 @@ function buildWeeklyAttendanceRows(
     let unmarked = 0;
 
     SCHOOL_DAYS.forEach((day) => {
-      slots[day.dayNumber] = {};
+      const key = `${enrollment.enrollmentId}:${day.dayNumber}`;
+      const match = recordBySlot.get(key);
 
-      getPeriodsForDay(day.dayNumber).forEach((period) => {
-        const key = `${enrollment.enrollmentId}:${day.dayNumber}:${period}`;
-        const match = recordBySlot.get(key);
+      if (match) {
+        slots[day.dayNumber] = {
+          status: match.status,
+          recordId: match.attendanceRecordId,
+          attendanceDate: match.attendanceDate,
+        };
 
-        if (match) {
-          slots[day.dayNumber][period] = {
-            status: match.status,
-            recordId: match.attendanceRecordId,
-          };
-
-          if (match.status === 'Present') {
-            present++;
-          } else if (match.status === 'Absent') {
-            absent++;
-          } else if (match.status === 'Discontinued') {
-            discontinued++;
-          } else {
-            unmarked++;
-          }
+        if (match.status === 'Present') {
+          present++;
+        } else if (match.status === 'Absent') {
+          absent++;
+        } else if (match.status === 'Discontinued') {
+          discontinued++;
         } else {
-          slots[day.dayNumber][period] = { status: 'Unmarked' };
           unmarked++;
         }
-      });
+      } else {
+        slots[day.dayNumber] = { status: 'Unmarked' };
+        unmarked++;
+      }
     });
 
     return {
@@ -272,9 +266,10 @@ export function ReportCenterPage() {
     return reportCalculationService.calculateDailyAttendance(
       enrollments,
       records,
-      filters.dayNumber
+      filters.dayNumber,
+      selectedWeek?.startDate
     );
-  }, [enrollments, records, filters.dayNumber]);
+  }, [enrollments, records, filters.dayNumber, selectedWeek]);
 
   const dailyAbsenceRecords = useMemo(() => {
     return reportCalculationService.calculateDailyAbsences(

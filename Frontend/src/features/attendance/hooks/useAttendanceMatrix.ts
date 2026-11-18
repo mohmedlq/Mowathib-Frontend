@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import type { StudentWeeklyAttendance } from '../types/attendance.types';
 import type { AttendanceStatus, AttendanceRecord, BackendAttendanceStatus } from '../../../shared/types';
-import { SCHOOL_DAYS, getPeriodsForDay, isValidPeriodForDay } from '../../../shared/types';
+import { SCHOOL_DAYS } from '../../../shared/types';
 import { useNotifications } from '../../notifications';
 
 export function useAttendanceMatrix(classId: number, attendanceWeekId?: number | null) {
@@ -39,32 +39,32 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
 
     const recordMap = new Map<string, AttendanceRecord>();
     for (const r of records) {
-      recordMap.set(`${r.enrollmentId}:${r.dayNumber}:${r.periodNumber}`, r);
+      recordMap.set(`${r.enrollmentId}:${r.dayNumber}`, r);
     }
 
     return enrollments.map((en) => {
-      const slots: Record<number, Record<number, { status: AttendanceStatus; recordId?: number }>> = {};
+      const slots: Record<number, { status: AttendanceStatus; recordId?: number; attendanceDate?: string }> = {};
       let present = 0;
       let absent = 0;
       let discontinued = 0;
       let unmarked = 0;
 
       SCHOOL_DAYS.forEach((day) => {
-        slots[day.dayNumber] = {};
-        const dayPeriods = getPeriodsForDay(day.dayNumber);
-        dayPeriods.forEach((p) => {
-          const match = recordMap.get(`${en.enrollmentId}:${day.dayNumber}:${p}`);
+        const match = recordMap.get(`${en.enrollmentId}:${day.dayNumber}`);
 
-          if (match) {
-            slots[day.dayNumber][p] = { status: match.status, recordId: match.attendanceRecordId };
-            if (match.status === 'Present') present++;
-            else if (match.status === 'Absent') absent++;
-            else if (match.status === 'Discontinued') discontinued++;
-          } else {
-            slots[day.dayNumber][p] = { status: 'Unmarked' };
-            unmarked++;
-          }
-        });
+        if (match) {
+          slots[day.dayNumber] = {
+            status: match.status,
+            recordId: match.attendanceRecordId,
+            attendanceDate: match.attendanceDate,
+          };
+          if (match.status === 'Present') present++;
+          else if (match.status === 'Absent') absent++;
+          else if (match.status === 'Discontinued') discontinued++;
+        } else {
+          slots[day.dayNumber] = { status: 'Unmarked' };
+          unmarked++;
+        }
       });
 
       return {
@@ -90,27 +90,25 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
     );
   }, [matrix]);
 
-  // Mutation for saving a slot (either bulk or individual)
+  // Mutation for saving daily attendance for a day
   const saveSlotMutation = useMutation({
     mutationFn: async ({
       dayNumber,
-      periodNumber,
       changes,
     }: {
       dayNumber: number;
-      periodNumber: number;
       changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>;
+      periodNumber?: number;
     }) => {
       if (!isWeekReady) {
         throw new Error('لم يتم تحديد الأسبوع الدراسي.');
       }
-      if (!isValidPeriodForDay(dayNumber, periodNumber)) {
-        throw new Error(`الحصة ${periodNumber} غير متاحة في هذا اليوم.`);
+      if (dayNumber < 1 || dayNumber > 5) {
+        throw new Error(`رقم اليوم ${dayNumber} غير صالح (يجب أن يكون بين 1 و 5).`);
       }
       return await schoolDataService.saveBulkAttendance({
         attendanceWeekId: attendanceWeekId!,
         dayNumber,
-        periodNumber,
         records: changes,
       });
     },
@@ -121,10 +119,10 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
         (prev = []) => {
           const map = new Map<string, AttendanceRecord>();
           for (const r of prev) {
-            map.set(`${r.enrollmentId}:${r.dayNumber}:${r.periodNumber}`, r);
+            map.set(`${r.enrollmentId}:${r.dayNumber}`, r);
           }
           for (const ch of variables.changes) {
-            const key = `${ch.enrollmentId}:${variables.dayNumber}:${variables.periodNumber}`;
+            const key = `${ch.enrollmentId}:${variables.dayNumber}`;
             const existing = map.get(key);
             if (existing) {
               map.set(key, { ...existing, status: ch.status });
@@ -134,7 +132,6 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
                 enrollmentId: ch.enrollmentId,
                 attendanceWeekId: attendanceWeekId!,
                 dayNumber: variables.dayNumber,
-                periodNumber: variables.periodNumber,
                 status: ch.status,
               });
             }
@@ -161,8 +158,19 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
     records: recordsQuery.data || [],
     isLoading: enrollmentsQuery.isLoading || recordsQuery.isLoading,
     isSaving: saveSlotMutation.isPending,
-    saveSlot: (dayNumber: number, periodNumber: number, changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>) =>
-      saveSlotMutation.mutateAsync({ dayNumber, periodNumber, changes }),
+    saveSlot: (
+      arg1: number,
+      arg2: any,
+      arg3?: any
+    ) => {
+      // Support both signatures:
+      // 1. (dayNumber: number, changes: Array<{ enrollmentId, status }>)
+      // 2. (dayNumber: number, periodNumber: number, changes: Array<{ enrollmentId, status }>)
+      if (Array.isArray(arg2)) {
+        return saveSlotMutation.mutateAsync({ dayNumber: arg1, changes: arg2 });
+      } else {
+        return saveSlotMutation.mutateAsync({ dayNumber: arg1, changes: arg3 || [] });
+      }
+    },
   };
 }
-

@@ -66,7 +66,7 @@ export function MonthlyReportView({
                     اسم الطالب
                   </th>
                   <th className="px-3 py-3 font-bold border-l border-[#DCE3E6]">الشعبة</th>
-                  <th className="px-3 py-3 text-center font-bold border-l border-[#DCE3E6]">الحصص المتوقعة</th>
+                  <th className="px-3 py-3 text-center font-bold border-l border-[#DCE3E6]">الأيام المتوقعة</th>
                   <th className="px-3 py-3 text-center font-bold text-[#176B3A] border-l border-[#DCE3E6]">حاضر</th>
                   <th className="px-3 py-3 text-center font-bold text-[#A61B1B] border-l border-[#DCE3E6]">غائب</th>
                   <th className="px-3 py-3 text-center font-bold text-[#855500] border-l border-[#DCE3E6]">منقطع</th>
@@ -137,7 +137,7 @@ export function MonthlyReportView({
                   <th className="px-4 py-3 font-bold">الشعبة</th>
                   <th className="px-4 py-3 font-bold">التاريخ</th>
                   <th className="px-4 py-3 font-bold">اليوم</th>
-                  <th className="px-4 py-3 font-bold">الحصة</th>
+                  <th className="px-4 py-3 font-bold text-center">الحالة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DCE3E6]">
@@ -149,14 +149,14 @@ export function MonthlyReportView({
                   </tr>
                 ) : (
                   detailedAbsences.map((r, idx) => (
-                    <tr key={`${r.enrollmentId}-${r.date}-${r.periodNumber}-${idx}`} className="hover:bg-[#FDECEC]/10">
+                    <tr key={`${r.enrollmentId}-${r.date}-${idx}`} className="hover:bg-[#FDECEC]/10">
                       <td className="px-4 py-2.5 font-mono text-[#89949A]">{idx + 1}</td>
                       <td className="px-4 py-2.5 font-mono text-[#5F6B73]">{r.nationalId}</td>
                       <td className="px-4 py-2.5 font-bold text-[#17252B]">{r.studentName}</td>
                       <td className="px-4 py-2.5 text-[#5F6B73]">{r.className}</td>
                       <td className="px-4 py-2.5 font-mono text-[#5F6B73]">{r.date}</td>
                       <td className="px-4 py-2.5 text-[#5F6B73]">{r.dayName}</td>
-                      <td className="px-4 py-2.5 font-bold text-[#A61B1B]">الحصة {r.periodNumber}</td>
+                      <td className="px-4 py-2.5 text-center font-bold text-[#A61B1B]">غائب</td>
                     </tr>
                   ))
                 )}

@@ -12,9 +12,6 @@ import type { StudentWeeklyAttendance } from '../../attendance';
 
 import {
   SCHOOL_DAYS,
-  getPeriodsForDay,
-  getPeriodsCountForDay,
-  TOTAL_WEEKLY_PERIODS,
   ATTENDANCE_STATUS_ARABIC,
   type AttendanceStatus,
   type ClassItem,
@@ -530,34 +527,21 @@ function getWeeklyScheduleLayout() {
   const flatSlots: FlatWeeklySlot[] = [];
 
   for (const day of SCHOOL_DAYS) {
-    const periods = getPeriodsForDay(day.dayNumber);
-    const periodCount = getPeriodsCountForDay(day.dayNumber);
-    const startCol = currentCol;
-    const endCol = startCol + periodCount - 1;
-
     dayHeaders.push({
       dayNumber: day.dayNumber,
       name: day.nameAr,
-      startCol,
-      endCol,
-      periodCount,
+      startCol: currentCol,
+      endCol: currentCol,
+      periodCount: 1,
     });
 
-    for (const periodNumber of periods) {
-      flatSlots.push({
-        dayNumber: day.dayNumber,
-        periodNumber,
-        colIndex: currentCol,
-        slotOffset: (day.dayNumber << 3) | periodNumber,
-      });
-      currentCol++;
-    }
-  }
-
-  if (flatSlots.length !== TOTAL_WEEKLY_PERIODS) {
-    throw new Error(
-      `إعدادات الجدول غير متطابقة: عدد الحصص الفعلي ${flatSlots.length}، والمتوقع ${TOTAL_WEEKLY_PERIODS}.`
-    );
+    flatSlots.push({
+      dayNumber: day.dayNumber,
+      periodNumber: 1,
+      colIndex: currentCol,
+      slotOffset: day.dayNumber,
+    });
+    currentCol++;
   }
 
   cachedLayout = { dayHeaders, flatSlots };
@@ -570,9 +554,7 @@ function indexClassRecordsFlat(
   const result = new Map<number, AttendanceStatus>();
 
   for (const record of records) {
-    const key =
-      record.enrollmentId * 64 +
-      ((record.dayNumber << 3) | record.periodNumber);
+    const key = record.enrollmentId * 64 + record.dayNumber;
 
     // Keep the first record, matching the original export behavior.
     if (!result.has(key)) result.set(key, record.status);
@@ -637,7 +619,12 @@ function getWeeklySlotStatus(
   attendance: StudentWeeklyAttendance,
   slot: FlatWeeklySlot
 ): AttendanceStatus {
-  return attendance.slots?.[slot.dayNumber]?.[slot.periodNumber]?.status ?? 'Unmarked';
+  const daySlot = attendance.slots?.[slot.dayNumber];
+  if (!daySlot) return 'Unmarked';
+  if (typeof daySlot === 'object' && 'status' in daySlot) {
+    return (daySlot as any).status;
+  }
+  return 'Unmarked';
 }
 
 // =============================================================================
@@ -699,17 +686,10 @@ function appendClassWeeklyPreparationToWorksheet(
   bottomHeader.height = 19;
 
   for (const day of dayHeaders) {
-    worksheet.mergeCells(headerRow1, day.startCol, headerRow1, day.endCol);
-    for (let column = day.startCol; column <= day.endCol; column++) {
-      topHeader.getCell(column).style = STYLES.headerGray10;
-    }
+    worksheet.mergeCells(headerRow1, day.startCol, headerRow2, day.endCol);
     topHeader.getCell(day.startCol).value = day.name;
-
-    for (let period = 1; period <= day.periodCount; period++) {
-      const cell = bottomHeader.getCell(day.startCol + period - 1);
-      cell.value = `ح ${period}`;
-      cell.style = STYLES.periodHeader85;
-    }
+    topHeader.getCell(day.startCol).style = STYLES.headerGray10;
+    bottomHeader.getCell(day.startCol).style = STYLES.headerGray10;
   }
 
   let currentRow = headerRow2 + 1;
@@ -786,11 +766,7 @@ export const excelExportService = {
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const day = SCHOOL_DAYS.find(
-      (item) => item.nameAr === meta.dayName || item.dayNumber === (meta as any).dayNumber
-    );
-    const periods = getPeriodsForDay(day?.dayNumber ?? 1);
-    const totalColumns = periods.length + 5;
+    const totalColumns = 5;
 
     const worksheet = workbook.addWorksheet(
       sanitizeWorksheetName(meta.isAbsenceOnly ? 'تقرير الغياب اليومي' : 'التقرير اليومي'),
@@ -811,10 +787,9 @@ export const excelExportService = {
     const headers = [
       'رقم الهوية',
       'اسم الطالب',
-      ...periods.map((period) => `الحصة ${period}`),
-      'حاضر',
-      'غائب',
-      'منقطع',
+      'الشعبة',
+      'التاريخ',
+      'حالة الحضور',
     ];
 
     const header = worksheet.addRow(headers);
@@ -823,24 +798,21 @@ export const excelExportService = {
 
     for (let index = 0; index < data.length; index++) {
       const item = data[index];
+      const preset = getStatusStyle(item.status);
       const values: Array<string | number> = [
         String(item.nationalId ?? ''),
         item.studentName ?? '',
+        item.className ?? '',
+        item.date || meta.date,
+        preset.label,
       ];
       const styles: Array<Partial<ExcelJS.Style> | undefined> = [
         STYLES.idCell10,
         STYLES.nameCell10,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        preset.cellStyle9,
       ];
-
-      for (const period of periods) {
-        const preset = getStatusStyle(item.periods[period]);
-        values.push(preset.label);
-        styles.push(preset.cellStyle9);
-      }
-
-      values.push(item.presentCount, item.absentCount, item.discontinuedCount);
-      const totalStyle = index % 2 ? STYLES.totalBold10Zebra : STYLES.totalBold10;
-      styles.push(totalStyle, totalStyle, totalStyle);
 
       const row = worksheet.addRow(values);
       row.height = 20;
@@ -850,12 +822,9 @@ export const excelExportService = {
 
     worksheet.getColumn(1).width = 16;
     worksheet.getColumn(2).width = 28;
-    for (let column = 3; column <= 2 + periods.length; column++) {
-      worksheet.getColumn(column).width = 12;
-    }
-    for (let column = 3 + periods.length; column <= totalColumns; column++) {
-      worksheet.getColumn(column).width = 10;
-    }
+    worksheet.getColumn(3).width = 14;
+    worksheet.getColumn(4).width = 14;
+    worksheet.getColumn(5).width = 16;
 
     if (data.length) {
       worksheet.autoFilter = {
@@ -914,16 +883,11 @@ export const excelExportService = {
     secondHeader.height = 20;
 
     for (const day of dayHeaders) {
-      worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+      worksheet.mergeCells(4, day.startCol, 5, day.endCol);
       const cell = worksheet.getCell(4, day.startCol);
       cell.value = day.name;
       cell.style = STYLES.headerGray11;
-
-      for (let period = 1; period <= day.periodCount; period++) {
-        const periodCell = secondHeader.getCell(day.startCol + period - 1);
-        periodCell.value = `ح ${period}`;
-        periodCell.style = STYLES.periodHeader9;
-      }
+      secondHeader.getCell(day.startCol).style = STYLES.headerGray11;
     }
 
     worksheet.getCell('A4').style = STYLES.headerGray11;
@@ -1085,16 +1049,11 @@ export const excelExportService = {
       secondHeader.height = 20;
 
       for (const day of dayHeaders) {
-        worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+        worksheet.mergeCells(4, day.startCol, 5, day.endCol);
         const dayCell = worksheet.getCell(4, day.startCol);
         dayCell.value = day.name;
         dayCell.style = STYLES.headerGray11;
-
-        for (let period = 1; period <= day.periodCount; period++) {
-          const cell = secondHeader.getCell(day.startCol + period - 1);
-          cell.value = `ح ${period}`;
-          cell.style = STYLES.periodHeader9;
-        }
+        secondHeader.getCell(day.startCol).style = STYLES.headerGray11;
       }
 
       worksheet.getCell('A4').style = STYLES.headerGray11;
@@ -1171,7 +1130,7 @@ export const excelExportService = {
     );
 
     const header = worksheet.addRow([
-      'رقم الهوية', 'اسم الطالب', 'الشعبة', 'التاريخ', 'اليوم', 'رقم الحصة',
+      'رقم الهوية', 'اسم الطالب', 'الشعبة', 'التاريخ', 'اليوم', 'حالة الغياب',
     ]);
     header.height = 24;
     applyHeaderStyle(header, 6);
@@ -1185,7 +1144,7 @@ export const excelExportService = {
         item.className,
         item.date,
         item.dayName,
-        `الحصة ${item.periodNumber}`,
+        'غائب',
       ]);
       row.height = 20;
       setRowStyles(row, [
@@ -1461,31 +1420,32 @@ export const excelExportService = {
       bottom.height = 20;
 
       for (const day of dayHeaders) {
-        worksheet.mergeCells(4, day.startCol, 4, day.endCol);
+        worksheet.mergeCells(4, day.startCol, 5, day.endCol);
         const dayCell = worksheet.getCell(4, day.startCol);
         dayCell.value = day.name;
         dayCell.style = STYLES.headerGray11;
-        for (let period = 1; period <= day.periodCount; period++) {
-          const cell = bottom.getCell(day.startCol + period - 1);
-          cell.value = period;
-          cell.style = STYLES.periodHeaderAlt9;
-        }
+        bottom.getCell(day.startCol).style = STYLES.headerGray11;
       }
 
       for (const address of ['A4', 'B4']) {
         worksheet.getCell(address).style = STYLES.headerGray10;
       }
 
-      worksheet.mergeCells('AJ4:AJ5');
-      worksheet.getCell('AJ4').value = 'حاضر';
-      worksheet.mergeCells('AK4:AK5');
-      worksheet.getCell('AK4').value = 'غائب';
-      worksheet.mergeCells('AL4:AL5');
-      worksheet.getCell('AL4').value = 'النسبة %';
+      const colPresent = 2 + slotCount + 1;
+      const colAbsent = 2 + slotCount + 2;
+      const colRate = 2 + slotCount + 3;
 
-      for (const address of ['AJ4', 'AK4', 'AL4']) {
-        worksheet.getCell(address).style = STYLES.headerGray10;
-      }
+      worksheet.mergeCells(4, colPresent, 5, colPresent);
+      worksheet.getCell(4, colPresent).value = 'حاضر';
+      worksheet.getCell(4, colPresent).style = STYLES.headerGray10;
+
+      worksheet.mergeCells(4, colAbsent, 5, colAbsent);
+      worksheet.getCell(4, colAbsent).value = 'غائب';
+      worksheet.getCell(4, colAbsent).style = STYLES.headerGray10;
+
+      worksheet.mergeCells(4, colRate, 5, colRate);
+      worksheet.getCell(4, colRate).value = 'النسبة %';
+      worksheet.getCell(4, colRate).style = STYLES.headerGray10;
 
       for (let studentIndex = 0; studentIndex < item.studentRows.length; studentIndex++) {
         const student = item.studentRows[studentIndex];
@@ -1562,16 +1522,15 @@ export const excelExportService = {
     const schoolName = getSchoolName(params.schoolName);
 
     const processed = params.classesData.map((classData) => {
-      const absentByEnrollment = new Map<number, number[]>();
+      const absentEnrollments = new Set<number>();
       for (const record of classData.records) {
-        if (record.status !== 'Absent') continue;
-        const periods = absentByEnrollment.get(record.enrollmentId) ?? [];
-        periods.push(record.periodNumber);
-        absentByEnrollment.set(record.enrollmentId, periods);
+        if (record.status === 'Absent') {
+          absentEnrollments.add(record.enrollmentId);
+        }
       }
 
       const totalStudents = classData.enrollments.length;
-      const absentStudents = absentByEnrollment.size;
+      const absentStudents = absentEnrollments.size;
       const rate = totalStudents
         ? ((totalStudents - absentStudents) / totalStudents) * 100
         : 100;
@@ -1582,7 +1541,7 @@ export const excelExportService = {
         totalStudents,
         absentStudents,
         rate,
-        absentByEnrollment,
+        absentEnrollments,
       };
     });
 
@@ -1674,16 +1633,11 @@ export const excelExportService = {
         STYLES.title13
       );
 
-      const absentStudents: Array<{
-        enrollment: ClassEnrollment;
-        periods: number[];
-      }> = [];
+      const absentStudents: ClassEnrollment[] = [];
 
       for (const enrollment of item.classData.enrollments) {
-        const periods = item.absentByEnrollment.get(enrollment.enrollmentId);
-        if (periods?.length) {
-          periods.sort((a, b) => a - b);
-          absentStudents.push({ enrollment, periods });
+        if (item.absentEnrollments.has(enrollment.enrollmentId)) {
+          absentStudents.push(enrollment);
         }
       }
 
@@ -1697,23 +1651,22 @@ export const excelExportService = {
         worksheet.getRow(4).height = 32;
       } else {
         const classHeader = worksheet.addRow([
-          'م', 'رقم الهوية الوطنية', 'اسم الطالب الغائب', 'الحصص التي غاب بها', 'إجمالي الحصص',
+          'م', 'رقم الهوية الوطنية', 'اسم الطالب الغائب', 'اليوم', 'حالة الغياب',
         ]);
         classHeader.height = 22;
         applyHeaderStyle(classHeader, 5, STYLES.headerRed10);
 
         for (let index = 0; index < absentStudents.length; index++) {
-          const item = absentStudents[index];
+          const enrollment = absentStudents[index];
           const zebra = index % 2 === 1;
           const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
           const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
-          const enrollment = item.enrollment;
           const row = worksheet.addRow([
             index + 1,
             String(enrollment.student?.nationalId ?? ''),
             enrollment.studentName || enrollment.student?.fullName || '',
-            item.periods.map((period) => `الحصة ${period}`).join('، '),
-            item.periods.length,
+            params.dayName,
+            'غائب (كامل اليوم)',
           ]);
           row.height = 20;
           setRowStyles(row, [center, center, right, center, center]);
@@ -1778,9 +1731,8 @@ export const excelExportService = {
         }
       }
 
-      // Preserve the existing report rule: absent periods are deducted
-      // from the class's scheduled weekly periods.
-      const totalExpected = classData.enrollments.length * TOTAL_WEEKLY_PERIODS;
+      // Daily attendance: total expected attendance days in the week (5 days)
+      const totalExpected = classData.enrollments.length * 5;
       const rate = totalExpected > 0
         ? ((totalExpected - absentSlots) / totalExpected) * 100
         : 100;
@@ -1809,7 +1761,7 @@ export const excelExportService = {
     );
 
     const header = summary.addRow([
-      'م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي حصص الغياب', 'نسبة الحضور',
+      'م', 'الشعبة', 'العريف المسؤول', 'إجمالي الطلاب', 'إجمالي أيام الغياب', 'نسبة الحضور',
     ]);
     header.height = 24;
     applyHeaderStyle(header, 6, STYLES.headerTeal10);
@@ -2071,7 +2023,7 @@ export const excelExportService = {
       currentRow += 2;
     }
 
-    configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
+    configureIdentityColumns(worksheet, 2 + 5, 12);
     const buffer = await writeWorkbookFast(workbook);
     saveExcelFile(
       buffer,
@@ -2133,7 +2085,7 @@ export const excelExportService = {
         await yieldAfterRow(classIndex);
       }
 
-      configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
+      configureIdentityColumns(worksheet, 2 + 5, 12);
     }
 
     const buffer = await writeWorkbookFast(workbook);
@@ -2197,7 +2149,7 @@ export const excelExportService = {
       currentRow += 3;
     }
 
-    configureIdentityColumns(worksheet, 2 + TOTAL_WEEKLY_PERIODS, 5.8);
+    configureIdentityColumns(worksheet, 2 + 5, 12);
     const buffer = await writeWorkbookFast(workbook);
     const safeClass = sanitizeFilename(classLabel).replace(/\.xlsx$/i, '');
     saveExcelFile(

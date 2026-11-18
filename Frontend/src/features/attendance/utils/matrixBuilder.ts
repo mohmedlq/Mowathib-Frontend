@@ -1,14 +1,13 @@
 import type { StudentWeeklyAttendance } from '../types/attendance.types';
 import {
   SCHOOL_DAYS,
-  getPeriodsForDay,
   type AttendanceStatus,
   type AttendanceRecord,
   type ClassEnrollment,
 } from '../../../shared/types';
 
 /**
- * Builds StudentWeeklyAttendance[] from enrollments and attendance records
+ * Builds StudentWeeklyAttendance[] from enrollments and daily attendance records
  * using high-performance O(1) Map lookups.
  */
 export function buildWeeklyAttendanceRows(
@@ -18,7 +17,7 @@ export function buildWeeklyAttendanceRows(
   const recordBySlot = new Map<string, AttendanceRecord>();
 
   records.forEach((record) => {
-    const key = `${record.enrollmentId}:${record.dayNumber}:${record.periodNumber}`;
+    const key = `${record.enrollmentId}:${record.dayNumber}`;
     if (!recordBySlot.has(key)) {
       recordBySlot.set(key, record);
     }
@@ -27,7 +26,7 @@ export function buildWeeklyAttendanceRows(
   return enrollments.map((enrollment) => {
     const slots: Record<
       number,
-      Record<number, { status: AttendanceStatus; recordId?: number }>
+      { status: AttendanceStatus; recordId?: number; attendanceDate?: string }
     > = {};
 
     let present = 0;
@@ -36,32 +35,29 @@ export function buildWeeklyAttendanceRows(
     let unmarked = 0;
 
     SCHOOL_DAYS.forEach((day) => {
-      slots[day.dayNumber] = {};
+      const key = `${enrollment.enrollmentId}:${day.dayNumber}`;
+      const match = recordBySlot.get(key);
 
-      getPeriodsForDay(day.dayNumber).forEach((period) => {
-        const key = `${enrollment.enrollmentId}:${day.dayNumber}:${period}`;
-        const match = recordBySlot.get(key);
+      if (match) {
+        slots[day.dayNumber] = {
+          status: match.status,
+          recordId: match.attendanceRecordId,
+          attendanceDate: match.attendanceDate,
+        };
 
-        if (match) {
-          slots[day.dayNumber][period] = {
-            status: match.status,
-            recordId: match.attendanceRecordId,
-          };
-
-          if (match.status === 'Present') {
-            present++;
-          } else if (match.status === 'Absent') {
-            absent++;
-          } else if (match.status === 'Discontinued') {
-            discontinued++;
-          } else {
-            unmarked++;
-          }
+        if (match.status === 'Present') {
+          present++;
+        } else if (match.status === 'Absent') {
+          absent++;
+        } else if (match.status === 'Discontinued') {
+          discontinued++;
         } else {
-          slots[day.dayNumber][period] = { status: 'Unmarked' };
           unmarked++;
         }
-      });
+      } else {
+        slots[day.dayNumber] = { status: 'Unmarked' };
+        unmarked++;
+      }
     });
 
     return {

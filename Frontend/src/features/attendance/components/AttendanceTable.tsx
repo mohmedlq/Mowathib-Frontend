@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { StudentWeeklyAttendance } from '../types/attendance.types';
-import { SCHOOL_DAYS, getPeriodsForDay, type AttendanceStatus } from '../../../shared/types';
+import { SCHOOL_DAYS, type AttendanceStatus } from '../../../shared/types';
 import { AttendanceDayCell } from './AttendanceDayCell';
 import { AttendanceLegend } from './AttendanceLegend';
 import { Search, Filter } from 'lucide-react';
@@ -12,7 +12,7 @@ export interface AttendanceTableProps {
   onSlotSelect?: (
     enrollmentId: number,
     dayNumber: number,
-    periodNumber: number
+    periodNumber?: number
   ) => void;
   interactive?: boolean;
 }
@@ -24,9 +24,7 @@ export function AttendanceTable({
   interactive = true,
 }: AttendanceTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<
-    'all' | AttendanceStatus
-  >('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | AttendanceStatus>('all');
 
   const filteredList = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -34,9 +32,7 @@ export function AttendanceTable({
     return attendances.filter((item) => {
       // Search by student name or national ID
       const studentName = (item.enrollment.studentName ?? '').toLowerCase();
-      const nationalId = String(
-        item.enrollment.student?.nationalId ?? ''
-      ).toLowerCase();
+      const nationalId = String(item.enrollment.student?.nationalId ?? '').toLowerCase();
 
       const matchesSearch =
         normalizedQuery === '' ||
@@ -48,12 +44,8 @@ export function AttendanceTable({
       // Show all students when no status filter is selected
       if (statusFilter === 'all') return true;
 
-      // Show students who have at least one slot matching the selected status
-      return Object.values(item.slots ?? {}).some((daySlots) =>
-        Object.values(daySlots ?? {}).some(
-          (slot) => slot?.status === statusFilter
-        )
-      );
+      // Show students who have at least one day matching the selected status
+      return Object.values(item.slots ?? {}).some((slot) => slot?.status === statusFilter);
     });
   }, [attendances, searchQuery, statusFilter]);
 
@@ -67,9 +59,8 @@ export function AttendanceTable({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="بحث باسم الطالب أو رقم الهوية الوطنية..."
-            className="w-full h-9.5 pr-9 pl-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-lg focus:bg-white dark:focus:bg-[#182226] focus:border-[#245B63] dark:focus:border-[#388B96] focus:ring-2 focus:ring-[#245B63]/15 outline-none transition-all placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
+            className="w-full h-9.5 pr-9 pl-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-lg focus:bg-white dark:focus:bg-[#182226] focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none transition-all placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
           />
-
           <Search className="w-4 h-4 text-[#89949A] dark:text-[#6E7F87] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
 
@@ -82,10 +73,8 @@ export function AttendanceTable({
 
             <select
               value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as 'all' | AttendanceStatus)
-              }
-              className="h-9 px-3 bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-xs text-[#17252B] dark:text-[#F0F4F6] font-medium outline-none cursor-pointer hover:border-[#245B63] dark:hover:border-[#388B96] transition-colors"
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | AttendanceStatus)}
+              className="h-9 px-3 bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-xs text-[#17252B] dark:text-[#F0F4F6] font-medium outline-none cursor-pointer hover:border-[#0B5D43] dark:hover:border-[#3E9B78] transition-colors"
             >
               <option value="all">جميع الحالات</option>
               <option value="Absent">الطلاب ذوو الغياب</option>
@@ -94,7 +83,7 @@ export function AttendanceTable({
             </select>
           </div>
 
-          <span className="text-xs text-[#245B63] dark:text-[#388B96] bg-[#E8F1F1] dark:bg-[#19383E] font-mono font-bold px-2.5 py-1 rounded-md border border-[#CDE0E2] dark:border-[#28373D] shrink-0">
+          <span className="text-xs text-[#0B5D43] dark:text-[#3E9B78] bg-[#E8F5F0] dark:bg-[#1A3B31] font-mono font-bold px-2.5 py-1 rounded-md border border-[#D8E5DF] dark:border-[#1E4638] shrink-0">
             {filteredList.length} من {attendances.length} طالب
           </span>
         </div>
@@ -114,31 +103,22 @@ export function AttendanceTable({
               </th>
 
               {SCHOOL_DAYS.map((day) => {
-                const dayDate = weekStartDate
-                  ? calculateDateForDay(weekStartDate, day.dayNumber)
-                  : null;
+                const dayDate = weekStartDate ? calculateDateForDay(weekStartDate, day.dayNumber) : null;
 
                 return (
                   <th
                     key={day.dayNumber}
-                    className="px-3 py-2.5 text-center font-bold border-l border-[#DCE3E6] dark:border-[#28373D] min-w-[215px] last:border-l-0"
+                    className="px-3 py-3 text-center font-bold border-l border-[#DCE3E6] dark:border-[#28373D] min-w-[110px] last:border-l-0"
                   >
                     <div className="flex flex-col items-center justify-center">
                       <span className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">
                         {day.nameAr}
                       </span>
-
                       {dayDate && (
                         <span className="text-[10px] text-[#5F6B73] dark:text-[#9BAAB1] font-mono mt-0.5 font-normal">
                           {formatArabicDateShort(dayDate)}
                         </span>
                       )}
-
-                      <div className="flex items-center justify-center gap-1 mt-1 text-[9px] text-[#89949A] dark:text-[#6E7F87] font-mono">
-                        {getPeriodsForDay(day.dayNumber).map((period) => (
-                          <span key={period} className="w-5 text-center">{period}</span>
-                        ))}
-                      </div>
                     </div>
                   </th>
                 );
@@ -165,16 +145,18 @@ export function AttendanceTable({
                     className={`transition-colors ${rowBg} hover:bg-[#F5F9F9] dark:hover:bg-[#202E34]`}
                   >
                     {/* Sticky National ID */}
-                    <td className={`hidden sm:table-cell sticky right-0 z-10 ${rowBg} px-3.5 py-2.5 font-mono text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap`}>
+                    <td
+                      className={`hidden sm:table-cell sticky right-0 z-10 ${rowBg} px-3.5 py-2.5 font-mono text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap`}
+                    >
                       {item.enrollment.student?.nationalId ?? '—'}
                     </td>
 
                     {/* Sticky Student Name */}
-                    <td className={`sticky right-0 sm:right-28 z-10 ${rowBg} px-3 sm:px-4 py-2.5 font-medium text-[#17252B] dark:text-[#F0F4F6] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)]`}>
+                    <td
+                      className={`sticky right-0 sm:right-28 z-10 ${rowBg} px-3 sm:px-4 py-2.5 font-medium text-[#17252B] dark:text-[#F0F4F6] border-l border-[#EEF2F3] dark:border-[#28373D] whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(0,0,0,0.04)]`}
+                    >
                       <div className="flex flex-col">
-                        <span className="truncate font-bold text-xs">
-                          {item.enrollment.studentName}
-                        </span>
+                        <span className="truncate font-bold text-xs">{item.enrollment.studentName}</span>
                         <span className="sm:hidden text-[10px] font-mono text-[#89949A] dark:text-[#6E7F87] mt-0.5">
                           {item.enrollment.student?.nationalId ?? '—'}
                         </span>
@@ -182,33 +164,31 @@ export function AttendanceTable({
                     </td>
 
                     {/* Attendance Days */}
-                  {SCHOOL_DAYS.map((day) => {
-                    const daySlots = item.slots[day.dayNumber] || {};
+                    {SCHOOL_DAYS.map((day) => {
+                      const daySlot = item.slots[day.dayNumber];
 
-                    return (
-                      <td
-                        key={day.dayNumber}
-                        className="px-2 py-2 text-center border-l border-[#EEF2F3] dark:border-[#28373D] last:border-l-0"
-                      >
-                        <AttendanceDayCell
-                          dayNumber={day.dayNumber}
-                          periodStatuses={daySlots}
-                          interactive={interactive}
-                          onPeriodClick={(period) =>
-                            onSlotSelect?.(
-                              item.enrollment.enrollmentId,
-                              day.dayNumber,
-                              period
-                            )
-                          }
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })
-          )}
+                      return (
+                        <td
+                          key={day.dayNumber}
+                          className="px-2 py-2 text-center border-l border-[#EEF2F3] dark:border-[#28373D] last:border-l-0"
+                        >
+                          <AttendanceDayCell
+                            dayNumber={day.dayNumber}
+                            status={daySlot?.status || 'Unmarked'}
+                            recordId={daySlot?.recordId}
+                            attendanceDate={daySlot?.attendanceDate}
+                            interactive={interactive}
+                            onClick={() =>
+                              onSlotSelect?.(item.enrollment.enrollmentId, day.dayNumber)
+                            }
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

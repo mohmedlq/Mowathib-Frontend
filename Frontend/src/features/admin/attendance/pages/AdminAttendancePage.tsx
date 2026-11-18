@@ -22,7 +22,7 @@ import {
   Calendar,
   FileSpreadsheet,
 } from 'lucide-react';
-import { SCHOOL_DAYS, getPeriodsForDay } from '../../../../shared/types';
+import { SCHOOL_DAYS } from '../../../../shared/types';
 import type { ClassItem } from '../../../../shared/types';
 
 function getClassNum(c: ClassItem): number {
@@ -50,7 +50,6 @@ export function AdminAttendancePage() {
 
   // Quick attendance slots
   const [quickDay, setQuickDay] = useState<number>(1);
-  const [quickPeriod, setQuickPeriod] = useState<number>(1);
 
   // Classes query
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
@@ -141,18 +140,14 @@ export function AdminAttendancePage() {
     return matrix
       .map((student) => {
         let absentCount = 0;
-        const absentDetails: Array<{ dayName: string; period: number }> = [];
+        const absentDetails: Array<{ dayName: string; date?: string }> = [];
 
         SCHOOL_DAYS.forEach((day) => {
-          const daySlots = student.slots[day.dayNumber] || {};
-          const periods = getPeriodsForDay(day.dayNumber);
-          periods.forEach((period) => {
-            const slot = daySlots[period];
-            if (slot && slot.status === 'Absent') {
-              absentCount++;
-              absentDetails.push({ dayName: day.nameAr, period });
-            }
-          });
+          const slot = student.slots[day.dayNumber];
+          if (slot && slot.status === 'Absent') {
+            absentCount++;
+            absentDetails.push({ dayName: day.nameAr, date: slot.attendanceDate });
+          }
         });
 
         return {
@@ -193,10 +188,9 @@ export function AdminAttendancePage() {
   const handleSlotSelect = (
     _enrollmentId: number,
     dayNumber: number,
-    periodNumber: number
+    _periodNumber?: number
   ) => {
     setQuickDay(dayNumber);
-    setQuickPeriod(periodNumber);
     setViewMode('quick');
   };
 
@@ -463,7 +457,7 @@ export function AdminAttendancePage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
-                          {item.absentCount} حصة
+                          {item.absentCount} يوم
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -474,7 +468,7 @@ export function AdminAttendancePage() {
                               className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border border-[#DCE3E6] dark:border-[#28373D]"
                             >
                               <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">{det.dayName}</span>
-                              <span className="text-[#5F6B73] dark:text-[#9BAAB1]">ح{det.period}</span>
+                              {det.date && <span className="text-[#5F6B73] dark:text-[#9BAAB1] font-mono">{det.date}</span>}
                             </span>
                           ))}
                         </div>
@@ -492,12 +486,10 @@ export function AdminAttendancePage() {
           weekNumber={selectedWeek?.weekNumber || 1}
           selectedDay={quickDay}
           onSelectDay={setQuickDay}
-          selectedPeriod={quickPeriod}
-          onSelectPeriod={setQuickPeriod}
           enrollments={enrollments}
           records={records}
-          onSaveSlot={async (day, period, changes) => {
-            await saveSlot(day, period, changes);
+          onSaveSlot={async (day, changes) => {
+            await saveSlot(day, changes);
           }}
           isSaving={isSaving}
         />

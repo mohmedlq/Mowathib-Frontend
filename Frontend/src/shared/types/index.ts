@@ -99,7 +99,7 @@ export interface AttendanceRecord {
   enrollmentId: number;
   attendanceWeekId: number;
   dayNumber: number; // 1 = Sunday, 2 = Monday, 3 = Tuesday, 4 = Wednesday, 5 = Thursday
-  periodNumber: number; // 1 to 7
+  attendanceDate?: string; // YYYY-MM-DD
   status: BackendAttendanceStatus;
   studentName?: string;
   classId?: number;
@@ -185,6 +185,17 @@ export interface WeeklyAttendanceSummary {
   totalRecords: number;
   presentCount: number;
   absentCount: number;
+  discontinuedCount: number;
+  attendanceRatePercentage: number;
+}
+
+export interface DailyAttendanceSummary {
+  date: string;
+  classId?: number;
+  totalStudents: number;
+  presentCount: number;
+  absentCount: number;
+  unmarkedCount: number;
   discontinuedCount: number;
   attendanceRatePercentage: number;
 }

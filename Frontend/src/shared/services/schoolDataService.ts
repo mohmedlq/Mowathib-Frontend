@@ -1,5 +1,4 @@
 import { apiClient } from '../lib/apiClient';
-import { isValidPeriodForDay } from '../types';
 import type {
   AcademicYear,
   ClassItem,
@@ -13,6 +12,7 @@ import type {
   BackendAttendanceStatus,
   CardRequestStatus,
   WeeklyAttendanceSummary,
+  DailyAttendanceSummary,
 } from '../types';
 
 export const schoolDataService = {
@@ -259,24 +259,54 @@ export const schoolDataService = {
 
   async saveSingleAttendanceRecord(record: {
     enrollmentId: number;
-    attendanceWeekId: number;
-    dayNumber: number;
-    periodNumber: number;
+    attendanceWeekId?: number;
+    dayNumber?: number;
+    attendanceDate?: string;
     status: BackendAttendanceStatus;
   }): Promise<AttendanceRecord> {
     return await apiClient.post<AttendanceRecord>('/AttendanceRecords', record);
   },
 
   async saveBulkAttendance(data: {
-    attendanceWeekId: number;
-    dayNumber: number;
-    periodNumber: number;
+    attendanceWeekId?: number;
+    dayNumber?: number;
+    attendanceDate?: string;
     records: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>;
   }): Promise<number> {
-    if (!isValidPeriodForDay(data.dayNumber, data.periodNumber)) {
-      throw new Error(`الحصة ${data.periodNumber} غير متاحة في هذا اليوم.`);
-    }
     return await apiClient.post<number>('/AttendanceRecords/bulk', data);
+  },
+
+  async getAttendanceRecordsByDay(
+    classId: number,
+    attendanceWeekId: number,
+    dayNumber: number
+  ): Promise<AttendanceRecord[]> {
+    return await apiClient.get<AttendanceRecord[]>('/AttendanceRecords/by-day', {
+      classId,
+      attendanceWeekId,
+      dayNumber,
+    });
+  },
+
+  async getAttendanceRecordsByDate(date: string, classId?: number): Promise<AttendanceRecord[]> {
+    return await apiClient.get<AttendanceRecord[]>('/AttendanceRecords/by-date', {
+      date,
+      classId,
+    });
+  },
+
+  async getAbsenteesByDate(date: string, classId?: number): Promise<any[]> {
+    return await apiClient.get<any[]>('/AttendanceRecords/absentees', {
+      date,
+      classId,
+    });
+  },
+
+  async getDailyAttendanceSummary(date: string, classId?: number): Promise<DailyAttendanceSummary> {
+    return await apiClient.get<DailyAttendanceSummary>('/AttendanceRecords/summary/daily', {
+      date,
+      classId,
+    });
   },
 
   // ==========================================

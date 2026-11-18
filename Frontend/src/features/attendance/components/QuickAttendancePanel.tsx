@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { schoolDataService } from '../../../shared/services/schoolDataService';
 import type {
@@ -7,16 +7,11 @@ import type {
   AttendanceStatus,
   BackendAttendanceStatus,
 } from '../../../shared/types';
-import {
-  SCHOOL_DAYS,
-  getPeriodsForDay,
-  getPeriodsCountForDay,
-  isValidPeriodForDay,
-} from '../../../shared/types';
+import { SCHOOL_DAYS } from '../../../shared/types';
 import { Button } from '../../../shared/components/ui/Button';
 import { AttendanceProgressSummary } from './AttendanceProgressSummary';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
-import { Search, CheckCircle2, ChevronRight, ChevronLeft, Save, AlertTriangle } from 'lucide-react';
+import { Search, CheckCircle2, Save, AlertTriangle } from 'lucide-react';
 import { cn } from '../../../shared/utils/cn';
 
 interface StatusVisual {
@@ -80,20 +75,21 @@ const UNSELECTED_BTN_CLASS =
   'bg-white/90 dark:bg-[#162227]/90 text-[#4F5D65] dark:text-[#A4B5BD] border-[#D0D9DE] dark:border-[#2C3E46] hover:bg-white dark:hover:bg-[#1F2E35] hover:text-[#17252B] dark:hover:text-[#F0F4F6] hover:border-[#9BAAB1] dark:hover:border-[#425862] font-semibold';
 
 export interface QuickAttendancePanelProps {
-  classNameTitle: number|string;
+  classNameTitle: number | string;
   weekNumber: number;
   selectedDay: number;
   onSelectDay: (day: number) => void;
-  selectedPeriod: number;
-  onSelectPeriod: (period: number) => void;
   enrollments: ClassEnrollment[];
   records: AttendanceRecord[];
   onSaveSlot: (
     dayNumber: number,
-    periodNumber: number,
-    changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>
+    changesOrPeriod: any,
+    maybeChanges?: any
   ) => Promise<void>;
   isSaving?: boolean;
+  // Optional backward compatibility
+  selectedPeriod?: number;
+  onSelectPeriod?: (period: number) => void;
 }
 
 export function QuickAttendancePanel({
@@ -101,8 +97,6 @@ export function QuickAttendancePanel({
   weekNumber,
   selectedDay,
   onSelectDay,
-  selectedPeriod,
-  onSelectPeriod,
   enrollments,
   records,
   onSaveSlot,
@@ -117,31 +111,20 @@ export function QuickAttendancePanel({
   });
   const academicYearName = activeYear?.yearName || '1448-1449هـ';
 
-  // Local draft status for the currently selected slot (enrollmentId -> AttendanceStatus)
+  // Local draft status for the currently selected day (enrollmentId -> AttendanceStatus)
   const [localStatuses, setLocalStatuses] = useState<Record<number, AttendanceStatus>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Maximum allowed periods for the selected day
-  const maxPeriods = getPeriodsCountForDay(selectedDay);
-  const availablePeriods = getPeriodsForDay(selectedDay);
-
-  // If selected period exceeds the max allowed for this day, adjust it
-  useEffect(() => {
-    if (selectedPeriod > maxPeriods) {
-      onSelectPeriod(maxPeriods);
-    }
-  }, [selectedDay, selectedPeriod, maxPeriods, onSelectPeriod]);
-
-  // Map of saved backend records for the selected slot (day + period)
+  // Map of saved backend records for the selected day
   const serverSlotStatuses = useMemo(() => {
     const map: Record<number, AttendanceStatus> = {};
     records.forEach((r) => {
-      if (r.dayNumber === selectedDay && r.periodNumber === selectedPeriod) {
+      if (r.dayNumber === selectedDay) {
         map[r.enrollmentId] = r.status as AttendanceStatus;
       }
     });
     return map;
-  }, [records, selectedDay, selectedPeriod]);
+  }, [records, selectedDay]);
 
   // Effective statuses: saved records merged with local uncommitted edits
   const effectiveStatuses = useMemo(() => {
@@ -214,10 +197,6 @@ export function QuickAttendancePanel({
 
   // Save changes to backend
   const handleSave = async () => {
-    if (!isValidPeriodForDay(selectedDay, selectedPeriod)) {
-      return;
-    }
-
     const changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }> = [];
 
     enrollments.forEach((e) => {
@@ -230,26 +209,9 @@ export function QuickAttendancePanel({
       }
     });
 
-    await onSaveSlot(selectedDay, selectedPeriod, changes);
+    await onSaveSlot(selectedDay, changes);
     setHasUnsavedChanges(false);
     setLocalStatuses({});
-  };
-
-  // Quick next period navigation
-  const goToNextPeriod = () => {
-    if (selectedPeriod < maxPeriods) {
-      onSelectPeriod(selectedPeriod + 1);
-      setHasUnsavedChanges(false);
-      setLocalStatuses({});
-    }
-  };
-
-  const goToPrevPeriod = () => {
-    if (selectedPeriod > 1) {
-      onSelectPeriod(selectedPeriod - 1);
-      setHasUnsavedChanges(false);
-      setLocalStatuses({});
-    }
   };
 
   // Filtered student list
@@ -280,10 +242,8 @@ export function QuickAttendancePanel({
             </span>
           </div>
           <p className="text-xs text-[#5F6B73] dark:text-[#95A7AF] mt-1.5 flex items-center gap-1.5 flex-wrap">
-            <span>التحضير السريع للحصة الدراسية:</span>
-            <span className="font-bold text-[#17252B] dark:text-[#F0F4F6]">{currentDayName}</span>
-            <span className="text-[#8C9AA2] dark:text-[#566874]">—</span>
-            <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">الحصة {selectedPeriod}</span>
+            <span>التحضير السريع لليوم الدراسي:</span>
+            <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">{currentDayName}</span>
           </p>
         </div>
 
@@ -320,9 +280,8 @@ export function QuickAttendancePanel({
         </div>
       </div>
 
-      {/* Navigation Controls: Days & Periods */}
+      {/* Navigation Controls: School Days Selector */}
       <div className="bg-white dark:bg-[#152126] p-4 sm:p-5 rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] space-y-3.5 shadow-xs transition-colors">
-        {/* Days Tabs */}
         <div>
           <span className="text-xs font-bold text-[#5F6B73] dark:text-[#95A7AF] block mb-2">اختر اليوم الدراسي:</span>
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
@@ -333,10 +292,6 @@ export function QuickAttendancePanel({
                   key={day.dayNumber}
                   type="button"
                   onClick={() => {
-                    const newMax = getPeriodsCountForDay(day.dayNumber);
-                    if (selectedPeriod > newMax) {
-                      onSelectPeriod(newMax);
-                    }
                     onSelectDay(day.dayNumber);
                     setHasUnsavedChanges(false);
                     setLocalStatuses({});
@@ -354,200 +309,106 @@ export function QuickAttendancePanel({
             })}
           </div>
         </div>
-
-        {/* Periods Navigation */}
-        <div className="pt-3 border-t border-[#EEF2F3] dark:border-[#27383F] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scroll-smooth">
-            <span className="text-xs font-bold text-[#5F6B73] dark:text-[#95A7AF] ml-2 shrink-0">الحصص:</span>
-            {availablePeriods.map((period) => {
-              const isSelected = period === selectedPeriod;
-              return (
-                <button
-                  key={period}
-                  type="button"
-                  onClick={() => {
-                    onSelectPeriod(period);
-                    setHasUnsavedChanges(false);
-                    setLocalStatuses({});
-                  }}
-                  className={cn(
-                    'w-10 h-10 sm:w-9.5 sm:h-9.5 rounded-xl text-xs font-bold font-mono transition-all cursor-pointer border flex items-center justify-center shrink-0 active:scale-95 select-none',
-                    isSelected
-                      ? 'bg-[#0B5D43] dark:bg-[#107052] text-white border-[#0B5D43] dark:border-[#107052] shadow-xs ring-2 ring-[#0B5D43]/25 dark:ring-[#107052]/35'
-                      : 'bg-[#F5F8F9] dark:bg-[#1A262C] text-[#263339] dark:text-[#D5E1E6] border-[#DCE3E6] dark:border-[#2B3B42] hover:bg-[#EDF2F4] dark:hover:bg-[#22323A]'
-                  )}
-                >
-                  {period}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={selectedPeriod <= 1}
-              onClick={goToPrevPeriod}
-              icon={<ChevronRight className="w-3.5 h-3.5" />}
-              className="flex-1 sm:flex-initial justify-center text-xs font-semibold"
-            >
-              الحصة السابقة
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={selectedPeriod >= maxPeriods}
-              onClick={goToNextPeriod}
-              className="flex-1 sm:flex-initial justify-center text-xs font-semibold"
-            >
-              <span>الحصة التالية</span>
-              <ChevronLeft className="w-3.5 h-3.5 mr-1" />
-            </Button>
-          </div>
-        </div>
       </div>
 
-      {/* Progress Summary */}
+      {/* Progress & Live Counting Bar */}
       <AttendanceProgressSummary
         totalStudents={counts.total}
         presentCount={counts.present}
         absentCount={counts.absent}
         discontinuedCount={counts.discontinued}
         unmarkedCount={counts.unmarked}
-        label={`إحصائيات الحصة ${selectedPeriod} — ${currentDayName}`}
+        label={`إحصائيات تحضير ${currentDayName}`}
       />
 
-      {/* Students List for selected period */}
-      <div className="bg-white dark:bg-[#152126] rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] shadow-xs overflow-hidden transition-colors">
-        {/* Search Header */}
-        <div className="p-3.5 sm:p-4 border-b border-[#DCE3E6] dark:border-[#27383F] flex items-center justify-between gap-3 bg-[#F8FAFB] dark:bg-[#18242A]">
-          <div className="relative w-full sm:w-80">
+      {/* Student List & Status Modification Grid */}
+      <div className="bg-white dark:bg-[#152126] rounded-2xl border border-[#DCE3E6] dark:border-[#27383F] overflow-hidden shadow-xs transition-colors">
+        {/* Search header inside table container */}
+        <div className="p-3 sm:p-4 border-b border-[#EEF2F3] dark:border-[#24343B] bg-[#F8FAFB] dark:bg-[#18252B] flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="relative w-full sm:w-72">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="تصفية الطلاب بالاسم أو الهوية..."
-              className="w-full h-10 pr-9.5 pl-3 text-xs bg-white dark:bg-[#141E22] border border-[#CBD5DA] dark:border-[#2F424B] text-[#17252B] dark:text-[#F0F4F6] rounded-xl focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none placeholder:text-[#8C9AA2] dark:placeholder:text-[#7A8D96] transition-all"
+              placeholder="بحث في طلاب الشعبة..."
+              className="w-full h-9 pr-9 pl-3 text-xs bg-white dark:bg-[#111A1E] border border-[#DCE3E6] dark:border-[#28373D] text-[#17252B] dark:text-[#F0F4F6] rounded-lg focus:border-[#0B5D43] dark:focus:border-[#3E9B78] outline-none transition-all placeholder:text-[#89949A] dark:placeholder:text-[#6E7F87]"
             />
-            <Search className="w-4 h-4 text-[#8C9AA2] dark:text-[#7A8D96] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-[#89949A] dark:text-[#6E7F87] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <span className="text-xs text-[#4F5E66] dark:text-[#B5C5CC] bg-[#EDF2F4] dark:bg-[#1E2C32] px-3 py-1.5 rounded-lg border border-[#D5DFE3] dark:border-[#2C3F47] shrink-0 font-mono font-bold">
-            {filteredStudents.length} طالب
-          </span>
+
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <span className="text-xs text-[#5F6B73] dark:text-[#95A7AF] font-mono">
+              عرض {filteredStudents.length} من أصل {enrollments.length} طالب
+            </span>
+          </div>
         </div>
 
-        {/* Student Rows */}
-        <div className="divide-y divide-[#DCE3E6]/60 dark:divide-[#27383F]/70">
+        {/* Student Rows List */}
+        <div className="divide-y divide-[#EEF2F3] dark:divide-[#24343B] max-h-[600px] overflow-y-auto">
           {filteredStudents.length === 0 ? (
-            <div className="p-10 text-center text-xs text-[#89949A] dark:text-[#7A8D96]">
-              لا يوجد طلاب مطابقون لبحثك في هذه الحصة
+            <div className="p-12 text-center text-xs text-[#89949A] dark:text-[#6E7F87]">
+              لا يوجد طلاب مطابقون لبحثك
             </div>
           ) : (
-            filteredStudents.map((en, idx) => {
-              const currentStatus = effectiveStatuses[en.enrollmentId] || 'Unmarked';
+            filteredStudents.map((enrollment, index) => {
+              const currentStatus = effectiveStatuses[enrollment.enrollmentId] || 'Unmarked';
               const config = STATUS_CONFIG[currentStatus];
 
               return (
                 <div
-                  key={en.enrollmentId}
+                  key={enrollment.enrollmentId}
                   className={cn(
-                    'p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors',
+                    'p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors',
                     config.rowBg,
                     config.rowHover,
                     config.borderAccent
                   )}
                 >
-                  {/* Student Info */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={cn(
-                        'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 shadow-2xs transition-colors',
-                        config.badgeStyle
-                      )}
-                    >
-                      {idx + 1}
+                  {/* Student Basic Info */}
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/5 text-[#5F6B73] dark:text-[#95A7AF] text-[11px] font-mono font-bold flex items-center justify-center shrink-0">
+                      {index + 1}
                     </span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6] truncate">
-                          {en.studentName}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-[#17252B] dark:text-[#F0F4F6]">
+                          {enrollment.studentName}
                         </span>
                         <span
                           className={cn(
-                            'text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors',
+                            'text-[10px] px-2 py-0.5 rounded-full font-bold border transition-colors',
                             config.pillStyle
                           )}
                         >
                           {config.label}
                         </span>
                       </div>
-                      <span className="text-xs text-[#56646C] dark:text-[#95A7AF] font-mono mt-0.5 block">
-                        رقم الهوية: {en.student?.nationalId ?? '—'}
+                      <span className="text-[11px] font-mono text-[#5F6B73] dark:text-[#95A7AF] block mt-0.5">
+                        الهوية: {enrollment.student?.nationalId || '—'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Quick Segmented Status Controls */}
-                  <div className="grid grid-cols-4 gap-1.5 sm:flex sm:items-center sm:gap-2 w-full sm:w-auto mt-2 sm:mt-0 shrink-0">
-                    {/* Present */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(en.enrollmentId, 'Present')}
-                      className={cn(
-                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
-                        currentStatus === 'Present'
-                          ? STATUS_CONFIG.Present.selectedBtn
-                          : UNSELECTED_BTN_CLASS
-                      )}
-                    >
-                      حاضر
-                    </button>
+                  {/* Status Toggle Buttons */}
+                  <div className="grid grid-cols-4 sm:flex items-center gap-1.5 w-full sm:w-auto">
+                    {(['Present', 'Absent', 'Discontinued', 'Unmarked'] as AttendanceStatus[]).map((statusKey) => {
+                      const isSelected = currentStatus === statusKey;
+                      const btnConf = STATUS_CONFIG[statusKey];
 
-                    {/* Absent */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(en.enrollmentId, 'Absent')}
-                      className={cn(
-                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
-                        currentStatus === 'Absent'
-                          ? STATUS_CONFIG.Absent.selectedBtn
-                          : UNSELECTED_BTN_CLASS
-                      )}
-                    >
-                      غائب
-                    </button>
-
-                    {/* Discontinued */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(en.enrollmentId, 'Discontinued')}
-                      className={cn(
-                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
-                        currentStatus === 'Discontinued'
-                          ? STATUS_CONFIG.Discontinued.selectedBtn
-                          : UNSELECTED_BTN_CLASS
-                      )}
-                    >
-                      منقطع
-                    </button>
-
-                    {/* Unmarked */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(en.enrollmentId, 'Unmarked')}
-                      className={cn(
-                        'h-11 sm:h-9 px-2 sm:px-3 text-xs rounded-xl border transition-all cursor-pointer flex items-center justify-center active:scale-95 select-none',
-                        currentStatus === 'Unmarked'
-                          ? STATUS_CONFIG.Unmarked.selectedBtn
-                          : UNSELECTED_BTN_CLASS
-                      )}
-                      title="تحديد كغير محدد"
-                    >
-                      <span className="truncate">غير محدد</span>
-                    </button>
+                      return (
+                        <button
+                          key={statusKey}
+                          type="button"
+                          onClick={() => handleStatusChange(enrollment.enrollmentId, statusKey)}
+                          className={cn(
+                            'h-8 px-2 sm:px-3 text-xs rounded-lg border transition-all cursor-pointer select-none active:scale-95 truncate flex items-center justify-center',
+                            isSelected ? btnConf.selectedBtn : UNSELECTED_BTN_CLASS
+                          )}
+                        >
+                          {btnConf.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -556,52 +417,45 @@ export function QuickAttendancePanel({
         </div>
       </div>
 
-      {/* Confirmation Dialog for Overwriting Existing Non-Present Statuses */}
+      {/* Confirmation Dialog for Overwriting Absent/Discontinued on Bulk Mark Present */}
       <Dialog
         isOpen={isConfirmBulkOpen}
         onClose={() => setIsConfirmBulkOpen(false)}
         title="تأكيد التحضير الجماعي"
-        description="تنبيه: هناك طلاب مسجلون حالياً بحالة (غائب) أو (منقطع) في هذه الحصة."
+        maxWidth="md"
       >
-        <div className="space-y-3 text-xs text-[#17252B] dark:text-[#F0F4F6] leading-relaxed">
-          <div className="p-3.5 bg-[#FFF6E5] dark:bg-[#2E2211] border border-[#FDE096] dark:border-[#5E4218] text-[#92400E] dark:text-[#FDE047] rounded-xl flex items-start gap-2.5">
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[#B45309] dark:text-[#FBBF24]" />
-            <span>
-              الضغط على تأكيد سيقوم بتغيير جميع الطلاب في هذه الحصة إلى <strong>حاضر</strong>، متضمناً الحالات المسجلة سابقاً كغياب أو انقطاع.
-            </span>
+        <div className="space-y-3 py-2 text-right">
+          <div className="flex items-center gap-2.5 text-[#B45309] dark:text-[#FBBF24]">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span className="text-sm font-bold">تنبيه بشأن الطلاب المسجلين كغائبين أو منقطعين</span>
           </div>
-          <p className="text-[#5F6B73] dark:text-[#A4B5BD]">هل ترغب بالاستمرار وتطبيق التحضير الجماعي لجميع الطلاب في هذه الحصة؟</p>
+          <p className="text-xs text-[#5F6B73] dark:text-[#95A7AF] leading-relaxed">
+            يوجد طلاب مسجلين كـ <strong>غائب</strong> أو <strong>منقطع</strong> في هذا اليوم. اختيارك
+            لـ "تحضير الكل كحاضر" سيقوم بتغيير حالة جميع طلاب الشعبة إلى <strong>حاضر</strong> وإلغاء حالات
+            الغياب السابقة لهذا اليوم. هل تود الاستمرار وتطبيق التحضير على الجميع؟
+          </p>
         </div>
-
         <DialogFooter>
-          <Button variant="secondary" onClick={() => setIsConfirmBulkOpen(false)}>
-            إلغاء
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={() => setIsConfirmBulkOpen(false)}
+          >
+            إلغاء التراجع
           </Button>
-          <Button variant="primary" onClick={applyBulkPresent}>
-            نعم، تحضير الكل حاضر
-          </Button>
-        </DialogFooter>
-      </Dialog>
-
-      {/* Mobile Sticky Floating Save Bar */}
-      {hasUnsavedChanges && (
-        <div className="fixed bottom-4 inset-x-4 z-40 md:hidden bg-[#122B23]/95 dark:bg-[#15252A]/95 backdrop-blur-md text-white p-3.5 rounded-2xl shadow-2xl border border-[#3E9B78]/40 dark:border-[#388B96]/40 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shadow-xs" />
-            <span className="text-xs font-bold text-white">لديك تغييرات غير محفوظة</span>
-          </div>
           <Button
             type="button"
             variant="success"
-            size="sm"
-            onClick={handleSave}
-            isLoading={isSaving}
-            className="text-xs font-black shadow-md px-5 h-9"
+            size="md"
+            onClick={applyBulkPresent}
           >
-            حفظ الآن
+            نعم، تحضير الجميع كحاضر
           </Button>
-        </div>
-      )}
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }
+
+export default QuickAttendancePanel;

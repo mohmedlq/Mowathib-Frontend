@@ -17,7 +17,7 @@ export function RepresentativeAttendancePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const classId = user?.classId||0;
+  const classId = user?.classId || 0;
   const className = user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : `شعبة ${classId}`);
 
   // Calculate current school day in Saudi Arabia (Sunday = 1 ... Thursday = 5)
@@ -30,13 +30,9 @@ export function RepresentativeAttendancePage() {
   };
 
   const paramDay = searchParams.get('day') ? Number(searchParams.get('day')) : null;
-  const paramPeriod = searchParams.get('period') ? Number(searchParams.get('period')) : null;
 
   const [selectedDay, setSelectedDay] = useState<number>(() =>
     paramDay && paramDay >= 1 && paramDay <= 5 ? paramDay : getInitialDay()
-  );
-  const [selectedPeriod, setSelectedPeriod] = useState<number>(() =>
-    paramPeriod && paramPeriod >= 1 && paramPeriod <= 7 ? paramPeriod : 1
   );
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
 
@@ -74,14 +70,14 @@ export function RepresentativeAttendancePage() {
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-xl sm:text-2xl font-black text-[#122B23] dark:text-[#F4F8F6] tracking-tight">
-                رصد الحضور اليومي للحصص
+                رصد الحضور والغياب اليومي
               </h1>
               <span className="text-xs px-3 py-1 rounded-full bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] font-bold border border-[#D8E5DF] dark:border-[#1E4638]">
                 {className}
               </span>
             </div>
             <p className="text-xs sm:text-sm text-[#718A80] dark:text-[#A3C7B9] mt-1">
-              رصد الحضور والغياب والانقطاع لكل حصة دراسية بدقة وحفظ النتائج في قاعدة البيانات المدرسية فورياً
+              رصد الحضور والغياب والانقطاع للطلاب بدقة وحفظ السجلات اليومية في قاعدة البيانات فورياً
             </p>
           </div>
         </div>
@@ -123,7 +119,7 @@ export function RepresentativeAttendancePage() {
       {/* Main Quick Attendance Panel */}
       {isLoading ? (
         <div className="bg-white dark:bg-[#122B23] rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] p-12 shadow-xs">
-          <MuwathibLoading message="جاري تجهيز قائمة طلاب الشعبة وسجل حضور الحصص..." />
+          <MuwathibLoading message="جاري تجهيز قائمة طلاب الشعبة وسجل الحضور اليومي..." />
         </div>
       ) : (
         <QuickAttendancePanel
@@ -131,12 +127,10 @@ export function RepresentativeAttendancePage() {
           weekNumber={activeWeek?.weekNumber || 1}
           selectedDay={selectedDay}
           onSelectDay={setSelectedDay}
-          selectedPeriod={selectedPeriod}
-          onSelectPeriod={setSelectedPeriod}
           enrollments={enrollments}
           records={records}
-          onSaveSlot={async (day, period, changes) => {
-            await saveSlot(day, period, changes);
+          onSaveSlot={async (day, changes) => {
+            await saveSlot(day, changes);
           }}
           isSaving={isSaving}
         />

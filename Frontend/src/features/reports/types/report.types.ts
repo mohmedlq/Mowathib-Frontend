@@ -1,4 +1,4 @@
-import type { AttendanceStatus, SchoolPeriod } from '../../../shared/types';
+import type { AttendanceStatus } from '../../../shared/types';
 
 export type ReportPeriodType = 'daily' | 'weekly' | 'monthly';
 export type ReportKind = 'attendance' | 'absence';
@@ -19,11 +19,13 @@ export interface DailyAttendanceRow {
   nationalId: string;
   studentName: string;
   className: number;
-  periods: Record<number, AttendanceStatus>;
-  presentCount: number;
-  absentCount: number;
-  discontinuedCount: number;
-  unmarkedCount: number;
+  date: string;
+  dayName: string;
+  status: AttendanceStatus;
+  presentCount: number; // 1 if Present, else 0
+  absentCount: number; // 1 if Absent, else 0
+  discontinuedCount: number; // 1 if Discontinued, else 0
+  unmarkedCount: number; // 1 if Unmarked, else 0
 }
 
 export interface DailyAbsenceRecord {
@@ -33,7 +35,7 @@ export interface DailyAbsenceRecord {
   className: number;
   date: string;
   dayName: string;
-  periodNumber: SchoolPeriod;
+  status: AttendanceStatus;
 }
 
 export interface MonthlyStudentSummaryRow {
@@ -41,12 +43,12 @@ export interface MonthlyStudentSummaryRow {
   nationalId: string;
   studentName: string;
   className: number;
-  totalExpected: number;
-  presentCount: number;
-  absentCount: number;
-  discontinuedCount: number;
-  unmarkedCount: number;
-  attendanceRate: number; // percentage (0 - 100)
+  totalExpected: number; // Total school days in month
+  presentCount: number; // Days present
+  absentCount: number; // Days absent
+  discontinuedCount: number; // Days discontinued
+  unmarkedCount: number; // Days unmarked
+  attendanceRate: number; // Percentage (0 - 100)
 }
 
 export interface MonthlyDetailedAbsenceRow {
@@ -56,6 +58,5 @@ export interface MonthlyDetailedAbsenceRow {
   className: number;
   date: string;
   dayName: string;
-  periodNumber: number;
+  status?: AttendanceStatus;
 }
-

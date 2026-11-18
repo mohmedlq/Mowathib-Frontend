@@ -1,4 +1,3 @@
-
 import type {
   DailyAttendanceRow,
   DailyAbsenceRecord,
@@ -10,15 +9,10 @@ import type {
   ClassEnrollment,
   AttendanceRecord,
   AttendanceWeek,
+  AttendanceStatus,
 } from '../../../shared/types';
 
-import {
-  SCHOOL_DAYS,
-  getPeriodsForDay,
-  getPeriodsCountForDay,
-  type AttendanceStatus,
-  type SchoolPeriod,
-} from '../../../shared/types';
+import { SCHOOL_DAYS } from '../../../shared/types';
 
 import {
   calculateDateForDay,
@@ -45,51 +39,35 @@ export const reportCalculationService = {
   calculateDailyAttendance(
     enrollments: ClassEnrollment[],
     records: AttendanceRecord[],
-    dayNumber: number
+    dayNumber: number,
+    weekStartDate?: string
   ): DailyAttendanceRow[] {
+    const recordByEnrollment = new Map<number, AttendanceRecord>();
+    records.forEach((r) => {
+      if (r.dayNumber === dayNumber) {
+        recordByEnrollment.set(r.enrollmentId, r);
+      }
+    });
+
+    const dateStr = weekStartDate ? calculateDateForDay(weekStartDate, dayNumber) : '';
+    const dayName = getArabicDayName(dayNumber);
 
     return enrollments.map((en) => {
-      const periods: Record<number, AttendanceStatus> = {};
-
-      let presentCount = 0;
-      let absentCount = 0;
-      let discontinuedCount = 0;
-      let unmarkedCount = 0;
-
-      getPeriodsForDay(dayNumber).forEach((p) => {
-        const match = records.find(
-          (r) =>
-            r.enrollmentId === en.enrollmentId &&
-            r.dayNumber === dayNumber &&
-            r.periodNumber === p
-        );
-
-        if (match) {
-          periods[p] = match.status;
-
-          if (match.status === 'Present') {
-            presentCount++;
-          } else if (match.status === 'Absent') {
-            absentCount++;
-          } else if (match.status === 'Discontinued') {
-            discontinuedCount++;
-          }
-        } else {
-          periods[p] = 'Unmarked';
-          unmarkedCount++;
-        }
-      });
+      const match = recordByEnrollment.get(en.enrollmentId);
+      const status: AttendanceStatus = match ? (match.status as AttendanceStatus) : 'Unmarked';
 
       return {
         enrollmentId: en.enrollmentId,
         nationalId: en.student?.nationalId || '',
         studentName: en.studentName || '',
         className: normalizeClassName(en.className),
-        periods,
-        presentCount,
-        absentCount,
-        discontinuedCount,
-        unmarkedCount,
+        date: match?.attendanceDate || dateStr,
+        dayName,
+        status,
+        presentCount: status === 'Present' ? 1 : 0,
+        absentCount: status === 'Absent' ? 1 : 0,
+        discontinuedCount: status === 'Discontinued' ? 1 : 0,
+        unmarkedCount: status === 'Unmarked' ? 1 : 0,
       };
     });
   },
@@ -104,43 +82,31 @@ export const reportCalculationService = {
     dayNumber: number,
     weekStartDate: string
   ): DailyAbsenceRecord[] {
-
     const list: DailyAbsenceRecord[] = [];
-
-    const dateStr = calculateDateForDay(
-      weekStartDate,
-      dayNumber
-    );
-
+    const dateStr = calculateDateForDay(weekStartDate, dayNumber);
     const dayName = getArabicDayName(dayNumber);
 
+    const recordByEnrollment = new Map<number, AttendanceRecord>();
+    records.forEach((r) => {
+      if (r.dayNumber === dayNumber) {
+        recordByEnrollment.set(r.enrollmentId, r);
+      }
+    });
+
     enrollments.forEach((en) => {
-
-      getPeriodsForDay(dayNumber).forEach((p) => {
-        const match = records.find(
-          (r) =>
-            r.enrollmentId === en.enrollmentId &&
-            r.dayNumber === dayNumber &&
-            r.periodNumber === p
-        );
-
-        // Only actual absence is counted.
-        // Unmarked and Discontinued are NOT absences.
-        if (match && match.status === 'Absent') {
-
-          list.push({
-            enrollmentId: en.enrollmentId,
-            nationalId: en.student?.nationalId || '',
-            studentName: en.studentName || '',
-            className: normalizeClassName(en.className),
-            date: dateStr,
-            dayName,
-            periodNumber: p as SchoolPeriod,
-          });
-
-        }
-      });
-
+      const match = recordByEnrollment.get(en.enrollmentId);
+      // Only actual absence is counted
+      if (match && match.status === 'Absent') {
+        list.push({
+          enrollmentId: en.enrollmentId,
+          nationalId: en.student?.nationalId || '',
+          studentName: en.studentName || '',
+          className: normalizeClassName(en.className),
+          date: match.attendanceDate || dateStr,
+          dayName,
+          status: 'Absent',
+        });
+      }
     });
 
     return list;
@@ -159,11 +125,8 @@ export const reportCalculationService = {
     summary: MonthlyStudentSummaryRow[];
     detailedAbsences: MonthlyDetailedAbsenceRow[];
   } {
-
-    // 1. Find all attendance week days
-    // that fall within the selected calendar month.
-
-    const validSlotsInMonth: Array<{
+    // 1. Find all school days that fall within the selected calendar month.
+    const validDaysInMonth: Array<{
       weekId: number;
       dayNumber: number;
       date: string;
@@ -171,15 +134,10 @@ export const reportCalculationService = {
     }> = [];
 
     allWeeks.forEach((w) => {
-
       SCHOOL_DAYS.forEach((d) => {
-        const date = calculateDateForDay(
-          w.startDate,
-          d.dayNumber
-        );
-
+        const date = calculateDateForDay(w.startDate, d.dayNumber);
         if (date.startsWith(monthStr)) {
-          validSlotsInMonth.push({
+          validDaysInMonth.push({
             weekId: w.attendanceWeekId,
             dayNumber: d.dayNumber,
             date,
@@ -187,98 +145,74 @@ export const reportCalculationService = {
           });
         }
       });
-
     });
 
-    const totalExpectedSlots = validSlotsInMonth.reduce(
-      (acc, slot) => acc + getPeriodsCountForDay(slot.dayNumber),
-      0
-    );
-
+    const totalExpectedDays = validDaysInMonth.length;
     const summary: MonthlyStudentSummaryRow[] = [];
-
     const detailedAbsences: MonthlyDetailedAbsenceRow[] = [];
 
-    // 2. Calculate attendance statistics for each student.
+    // Pre-index records by enrollmentId and date (or weekId:dayNumber)
+    const recordsMap = new Map<string, AttendanceRecord>();
+    allRecords.forEach((r) => {
+      if (r.attendanceDate) {
+        recordsMap.set(`${r.enrollmentId}:${r.attendanceDate}`, r);
+      }
+      recordsMap.set(`${r.enrollmentId}:${r.attendanceWeekId}:${r.dayNumber}`, r);
+    });
 
+    // 2. Calculate daily attendance statistics for each student
     enrollments.forEach((en) => {
-
       let presentCount = 0;
       let absentCount = 0;
       let discontinuedCount = 0;
       let unmarkedCount = 0;
 
-      validSlotsInMonth.forEach((slot) => {
+      validDaysInMonth.forEach((slot) => {
+        const match =
+          recordsMap.get(`${en.enrollmentId}:${slot.date}`) ||
+          recordsMap.get(`${en.enrollmentId}:${slot.weekId}:${slot.dayNumber}`);
 
-        getPeriodsForDay(slot.dayNumber).forEach((p) => {
-
-          const match = allRecords.find(
-            (r) =>
-              r.enrollmentId === en.enrollmentId &&
-              r.attendanceWeekId === slot.weekId &&
-              r.dayNumber === slot.dayNumber &&
-              r.periodNumber === p
-          );
-
-          if (match) {
-
-            if (match.status === 'Present') {
-              presentCount++;
-
-            } else if (match.status === 'Absent') {
-              absentCount++;
-
-              detailedAbsences.push({
-                enrollmentId: en.enrollmentId,
-                nationalId: en.student?.nationalId || '',
-                studentName: en.studentName || '',
-                className: normalizeClassName(en.className),
-                date: slot.date,
-                dayName: slot.dayName,
-                periodNumber: p,
-              });
-
-            } else if (match.status === 'Discontinued') {
-              discontinuedCount++;
-            }
-
+        if (match) {
+          if (match.status === 'Present') {
+            presentCount++;
+          } else if (match.status === 'Absent') {
+            absentCount++;
+            detailedAbsences.push({
+              enrollmentId: en.enrollmentId,
+              nationalId: en.student?.nationalId || '',
+              studentName: en.studentName || '',
+              className: normalizeClassName(en.className),
+              date: slot.date,
+              dayName: slot.dayName,
+              status: 'Absent',
+            });
+          } else if (match.status === 'Discontinued') {
+            discontinuedCount++;
           } else {
             unmarkedCount++;
           }
-
-        });
-
+        } else {
+          unmarkedCount++;
+        }
       });
 
-      // 3. Calculate the valid attendance denominator.
-      // Discontinued periods are excluded.
-
-      const denominator =
-        totalExpectedSlots - discontinuedCount;
-
+      // 3. Calculate attendance rate excluding discontinued days
+      const denominator = totalExpectedDays - discontinuedCount;
       const attendanceRate =
-        denominator > 0
-          ? (presentCount / denominator) * 100
-          : 0;
-
-      // 4. Add the student summary.
+        denominator > 0 ? (presentCount / denominator) * 100 : 0;
 
       summary.push({
         enrollmentId: en.enrollmentId,
         nationalId: en.student?.nationalId || '',
         studentName: en.studentName || '',
         className: normalizeClassName(en.className),
-        totalExpected: totalExpectedSlots,
+        totalExpected: totalExpectedDays,
         presentCount,
         absentCount,
         discontinuedCount,
         unmarkedCount,
-        attendanceRate: Math.min(
-          100,
-          Math.max(0, attendanceRate)
-        ),
+        attendanceRate: Math.min(100, Math.max(0, attendanceRate)),
       });
-
     });
 
     return {
@@ -286,5 +220,4 @@ export const reportCalculationService = {
       detailedAbsences,
     };
   },
-
 };

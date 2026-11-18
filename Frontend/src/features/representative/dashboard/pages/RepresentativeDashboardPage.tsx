@@ -10,8 +10,6 @@ import { PrintClassNumberModal } from '../../components/PrintClassNumberModal';
 import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
 // import type { CardRequest } from '../../../../shared/types';
 import {
-  getPeriodsForDay,
-  getPeriodsCountForDay,
   SCHOOL_DAYS,
 } from '../../../../shared/types';
 import {
@@ -51,14 +49,6 @@ export function RepresentativeDashboardPage() {
 
   const todaySchoolDay = useMemo(() => {
     return SCHOOL_DAYS.find((d) => d.dayNumber === todayDayNumber) || SCHOOL_DAYS[0];
-  }, [todayDayNumber]);
-
-  const todayTotalPeriods = useMemo(() => {
-    return getPeriodsCountForDay(todayDayNumber);
-  }, [todayDayNumber]);
-
-  const todayPeriodsList = useMemo(() => {
-    return getPeriodsForDay(todayDayNumber);
   }, [todayDayNumber]);
 
   // Formatted date in Arabic
@@ -128,33 +118,35 @@ export function RepresentativeDashboardPage() {
   }, [myRequests]);
   ========================================================================= */
 
-  // Calculate attendance statistics for today
+  // Calculate attendance statistics for today and school days this week
   const todayStats = useMemo(() => {
     const todayRecords = records.filter((r) => r.dayNumber === todayDayNumber);
+    const presentRecords = todayRecords.filter((r) => r.status === 'Present');
     const absentRecords = todayRecords.filter(
       (r) => r.status === 'Absent' || r.status === 'Discontinued'
     );
     const uniqueAbsentEnrollmentIds = new Set(absentRecords.map((r) => r.enrollmentId));
 
-    // Per period status
-    const periodStatus: Record<number, { recordedCount: number; absentCount: number }> = {};
-    todayPeriodsList.forEach((period) => {
-      const pRecords = todayRecords.filter((r) => r.periodNumber === period);
-      const pAbsents = pRecords.filter(
-        (r) => r.status === 'Absent' || r.status === 'Discontinued'
-      );
-      periodStatus[period] = {
-        recordedCount: pRecords.length,
-        absentCount: pAbsents.length,
+    // Per day status for this week
+    const daysStatus: Record<number, { recordedCount: number; absentCount: number; presentCount: number }> = {};
+    SCHOOL_DAYS.forEach((day) => {
+      const dRecords = records.filter((r) => r.dayNumber === day.dayNumber);
+      const dAbsents = dRecords.filter((r) => r.status === 'Absent' || r.status === 'Discontinued');
+      const dPresents = dRecords.filter((r) => r.status === 'Present');
+      daysStatus[day.dayNumber] = {
+        recordedCount: dRecords.length,
+        absentCount: dAbsents.length,
+        presentCount: dPresents.length,
       };
     });
 
     return {
       totalRecordedToday: todayRecords.length,
+      presentStudentsToday: presentRecords.length,
       absentStudentsToday: uniqueAbsentEnrollmentIds.size,
-      periodStatus,
+      daysStatus,
     };
-  }, [records, todayDayNumber, todayPeriodsList]);
+  }, [records, todayDayNumber]);
 
   const isInitialLoading = isLoadingWeeks && isLoadingAttendance;
   // && isLoadingClass && isLoadingRequests;
@@ -200,7 +192,7 @@ export function RepresentativeDashboardPage() {
             </span>
             <span className="text-[#D8E5DF] dark:text-[#1E4638]">•</span>
             <span className="text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-              {todaySchoolDay.nameAr} ({todayTotalPeriods} حصص دراسية)
+              {todaySchoolDay.nameAr}
             </span>
           </div>
         </div>
@@ -245,65 +237,65 @@ export function RepresentativeDashboardPage() {
               <span>المهمة الرئيسية لعريف الشعبة</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              رصد الحضور والغياب اليومي للحصص
+              رصد الحضور والغياب اليومي
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              قم بتحضير طلاب <span className="font-bold text-white underline decoration-[#3E9B78]">{className}</span> لكل حصة دراسية وتوثيق حالات الحضور والغياب والانقطاع مباشرة لتصل لسجلات الإدارة المدرسية.
+              قم بتحضير طلاب <span className="font-bold text-white underline decoration-[#3E9B78]">{className}</span> وتوثيق حالات الحضور والغياب والانقطاع مباشرة لتصل لسجلات الإدارة المدرسية فورياً.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
             <button
               type="button"
-              onClick={() => navigate('/representative/daily-attendance')}
+              onClick={() => navigate(`/representative/daily-attendance?day=${todayDayNumber}`)}
               className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white text-[#0B5D43] hover:bg-[#F4F8F6] text-sm font-black transition-all shadow-md hover:shadow-lg active:scale-98 cursor-pointer"
             >
               <CalendarCheck className="w-5 h-5 text-[#0B5D43]" />
-              <span>بدء رصد الحضور الآن</span>
+              <span>بدء رصد حضور اليوم</span>
               <ArrowLeft className="w-4 h-4 rtl:rotate-0" />
             </button>
           </div>
         </div>
 
-        {/* Today's Periods Quick Bar Strip */}
+        {/* Weekly School Days Quick Bar Strip */}
         <div className="relative z-10 mt-6 pt-5 border-t border-white/20">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
             <span className="text-xs font-bold text-emerald-100 flex items-center gap-1.5">
-              <span>حصص اليوم ({todaySchoolDay.nameAr}):</span>
-              <span className="bg-white/20 px-2 py-0.5 rounded text-[11px] font-mono">
-                {todayTotalPeriods} حصص
-              </span>
+              <span>أيام الأسبوع الدراسي ({activeWeek?.weekNumber ? `الأسبوع ${activeWeek.weekNumber}` : 'الأسبوع الحالي'}):</span>
             </span>
             <span className="text-[11px] text-emerald-200">
-              اضغط على أي حصة للانتقال الفوري لرصدها
+              اضغط على أي يوم للانتقال الفوري لرصد حضوره
             </span>
           </div>
 
-          <div className="flex items-stretch gap-2 overflow-x-auto pb-2 sm:grid sm:grid-cols-4 lg:grid-cols-7 scroll-smooth">
-            {todayPeriodsList.map((period) => {
-              const status = todayStats.periodStatus[period];
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {SCHOOL_DAYS.map((day) => {
+              const status = todayStats.daysStatus[day.dayNumber];
               const isRecorded = status && status.recordedCount > 0;
               const hasAbsents = status && status.absentCount > 0;
+              const isToday = day.dayNumber === todayDayNumber;
 
               return (
                 <button
-                  key={period}
+                  key={day.dayNumber}
                   type="button"
                   onClick={() =>
                     navigate(
-                      `/representative/daily-attendance?day=${todayDayNumber}&period=${period}`
+                      `/representative/daily-attendance?day=${day.dayNumber}`
                     )
                   }
-                  className="min-w-[105px] sm:min-w-0 shrink-0 sm:shrink p-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer active:scale-95"
+                  className={`p-3 rounded-xl border backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer active:scale-95 ${
+                    isToday
+                      ? 'bg-white/25 border-white/40 ring-2 ring-white/30'
+                      : 'bg-white/10 hover:bg-white/20 border-white/15'
+                  }`}
                 >
                   <div className="flex items-center justify-between w-full">
                     <span className="text-xs font-black text-white group-hover:text-emerald-100">
-                      الحصة {period}
+                      {day.nameAr}
                     </span>
-                    {isRecorded ? (
-                      <span className="w-2 h-2 rounded-full bg-emerald-300 ring-2 ring-emerald-400/40" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-white/40" />
+                    {isToday && (
+                      <span className="text-[9px] bg-white/30 px-1.5 py-0.2 rounded font-bold">اليوم</span>
                     )}
                   </div>
 
@@ -320,7 +312,7 @@ export function RepresentativeDashboardPage() {
                       ? hasAbsents
                         ? `${status.absentCount} غياب`
                         : 'اكتمل الرصد'
-                      : 'جاهزة للرصد'}
+                      : 'جاهز للرصد'}
                   </span>
                 </button>
               );
