@@ -71,15 +71,51 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
 }
 
 /**
+ * Default Arabic attendance absence message template.
+ * Supports placeholder variables: {studentName}, {absentDate}, {schoolName}, {schoolGreeting}, {parentName}
+ * Also supports Arabic placeholder equivalents: {اسم_الطالب}, {تاريخ_الغياب}, {اسم_المدرسة}, {تحية_المدرسة}, {اسم_ولي_الأمر}
+ */
+export const DEFAULT_ABSENCE_TEMPLATE =
+  `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب ({اسم_الطالب})، نود إشعاركم {تحية_المدرسة} بغياب ابنكم اليوم الموافق {absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب عبر المنصة.\nشاكرين ومقدرين حسن تعاونكم.`;
+
+/**
+ * Renders a notification message from a template and parameters.
+ */
+export function renderNotificationMessage(
+  template: string,
+  params: {
+    studentName: string;
+    absentDate: string;
+    schoolName?: string;
+    parentName?: string;
+  }
+): string {
+  const tpl = template || DEFAULT_ABSENCE_TEMPLATE;
+  const schoolGreeting = params.schoolName ? `من إدارة ${params.schoolName}` : 'من إدارة المدرسة';
+  return tpl
+    .replace(/\{studentName\}|\{اسم_الطالب\}/g, params.studentName)
+    .replace(/\{parentName\}|\{اسم_ولي_الأمر\}/g, params.parentName || 'ولي الأمر')
+    .replace(/\{absentDate\}|\{تاريخ_الغياب\}/g, params.absentDate)
+    .replace(/\{schoolName\}|\{اسم_المدرسة\}/g, params.schoolName || 'المدرسة')
+    .replace(/\{schoolGreeting\}|\{تحية_المدرسة\}/g, schoolGreeting);
+}
+
+/**
  * Generates the personalized Arabic attendance absence message.
  */
 export function buildAbsenceNotificationMessage(
   studentName: string,
   absentDate: string,
-  schoolName?: string
+  schoolName?: string,
+  customTemplate?: string,
+  parentName?: string
 ): string {
-  const schoolGreeting = schoolName ? `من إدارة ${schoolName}` : 'من إدارة المدرسة';
-  return `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب (${studentName})، نود إشعاركم ${schoolGreeting} بغياب ابنكم اليوم الموافق ${absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب عبر المنصة.\nشاكرين ومقدرين حسن تعاونكم.`;
+  return renderNotificationMessage(customTemplate || DEFAULT_ABSENCE_TEMPLATE, {
+    studentName,
+    absentDate,
+    schoolName,
+    parentName,
+  });
 }
 
 /**
@@ -89,10 +125,11 @@ export function createWhatsAppAbsenceUrl(
   studentName: string,
   absentDate: string,
   phone: string | null | undefined,
-  schoolName?: string
+  schoolName?: string,
+  customMessage?: string
 ): { url: string | null; isValid: boolean; normalizedPhone: string | null; message: string } {
   const normalized = normalizeSaudiPhone(phone);
-  const message = buildAbsenceNotificationMessage(studentName, absentDate, schoolName);
+  const message = customMessage || buildAbsenceNotificationMessage(studentName, absentDate, schoolName);
 
   if (!normalized) {
     return {

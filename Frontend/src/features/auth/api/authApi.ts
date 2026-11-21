@@ -6,8 +6,8 @@ export const authApi = {
   // Real Admin Login endpoint: POST /api/Admins/login
   async loginAdmin(credentials: LoginCredentials): Promise<AdminLoginResponse> {
     const res = await apiClient.post<AdminLoginResponse>('/Admins/login', {
-      username: credentials.username,
-      password: credentials.password,
+      username: credentials.username.trim(),
+      password: credentials.password.trim(),
     });
     return res;
   },

@@ -18,11 +18,11 @@ export class ApiError extends Error {
     this.data = data;
   }
 }
-const Base_Urls={
-  Local:'http://localhost:10000/api',
-  Somee:'https://mowathib-api.somee.com/api'
-}
-const BASE_URL =Base_Urls.Local;
+const Base_Urls = {
+  Local: 'http://localhost:10000/api',
+  Somee: 'https://mowathib-api.somee.com/api',
+};
+const BASE_URL = Base_Urls.Local;
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -68,7 +68,12 @@ axiosInstance.interceptors.response.use(
       }
 
       if (status === 401) {
-        window.dispatchEvent(new CustomEvent('mowathib_unauthorized'));
+        // Do not trigger unauthorized logout on login attempts so the user stays on the login screen
+        const reqUrl = (error.config?.url || '').toLowerCase();
+        const isLoginRequest = reqUrl.includes('/login') || reqUrl.includes('/authenticate');
+        if (!isLoginRequest) {
+          window.dispatchEvent(new CustomEvent('mowathib_unauthorized'));
+        }
       }
 
       return Promise.reject(new ApiError(status, message, errorData));

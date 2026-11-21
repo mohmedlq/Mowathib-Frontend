@@ -39,7 +39,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle unauthorized events
   useEffect(() => {
     const handleUnauthorized = () => {
-      logout();
+      const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('mowathib_token');
+      if (stored) {
+        logout();
+      }
     };
     window.addEventListener('mowathib_unauthorized', handleUnauthorized);
     return () => window.removeEventListener('mowathib_unauthorized', handleUnauthorized);

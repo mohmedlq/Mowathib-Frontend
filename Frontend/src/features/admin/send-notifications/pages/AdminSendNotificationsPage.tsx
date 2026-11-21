@@ -17,6 +17,10 @@ import {
   Filter,
   CheckCheck,
   AlertTriangle,
+  Edit3,
+  FileText,
+  RotateCcw,
+  Save,
 } from 'lucide-react';
 
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
@@ -35,6 +39,8 @@ import {
   formatPhoneDisplay,
   createWhatsAppAbsenceUrl,
   buildAbsenceNotificationMessage,
+  DEFAULT_ABSENCE_TEMPLATE,
+  renderNotificationMessage,
 } from '../../../../shared/utils/whatsapp';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
@@ -65,8 +71,30 @@ export function AdminSendNotificationsPage() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [customDate, setCustomDate] = useState<string>('');
 
-  // Modal State
+  // Modal & Edit State
   const [previewNotification, setPreviewNotification] = useState<ParentNotification | null>(null);
+  const [editedMessageText, setEditedMessageText] = useState<string>('');
+
+  // Global Template State
+  const [globalTemplate, setGlobalTemplate] = useState<string>(() => {
+    try {
+      return localStorage.getItem('mowathib_absence_template') || DEFAULT_ABSENCE_TEMPLATE;
+    } catch {
+      return DEFAULT_ABSENCE_TEMPLATE;
+    }
+  });
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [draftTemplate, setDraftTemplate] = useState(globalTemplate);
+
+  // Per-Student Custom Messages State (notificationId -> custom message text)
+  const [customMessages, setCustomMessages] = useState<Record<number, string>>(() => {
+    try {
+      const saved = localStorage.getItem('mowathib_custom_messages');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Queries: Classes & Weeks
@@ -199,16 +227,92 @@ export function AdminSendNotificationsPage() {
     generateMutation.mutate(effectiveDate);
   };
 
+  const getNotificationMessage = (notification: ParentNotification): string => {
+    if (customMessages[notification.id]) {
+      return customMessages[notification.id];
+    }
+    return buildAbsenceNotificationMessage(
+      notification.studentName,
+      notification.absentDate,
+      schoolName,
+      globalTemplate,
+      notification.parentName
+    );
+  };
+
+  const handleOpenPreview = (notification: ParentNotification) => {
+    setPreviewNotification(notification);
+    setEditedMessageText(getNotificationMessage(notification));
+  };
+
+  const handleSaveCustomMessage = (notificationId: number, text: string) => {
+    setCustomMessages((prev) => {
+      const next = { ...prev, [notificationId]: text };
+      try {
+        localStorage.setItem('mowathib_custom_messages', JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+  };
+
+  const handleResetCustomMessage = (notification: ParentNotification) => {
+    const defaultMsg = buildAbsenceNotificationMessage(
+      notification.studentName,
+      notification.absentDate,
+      schoolName,
+      globalTemplate,
+      notification.parentName
+    );
+    setEditedMessageText(defaultMsg);
+    setCustomMessages((prev) => {
+      const next = { ...prev };
+      delete next[notification.id];
+      try {
+        localStorage.setItem('mowathib_custom_messages', JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+    toast.show(`تمت استعادة النص القياسي للطالب (${notification.studentName}).`, 'info');
+  };
+
+  const handleSaveGlobalTemplate = () => {
+    try {
+      localStorage.setItem('mowathib_absence_template', draftTemplate);
+    } catch (e) {
+      console.error(e);
+    }
+    setGlobalTemplate(draftTemplate);
+    setIsTemplateModalOpen(false);
+    toast.show('تم حفظ وتطبيق قالب الرسائل الموحد بنجاح.', 'success');
+  };
+
+  const handleResetGlobalTemplate = () => {
+    setDraftTemplate(DEFAULT_ABSENCE_TEMPLATE);
+    try {
+      localStorage.removeItem('mowathib_absence_template');
+    } catch (e) {
+      console.error(e);
+    }
+    setGlobalTemplate(DEFAULT_ABSENCE_TEMPLATE);
+    toast.show('تمت استعادة قالب الرسائل الافتراضي.', 'info');
+  };
+
   /**
    * Primary Action: Opens WhatsApp Click-to-Chat in a new browser tab
    * and immediately updates the backend persistent state to isSent = true.
    */
-  const handleOpenWhatsApp = (notification: ParentNotification) => {
+  const handleOpenWhatsApp = (notification: ParentNotification, messageOverride?: string) => {
+    const finalMessage = messageOverride || getNotificationMessage(notification);
     const wa = createWhatsAppAbsenceUrl(
       notification.studentName,
       notification.absentDate,
       notification.phoneNumber,
-      schoolName
+      schoolName,
+      finalMessage
     );
 
     if (!wa.isValid || !wa.url) {
@@ -219,8 +323,14 @@ export function AdminSendNotificationsPage() {
       return;
     }
 
+    // Save customized text if an override was explicitly passed
+    if (messageOverride) {
+      handleSaveCustomMessage(notification.id, messageOverride);
+    }
+
     // 1. Open WhatsApp Click-to-Chat window
-    window.open(wa.url, '_blank', 'noopener,noreferrer');
+    const whatsappTab= window.open(wa.url,'Mowathib-whatsapp');
+    whatsappTab?.focus();
 
     // 2. Immediately persist IsSent = true to backend
     if (!notification.isSent) {
@@ -329,8 +439,23 @@ export function AdminSendNotificationsPage() {
             </p>
           </div>
 
-          {/* Top Actions: Generate & Refresh */}
+          {/* Top Actions: Template, Refresh, Generate */}
           <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              icon={<FileText className="w-4 h-4 text-[#0B5D43] dark:text-[#3E9B78]" />}
+              onClick={() => {
+                setDraftTemplate(globalTemplate);
+                setIsTemplateModalOpen(true);
+              }}
+              className="text-xs font-bold border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#F5F8F9] dark:hover:bg-[#1E292E]"
+              title="تعديل وتخصيص صيغة قالب الرسائل المعتمد لجميع أولياء الأمور"
+            >
+              <span>تخصيص قالب الرسائل</span>
+            </Button>
+
             <Button
               type="button"
               variant="outline"
@@ -706,8 +831,19 @@ export function AdminSendNotificationsPage() {
 
                       {/* Student Name */}
                       <td className="py-3 px-4">
-                        <div className="font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                          {row.studentName}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-[#17252B] dark:text-[#F0F4F6]">
+                            {row.studentName}
+                          </span>
+                          {customMessages[row.id] && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-[#FFF4DA] dark:bg-[#332712] text-[#855500] dark:text-[#FACC15] border border-[#FFE7A8] dark:border-[#473516]"
+                              title="تم تعديل وتخصيص نص الرسالة لهذا الطالب"
+                            >
+                              <Edit3 className="w-2.5 h-2.5" />
+                              رسالة معدلة
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -796,14 +932,14 @@ export function AdminSendNotificationsPage() {
                       {/* Additional Options */}
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {/* Preview message modal button */}
+                          {/* Preview & edit message modal button */}
                           <button
                             type="button"
-                            onClick={() => setPreviewNotification(row)}
-                            className="p-1.5 rounded-lg text-[#5F6B73] dark:text-[#9BAAB1] hover:bg-[#F0F4F6] dark:hover:bg-[#243338] transition-colors cursor-pointer"
-                            title="معاينة نص الرسالة وتفاصيل الإشعار"
+                            onClick={() => handleOpenPreview(row)}
+                            className="p-1.5 rounded-lg text-[#0B5D43] dark:text-[#3E9B78] hover:bg-[#E8F5F0] dark:hover:bg-[#1A3B31] transition-colors cursor-pointer"
+                            title="معاينة وتعديل نص الرسالة قبل الإرسال"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <Edit3 className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Toggle status manually */}
@@ -842,18 +978,18 @@ export function AdminSendNotificationsPage() {
       </div>
 
       {/* --------------------------------------------------------------------------- */}
-      {/* 5. Notification Preview Modal                                                */}
+      {/* 5. Notification Edit & Preview Modal                                         */}
       {/* --------------------------------------------------------------------------- */}
       {previewNotification && (
         <Dialog
           isOpen={Boolean(previewNotification)}
           onClose={() => setPreviewNotification(null)}
-          title="معاينة إشعار غياب ولي الأمر"
-          maxWidth="md"
+          title="معاينة وتعديل نص رسالة الغياب لولي الأمر"
+          maxWidth="lg"
         >
           <div className="space-y-4 text-right">
             {/* Header Details */}
-            <div className="p-3.5 rounded-xl bg-[#F8FAFA] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] space-y-2 text-xs">
+            <div className="p-3.5 rounded-xl bg-[#F8FAFA] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-[#5F6B73] dark:text-[#9BAAB1]">اسم الطالب:</span>
                 <strong className="text-[#17252B] dark:text-[#F0F4F6]">
@@ -896,17 +1032,66 @@ export function AdminSendNotificationsPage() {
               </div>
             </div>
 
-            {/* Message Preview Box */}
+            {/* Editable Message Box */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] flex items-center gap-1.5">
+                  <Edit3 className="w-3.5 h-3.5 text-[#0B5D43] dark:text-[#3E9B78]" />
+                  <span>تعديل نص الرسالة المرسلة عبر واتساب:</span>
+                </label>
+                <div className="flex items-center gap-2 text-[11px] text-[#5F6B73] dark:text-[#9BAAB1]">
+                  <span>عدد الحروف: <strong className="font-mono text-[#17252B] dark:text-[#F0F4F6]">{editedMessageText.length}</strong></span>
+                  {customMessages[previewNotification.id] && (
+                    <span className="text-[#855500] dark:text-[#FACC15] font-semibold bg-[#FFF4DA] dark:bg-[#332712] px-2 py-0.5 rounded-md border border-[#FFE7A8] dark:border-[#473516]">
+                      رسالة معدلة خصيصاً
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick insert chips */}
+              <div className="flex items-center gap-1.5 flex-wrap pb-1">
+                <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] ml-1">إضافة عبارات سريعة:</span>
+                <button
+                  type="button"
+                  onClick={() => setEditedMessageText((prev) => prev + '\nنرجو مراجعة إدارة المدرسة عاجلاً.')}
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-[#F5F8F9] dark:bg-[#1A262C] text-[#245B63] dark:text-[#388B96] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#E8F5F0] dark:hover:bg-[#1A3B31] cursor-pointer transition-colors"
+                >
+                  + مراجعة الإدارة عاجلاً
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditedMessageText((prev) => prev + '\nيرجى تقديم تقرير طبي أو عذر رسمي معتمد.')}
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-[#F5F8F9] dark:bg-[#1A262C] text-[#245B63] dark:text-[#388B96] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#E8F5F0] dark:hover:bg-[#1A3B31] cursor-pointer transition-colors"
+                >
+                  + طلب عذر طبي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditedMessageText((prev) => prev + '\nعلماً بأن غياب الطالب تكرر خلال هذا الأسبوع.')}
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-[#F5F8F9] dark:bg-[#1A262C] text-[#245B63] dark:text-[#388B96] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#E8F5F0] dark:hover:bg-[#1A3B31] cursor-pointer transition-colors"
+                >
+                  + تنبيه بتكرار الغياب
+                </button>
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                value={editedMessageText}
+                onChange={(e) => setEditedMessageText(e.target.value)}
+                rows={5}
+                className="w-full p-3.5 rounded-xl bg-white dark:bg-[#141E22] border border-[#DCE3E6] dark:border-[#28373D] text-xs text-[#17252B] dark:text-[#F0F4F6] focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none leading-relaxed transition-all resize-y"
+                placeholder="اكتب نص الرسالة هنا..."
+              />
+            </div>
+
+            {/* Live Preview Box */}
             <div>
-              <label className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block mb-1.5">
-                نص الرسالة المرسلة عبر واتساب:
+              <label className="text-[11px] font-bold text-[#5F6B73] dark:text-[#9BAAB1] block mb-1">
+                معاينة شكل الرسالة كما ستظهر في واتساب:
               </label>
-              <div className="p-4 rounded-xl bg-[#E8F5EC]/40 dark:bg-[#122B1E]/40 border border-[#B7DEC5]/60 dark:border-[#1B4D32] text-xs text-[#17252B] dark:text-[#F0F4F6] whitespace-pre-wrap leading-relaxed">
-                {buildAbsenceNotificationMessage(
-                  previewNotification.studentName,
-                  previewNotification.absentDate,
-                  schoolName
-                )}
+              <div className="p-3.5 rounded-xl bg-[#E8F5EC]/40 dark:bg-[#122B1E]/40 border border-[#B7DEC5]/60 dark:border-[#1B4D32] text-xs text-[#17252B] dark:text-[#F0F4F6] whitespace-pre-wrap leading-relaxed">
+                {editedMessageText || '—'}
               </div>
             </div>
 
@@ -921,7 +1106,33 @@ export function AdminSendNotificationsPage() {
             )}
           </div>
 
-          <DialogFooter className="mt-5">
+          <DialogFooter className="mt-5 flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              icon={<RotateCcw className="w-3.5 h-3.5" />}
+              onClick={() => handleResetCustomMessage(previewNotification)}
+              className="text-xs text-[#5F6B73] dark:text-[#9BAAB1]"
+              title="استعادة نص القالب القياسي"
+            >
+              <span>استعادة النص الأصلي</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<Save className="w-3.5 h-3.5" />}
+              onClick={() => {
+                handleSaveCustomMessage(previewNotification.id, editedMessageText);
+                toast.show(`تم حفظ التعديل على رسالة (${previewNotification.studentName}) بنجاح.`, 'success');
+              }}
+              className="text-xs font-bold"
+            >
+              <span>حفظ التعديل</span>
+            </Button>
+
             <Button
               type="button"
               variant="outline"
@@ -929,18 +1140,127 @@ export function AdminSendNotificationsPage() {
               onClick={() => setPreviewNotification(null)}
               className="text-xs"
             >
-              <span>إغلاق</span>
+              <span>إلغاء</span>
             </Button>
+
             <Button
               type="button"
               variant="primary"
               size="sm"
               icon={<MessageSquare className="w-4 h-4" />}
               disabled={!isValidSaudiPhone(previewNotification.phoneNumber)}
-              onClick={() => handleOpenWhatsApp(previewNotification)}
+              onClick={() => handleOpenWhatsApp(previewNotification, editedMessageText)}
               className="bg-[#25D366] hover:bg-[#20BD5A] text-white text-xs font-bold shadow-xs"
             >
               <span>فتح واتساب وإرسال الإشعار</span>
+            </Button>
+          </DialogFooter>
+        </Dialog>
+      )}
+
+      {/* --------------------------------------------------------------------------- */}
+      {/* 6. Global Template Customization Modal                                       */}
+      {/* --------------------------------------------------------------------------- */}
+      {isTemplateModalOpen && (
+        <Dialog
+          isOpen={isTemplateModalOpen}
+          onClose={() => setIsTemplateModalOpen(false)}
+          title="تخصيص قالب رسائل الغياب المعتمد لجميع أولياء الأمور"
+          maxWidth="lg"
+        >
+          <div className="space-y-4 text-right">
+            <div className="p-3.5 rounded-xl bg-[#F0F7F5] dark:bg-[#132A22] border border-[#B7DEC5]/60 dark:border-[#1E4638] text-xs text-[#0B5D43] dark:text-[#4ADE80] leading-relaxed">
+              <strong>توجيه إداري:</strong> يمكنك صياغة وتعديل قالب الرسائل العام المعتمد للمدرسة. سيتم استخدام هذا القالب تلقائياً لكافة أولياء الأمور مع استبدال المتغيرات (اسم الطالب، التاريخ، إلخ). يمكنك أيضاً تعديل رسالة أي طالب بشكل فردي قبل إرسالها من الجدول.
+            </div>
+
+            {/* Variable Tags */}
+            <div>
+              <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] block mb-1.5">
+                المتغيرات الديناميكية (اضغط على المتغير لإدراجه داخل النص):
+              </label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { tag: '{اسم_الطالب}', label: 'اسم الطالب' },
+                  { tag: '{تاريخ_الغياب}', label: 'تاريخ الغياب' },
+                  { tag: '{اسم_ولي_الأمر}', label: 'اسم ولي الأمر' },
+                  { tag: '{اسم_المدرسة}', label: 'اسم المدرسة' },
+                  { tag: '{تحية_المدرسة}', label: 'تحية المدرسة (من إدارة ...)' },
+                ].map(({ tag, label }) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setDraftTemplate((prev) => prev + tag)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg font-mono font-bold bg-[#F5F8F9] dark:bg-[#1A262C] text-[#0B5D43] dark:text-[#3E9B78] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#E8F5F0] dark:hover:bg-[#1A3B31] hover:border-[#0B5D43] cursor-pointer transition-all active:scale-95"
+                    title={`إدراج متغير ${label}`}
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Textarea */}
+            <div>
+              <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] block mb-1">
+                صيغة قالب الرسالة:
+              </label>
+              <textarea
+                value={draftTemplate}
+                onChange={(e) => setDraftTemplate(e.target.value)}
+                rows={6}
+                className="w-full p-3.5 rounded-xl bg-white dark:bg-[#141E22] border border-[#DCE3E6] dark:border-[#28373D] text-xs text-[#17252B] dark:text-[#F0F4F6] focus:border-[#0B5D43] dark:focus:border-[#3E9B78] focus:ring-2 focus:ring-[#0B5D43]/15 outline-none leading-relaxed transition-all resize-y"
+                placeholder="أدخل نص قالب الرسالة هنا..."
+              />
+            </div>
+
+            {/* Live Sample Preview */}
+            <div>
+              <label className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] block mb-1">
+                معاينة حية لنموذج رسالة باستخدام هذا القالب:
+              </label>
+              <div className="p-4 rounded-xl bg-[#E8F5EC]/40 dark:bg-[#122B1E]/40 border border-[#B7DEC5]/60 dark:border-[#1B4D32] text-xs text-[#17252B] dark:text-[#F0F4F6] whitespace-pre-wrap leading-relaxed">
+                {renderNotificationMessage(draftTemplate, {
+                  studentName: 'سلطان عبد العزيز الخالدي',
+                  parentName: 'عبد العزيز الخالدي',
+                  absentDate: effectiveDate || '1448/05/20هـ',
+                  schoolName: schoolName || 'ثانوية الملك فهد',
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-5 flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              icon={<RotateCcw className="w-3.5 h-3.5" />}
+              onClick={handleResetGlobalTemplate}
+              className="text-xs text-[#5F6B73] dark:text-[#9BAAB1]"
+              title="استعادة صيغة القالب الافتراضية الأصلية للنظام"
+            >
+              <span>استعادة القالب الافتراضي</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTemplateModalOpen(false)}
+              className="text-xs"
+            >
+              <span>إلغاء</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              icon={<Save className="w-4 h-4" />}
+              onClick={handleSaveGlobalTemplate}
+              className="bg-[#0B5D43] hover:bg-[#084733] text-white text-xs font-bold shadow-xs"
+            >
+              <span>حفظ القالب واعتماده لجميع الطلاب</span>
             </Button>
           </DialogFooter>
         </Dialog>
