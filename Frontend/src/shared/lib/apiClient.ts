@@ -18,11 +18,19 @@ export class ApiError extends Error {
     this.data = data;
   }
 }
+<<<<<<< HEAD
 const Base_Urls = {
   Local: 'http://localhost:10000/api',
   Somee: 'https://mowathib-api.somee.com/api',
 };
 const BASE_URL = Base_Urls.Local;
+=======
+const Base_Urls={
+  Local:'http://localhost:10000/api',
+  Somee:'https://mowathib-api.somee.com/api'
+}
+const BASE_URL =Base_Urls.Somee;
+>>>>>>> 940bcf3e7ff5b47133e4020de91f2c588f1e6fe4
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
