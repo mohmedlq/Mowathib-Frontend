@@ -24,6 +24,8 @@ interface StudentFormData {
   thirdName: string;
   lastName: string;
   nationalId: string;
+  parentName?: string;
+  parentPhoneNumber?: string;
 }
 
 export function RepresentativeStudentsPage() {
@@ -43,12 +45,14 @@ export function RepresentativeStudentsPage() {
     name: string;
   } | null>(null);
 
-  // بيانات الطالب
+  // بيانات الطالب وولي الأمر
   const [firstName, setFirstName] = useState('');
   const [secondName, setSecondName] = useState('');
   const [thirdName, setThirdName] = useState('');
   const [lastName, setLastName] = useState('');
   const [nationalId, setNationalId] = useState('');
+  const [parentName, setParentName] = useState('');
+  const [parentPhoneNumber, setParentPhoneNumber] = useState('');
 
   // إعادة تعيين النموذج
   const resetForm = () => {
@@ -57,6 +61,8 @@ export function RepresentativeStudentsPage() {
     setThirdName('');
     setLastName('');
     setNationalId('');
+    setParentName('');
+    setParentPhoneNumber('');
     setEditingStudentId(null);
   };
 
@@ -97,6 +103,8 @@ export function RepresentativeStudentsPage() {
           thirdName,
           lastName,
           nationalId,
+          parentName: parentName.trim() || undefined,
+          parentPhoneNumber: parentPhoneNumber.trim() || undefined,
         },
         classId,
         1
@@ -127,8 +135,7 @@ export function RepresentativeStudentsPage() {
       studentId: number;
       student: StudentFormData;
     }) => {
-      return await schoolDataService.updateStudent(data.studentId,data.student)
-      
+      return await schoolDataService.updateStudentDetails(data.studentId, data.student);
     },
 
     onSuccess: () => {
@@ -233,6 +240,9 @@ const handleEditStudent = (
     String(student?.nationalId ?? '')
   );
 
+  setParentName(student?.parent?.fullName || (student as any)?.parentName || '');
+  setParentPhoneNumber(student?.parent?.phoneNumber || (student as any)?.parentPhoneNumber || '');
+
   setIsFormModalOpen(true);
 };
 
@@ -245,6 +255,8 @@ const handleEditStudent = (
       thirdName: thirdName.trim(),
       lastName: lastName.trim(),
       nationalId: nationalId.trim(),
+      parentName: parentName.trim() || undefined,
+      parentPhoneNumber: parentPhoneNumber.trim() || undefined,
     };
 
     if (editingStudentId !== null) {
@@ -327,6 +339,7 @@ const handleEditStudent = (
                 <th className="px-4 py-3 font-bold w-12 text-center">#</th>
                 <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
                 <th className="px-4 py-3 font-bold">اسم الطالب الرباعي</th>
+                <th className="px-4 py-3 font-bold">ولي الأمر والجوال</th>
                 <th className="px-4 py-3 font-bold">تاريخ القيد</th>
                 <th className="px-4 py-3 font-bold text-center">الإجراءات</th>
               </tr>
@@ -334,15 +347,18 @@ const handleEditStudent = (
 
             <tbody className="divide-y divide-[#DCE3E6]">
               {isLoading ? (
-                <MuwathibTableLoading colSpan={5} message="جاري استرجاع بيانات طلاب الشعبة..." />
+                <MuwathibTableLoading colSpan={6} message="جاري استرجاع بيانات طلاب الشعبة..." />
               ) : enrollments.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-[#89949A]">
+                  <td colSpan={6} className="px-6 py-12 text-center text-[#89949A]">
                     لا يوجد طلاب مطابقون لمعايير البحث
                   </td>
                 </tr>
               ) : (
-                enrollments.map((en, idx) => (
+                enrollments.map((en, idx) => {
+                  const pName = en.student?.parent?.fullName || (en.student as any)?.parentName;
+                  const pPhone = en.student?.parent?.phoneNumber || (en.student as any)?.parentPhoneNumber;
+                  return (
                   <tr
                     key={en.enrollmentId}
                     className="transition-colors hover:bg-[#F0F7F7]"
@@ -359,6 +375,17 @@ const handleEditStudent = (
 
                     <td className="px-4 py-3 font-bold text-[#17252B]">
                       {en.studentName}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {pName || pPhone ? (
+                        <div className="text-xs">
+                          <span className="font-semibold block text-[#17252B]">{pName || 'ولي أمر'}</span>
+                          {pPhone && <span className="font-mono text-[#5F6B73] text-[11px]">{pPhone}</span>}
+                        </div>
+                      ) : (
+                        <span className="text-[#89949A] text-[11px]">غير مسجل</span>
+                      )}
                     </td>
 
                     <td className="px-4 py-3 font-mono text-[#5F6B73]">
@@ -397,7 +424,7 @@ const handleEditStudent = (
                       </div>
                     </td>
                   </tr>
-                ))
+                );})
               )}
             </tbody>
           </table>
@@ -472,6 +499,24 @@ const handleEditStudent = (
             value={nationalId}
             onChange={(e) => setNationalId(e.target.value)}
           />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="اسم ولي الأمر"
+              placeholder="مثال: علي الغامدي"
+              value={parentName}
+              onChange={(e) => setParentName(e.target.value)}
+            />
+
+            <Input
+              label="رقم جوال ولي الأمر"
+              placeholder="05XXXXXXXX"
+              value={parentPhoneNumber}
+              onChange={(e) => setParentPhoneNumber(e.target.value)}
+              dir="ltr"
+              className="text-left font-mono"
+            />
+          </div>
         </div>
 
         <DialogFooter>

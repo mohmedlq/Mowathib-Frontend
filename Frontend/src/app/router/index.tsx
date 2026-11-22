@@ -3,9 +3,10 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth';
 import { AdminLayout } from '../layouts/AdminLayout';
 import { RepresentativeLayout } from '../layouts/RepresentativeLayout';
+import { ClerkLayout } from '../layouts/ClerkLayout';
 
 // Auth Pages
-import { AdminLoginPage, RepresentativeLoginPage } from '../../features/auth';
+import { AdminLoginPage, RepresentativeLoginPage, ClerkLoginPage } from '../../features/auth';
 
 // Lazy Admin Pages
 const AdminDashboardPage = React.lazy(() => import('../../features/admin/dashboard/pages/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
@@ -21,6 +22,8 @@ const AdminMonthlyPreparationPage = React.lazy(() => import('../../features/admi
 const AdminWeeklyPreparationPage = React.lazy(() => import('../../features/admin/weekly-preparation/pages/AdminWeeklyPreparationPage').then(m => ({ default: m.AdminWeeklyPreparationPage })));
 const AdminAcademicWeeksPage = React.lazy(() => import('../../features/admin/academic-weeks/pages/AdminAcademicWeeksPage').then(m => ({ default: m.AdminAcademicWeeksPage })));
 const AdminSendNotificationsPage = React.lazy(() => import('../../features/admin/send-notifications/pages/AdminSendNotificationsPage').then(m => ({ default: m.AdminSendNotificationsPage })));
+const AdminSchoolSettingsPage = React.lazy(() => import('../../features/admin/school-settings/pages/AdminSchoolSettingsPage').then(m => ({ default: m.AdminSchoolSettingsPage })));
+const AdminProfilePage = React.lazy(() => import('../../features/admin/profile/pages/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })));
 
 // Lazy Report Center
 const ReportCenterPage = React.lazy(() => import('../../features/reports/pages/ReportCenterPage').then(m => ({ default: m.ReportCenterPage })));
@@ -34,6 +37,11 @@ const RepresentativeDeputyPage = React.lazy(() => import('../../features/represe
 const RepresentativeCardRequestsPage = React.lazy(() => import('../../features/representative/card-requests/pages/RepresentativeCardRequestsPage').then(m => ({ default: m.RepresentativeCardRequestsPage })));
 const RepresentativeProfilePage = React.lazy(() => import('../../features/representative/profile/pages/RepresentativeProfilePage').then(m => ({ default: m.RepresentativeProfilePage })));
 
+// Lazy Clerk Pages
+const ClerkDashboardPage = React.lazy(() => import('../../features/clerk/dashboard/pages/ClerkDashboardPage').then(m => ({ default: m.ClerkDashboardPage })));
+const ClerkAttendancePage = React.lazy(() => import('../../features/clerk/attendance/pages/ClerkAttendancePage').then(m => ({ default: m.ClerkAttendancePage })));
+const ClerkStudentsPage = React.lazy(() => import('../../features/clerk/students/pages/ClerkStudentsPage').then(m => ({ default: m.ClerkStudentsPage })));
+
 // Landing Page
 import { LandingPage } from '../../components/landing';
 
@@ -46,6 +54,9 @@ function RootIndexRedirect() {
   if (user.role === 'Admin') {
     return <Navigate to="/admin/dashboard" replace />;
   }
+  if (user.role === 'AttendanceClerk') {
+    return <Navigate to="/clerk/dashboard" replace />;
+  }
   return <Navigate to="/representative/dashboard" replace />;
 }
 
@@ -56,6 +67,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/admin/login" replace />;
   }
   if (user.role !== 'Admin') {
+    if (user.role === 'AttendanceClerk') {
+      return <Navigate to="/clerk/dashboard" replace />;
+    }
     return <Navigate to="/representative/dashboard" replace />;
   }
   return <>{children}</>;
@@ -68,7 +82,25 @@ function RepresentativeRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/representative/login" replace />;
   }
   if (user.role !== 'Representative' && user.role !== 'Deputy') {
+    if (user.role === 'AttendanceClerk') {
+      return <Navigate to="/clerk/dashboard" replace />;
+    }
     return <Navigate to="/admin/dashboard" replace />;
+  }
+  return <>{children}</>;
+}
+
+// Guard: Clerk routes
+function ClerkRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/clerk/login" replace />;
+  }
+  if (user.role !== 'AttendanceClerk') {
+    if (user.role === 'Admin') {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    return <Navigate to="/representative/dashboard" replace />;
   }
   return <>{children}</>;
 }
@@ -89,6 +121,10 @@ export const router = createBrowserRouter([
   {
     path: '/representative/login',
     element: <RepresentativeLoginPage />,
+  },
+  {
+    path: '/clerk/login',
+    element: <ClerkLoginPage />,
   },
 
   // Admin Portal Routes
@@ -114,6 +150,8 @@ export const router = createBrowserRouter([
       { path: 'academic-years', element: <AdminAcademicYearsPage /> },
       { path: 'cards', element: <AdminCardsPage /> },
       { path: 'card-requests', element: <AdminCardRequestsPage /> },
+      { path: 'school-settings', element: <AdminSchoolSettingsPage /> },
+      { path: 'profile', element: <AdminProfilePage /> },
       { path: 'settings', element: <AdminSettingsPage /> },
     ],
   },
@@ -140,10 +178,25 @@ export const router = createBrowserRouter([
     ],
   },
 
+  // Attendance Clerk Portal Routes
+  {
+    path: '/clerk',
+    element: (
+      <ClerkRoute>
+        <ClerkLayout />
+      </ClerkRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="/clerk/dashboard" replace /> },
+      { path: 'dashboard', element: <ClerkDashboardPage /> },
+      { path: 'attendance', element: <ClerkAttendancePage /> },
+      { path: 'students', element: <ClerkStudentsPage /> },
+    ],
+  },
+
   // Catch-all
   {
     path: '*',
     element: <Navigate to="/" replace />,
   },
 ]);
-

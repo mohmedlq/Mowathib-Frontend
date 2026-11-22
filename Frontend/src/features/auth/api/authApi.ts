@@ -1,11 +1,20 @@
 import { apiClient } from '../../../shared/lib/apiClient';
-import type { LoginCredentials, AdminLoginResponse, RepresentativeLoginResponse } from '../types/auth.types';
+import type { LoginCredentials, AdminLoginResponse, RepresentativeLoginResponse, ClerkLoginResponse } from '../types/auth.types';
 import type { Representative, ClassEnrollment } from '../../../shared/types';
 
 export const authApi = {
   // Real Admin Login endpoint: POST /api/Admins/login
   async loginAdmin(credentials: LoginCredentials): Promise<AdminLoginResponse> {
     const res = await apiClient.post<AdminLoginResponse>('/Admins/login', {
+      username: credentials.username.trim(),
+      password: credentials.password.trim(),
+    });
+    return res;
+  },
+
+  // Real Attendance Clerk Login endpoint: POST /api/AttendanceClerks/login
+  async loginClerk(credentials: LoginCredentials): Promise<ClerkLoginResponse> {
+    const res = await apiClient.post<ClerkLoginResponse>('/AttendanceClerks/login', {
       username: credentials.username.trim(),
       password: credentials.password.trim(),
     });

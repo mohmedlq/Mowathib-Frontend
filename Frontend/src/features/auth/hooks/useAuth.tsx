@@ -57,7 +57,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: res.adminId,
           username: res.username,
           role: 'Admin',
-          fullName: ' تجريبي',
+          fullName: res.adminName || 'مدير النظام',
+          adminName: res.adminName || 'مدير النظام',
+          schoolCode: res.schoolCode,
+          schoolName: res.schoolName,
+        };
+        setUser(authUser);
+      } else {
+        throw new Error(res?.message || 'اسم المستخدم أو كلمة المرور غير صحيحة');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginClerk = async (credentials: LoginCredentials) => {
+    setIsLoading(true);
+    try {
+      const res = await authApi.loginClerk(credentials);
+      if (res && res.isAuthenticated) {
+        const authUser: AuthUser = {
+          id: res.clerkId,
+          username: res.username,
+          role: 'AttendanceClerk',
+          fullName: res.studentName || res.username,
+          schoolCode: res.schoolCode,
+          schoolName: res.schoolName,
+          access: res.access || 'جميع الشعب',
         };
         setUser(authUser);
       } else {
@@ -131,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         loginAdmin,
         loginRepresentative,
+        loginClerk,
         changePassword,
         logout,
        activeAcademicYear,

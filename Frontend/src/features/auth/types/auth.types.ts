@@ -1,4 +1,4 @@
-import type { UserRole } from '../../../shared/types';
+import type { AuthUser } from '../../../shared/types';
 
 export interface LoginCredentials {
   username: string;
@@ -8,6 +8,22 @@ export interface LoginCredentials {
 export interface AdminLoginResponse {
   adminId: number;
   username: string;
+  adminName?: string;
+  schoolCode?: string;
+  schoolName?: string;
+  access?: string;
+  isAuthenticated: boolean;
+  message?: string;
+}
+
+export interface ClerkLoginResponse {
+  clerkId: number;
+  studentId: number;
+  studentName: string;
+  username: string;
+  schoolCode?: string;
+  schoolName?: string;
+  access?: string;
   isAuthenticated: boolean;
   message?: string;
 }
@@ -27,23 +43,12 @@ export interface RepresentativeLoginResponse {
 }
 
 export interface AuthContextType {
-  user: {
-    id: number;
-    username: string;
-    role: UserRole;
-    fullName?: string;
-    classId?: number;
-    classNumber?: string | number | undefined;
-    className?: string;
-    enrollmentId?: number;
-    mustChangePassword?: boolean;
-    token?: string;
-  } | null;
+  user: AuthUser | null;
   isLoading: boolean;
   loginAdmin: (credentials: LoginCredentials) => Promise<void>;
   loginRepresentative: (credentials: LoginCredentials) => Promise<void>;
+  loginClerk: (credentials: LoginCredentials) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   logout: () => void;
-  activeAcademicYear:()=>Promise<string>;
+  activeAcademicYear: () => Promise<string>;
 }
-

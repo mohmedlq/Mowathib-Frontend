@@ -18,8 +18,6 @@ import {
   GraduationCap,
   Users2,
   CalendarClock,
-  // CreditCard,
-  // FileQuestion,
   Settings,
   LogOut,
   Menu,
@@ -27,6 +25,8 @@ import {
   ChevronLeft,
   Calendar,
   BellRing,
+  User,
+  Building,
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -79,9 +79,8 @@ export function AdminLayout() {
     {
       title: 'الخدمات والإعدادات',
       items: [
-        // مؤجل مؤقتاً بناءً على طلب الإدارة: البطاقات والطباعة وطلبات البطاقات البديلة
-        // { to: '/admin/cards', label: 'البطاقات والطباعة', icon: CreditCard },
-        // { to: '/admin/card-requests', label: 'طلبات البطاقات البديلة', icon: FileQuestion },
+        { to: '/admin/school-settings', label: 'إعدادات المدرسة (المؤسسة)', icon: Building },
+        { to: '/admin/profile', label: 'الملف الشخصي للمسؤول', icon: User },
         { to: '/admin/settings', label: 'إعدادات النظام', icon: Settings },
       ],
     },

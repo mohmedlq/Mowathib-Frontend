@@ -3,7 +3,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { BrandLogo } from '../common/BrandLogo';
 import { ThemeToggle } from '../../shared/components/ui/ThemeToggle';
-import { LogIn, Users } from 'lucide-react';
+import { LogIn, Users, UserCheck } from 'lucide-react';
 
 export const Header: React.FC = () => {
   return (
@@ -51,6 +51,16 @@ export const Header: React.FC = () => {
           >
             <Users className="h-4 w-4 shrink-0" />
             <span>العرفاء</span>
+          </Link>
+
+          <Link
+            to="/clerk/login"
+            aria-label="الدخول إلى بوابة مسجّل الحضور"
+            title="بوابة مسجّل الحضور"
+            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-[#CFE2D5] bg-white px-2.5 text-xs font-bold text-[#176B43] transition-all hover:border-[#83B997] hover:bg-[#EFF8F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16815A] dark:border-[#345642] dark:bg-[#17291E] dark:text-[#A3E2B8] dark:hover:border-[#578366] dark:hover:bg-[#1C3728] sm:min-h-10 sm:px-3.5 sm:text-sm"
+          >
+            <UserCheck className="h-4 w-4 shrink-0" />
+            <span>مسجّل الحضور</span>
           </Link>
 
           <Link

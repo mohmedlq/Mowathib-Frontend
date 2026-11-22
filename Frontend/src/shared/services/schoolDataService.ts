@@ -17,6 +17,8 @@ import type {
   AbsenteeNotification,
   ParentNotification,
   GenerateNotificationsResponse,
+  School,
+  AttendanceClerk,
 } from '../types';
 
 export const schoolDataService = {
@@ -236,12 +238,18 @@ export const schoolDataService = {
       thirdName: string;
       lastName: string;
       nationalId: string;
+      parentName?: string;
+      parentPhoneNumber?: string;
     },
     classId: number,
     academicYearId: number = 1
   ): Promise<ClassEnrollment> {
     // 1. Create Student record
-    const student = await apiClient.post<Student>('/Students', studentData);
+    const student = await apiClient.post<Student>('/Students/create-with-enrollment', {
+      ...studentData,
+      classId,
+      academicYearId,
+    });
 
     // 2. Enroll Student in Target Class
     const enrollment = await apiClient.post<ClassEnrollment>('/ClassEnrollments', {
@@ -373,8 +381,13 @@ export const schoolDataService = {
     classId?: number;
     activeOnly?: boolean;
     role?: string;
+    schoolCode?: string;
   }): Promise<PagedResult<Representative>> {
     return await apiClient.get<PagedResult<Representative>>('/Representatives/paged', params);
+  },
+
+  async toggleRepresentativeStatus(representativeId: number, isActive: boolean): Promise<{ success: boolean; isActive: boolean }> {
+    return await apiClient.put<{ success: boolean; isActive: boolean }>(`/Representatives/${representativeId}/status`, { isActive });
   },
 
   async getRepresentatives(activeOnly?: boolean): Promise<Representative[]> {
@@ -505,5 +518,169 @@ export const schoolDataService = {
 
   async markNotificationAsSent(id: number): Promise<{ success: boolean; id: number; isSent: boolean }> {
     return await apiClient.patch<{ success: boolean; id: number; isSent: boolean }>(`/ParentNotifications/${id}/sent`);
+  },
+
+  // ==========================================
+  // SCHOOLS (Connected to SchoolsController)
+  // ==========================================
+  async getSchoolByCode(schoolCode: string): Promise<School> {
+    return await apiClient.get<School>(`/Schools/by-code/${schoolCode}`);
+  },
+
+  async getSchoolForAdmin(adminId: number): Promise<School> {
+    return await apiClient.get<School>(`/Schools/for-admin/${adminId}`);
+  },
+
+  async getDefaultSchoolCode(): Promise<string> {
+    return await apiClient.get<string>('/Schools/default-code');
+  },
+
+  async updateSchool(schoolCode: string, data: { name: string; isActive: boolean }): Promise<School> {
+    return await apiClient.put<School>(`/Schools/${schoolCode}`, data);
+  },
+
+  // ==========================================
+  // ADMIN PROFILE (Connected to AdminsController)
+  // ==========================================
+  async getAdminProfile(adminId: number): Promise<{
+    adminId: number;
+    username: string;
+    adminName: string;
+    schoolCode?: string;
+    schoolName?: string;
+  }> {
+    return await apiClient.get(`/Admins/${adminId}/profile`);
+  },
+
+  async updateAdminProfile(
+    adminId: number,
+    data: { adminName: string; currentPassword?: string; newPassword?: string }
+  ): Promise<any> {
+    return await apiClient.put(`/Admins/${adminId}/profile`, data);
+  },
+
+  // ==========================================
+  // ATTENDANCE CLERKS (Connected to AttendanceClerksController)
+  // ==========================================
+  async getAttendanceClerksPaged(params: {
+    schoolCode?: string;
+    pageNumber?: number;
+    pageSize?: number;
+    search?: string;
+    activeOnly?: boolean;
+  }): Promise<PagedResult<AttendanceClerk>> {
+    return await apiClient.get<PagedResult<AttendanceClerk>>('/AttendanceClerks/paged', params);
+  },
+
+  async createAttendanceClerk(
+    data: { studentId: number; username: string; password: string; access?: string },
+    schoolCode?: string
+  ): Promise<AttendanceClerk> {
+    const headers = schoolCode ? { 'X-School-Code': schoolCode } : undefined;
+    return await apiClient.post<AttendanceClerk>('/AttendanceClerks', data, {
+      headers,
+      params: schoolCode ? { schoolCode } : undefined,
+    });
+  },
+
+  async toggleClerkStatus(
+    clerkId: number,
+    isActive: boolean,
+    schoolCode?: string
+  ): Promise<{ success: boolean; isActive: boolean }> {
+    const headers = schoolCode ? { 'X-School-Code': schoolCode } : undefined;
+    return await apiClient.put<{ success: boolean; isActive: boolean }>(
+      `/AttendanceClerks/${clerkId}/status`,
+      { isActive },
+      {
+        headers,
+        params: schoolCode ? { schoolCode } : undefined,
+      }
+    );
+  },
+
+  async updateAttendanceClerk(
+    clerkId: number,
+    data: { username?: string; password?: string; isActive?: boolean; access?: string },
+    schoolCode?: string
+  ): Promise<AttendanceClerk> {
+    const headers = schoolCode ? { 'X-School-Code': schoolCode } : undefined;
+    return await apiClient.put<AttendanceClerk>(
+      `/AttendanceClerks/${clerkId}`,
+      data,
+      {
+        headers,
+        params: schoolCode ? { schoolCode } : undefined,
+      }
+    );
+  },
+
+  // ==========================================
+  // SCHOOL-SCOPED STUDENTS & CLASSES
+  // ==========================================
+  async getStudentsBySchoolPaged(
+    schoolCode?: string,
+    params?: {
+      pageNumber?: number;
+      pageSize?: number;
+      search?: string;
+      classId?: number;
+      access?: string;
+    }
+  ): Promise<PagedResult<Student>> {
+    const code = schoolCode || (await this.getDefaultSchoolCode());
+    return await apiClient.get<PagedResult<Student>>(`/Students/by-school/${code}`, params);
+  },
+
+  async createStudentWithEnrollment(
+    data: {
+      firstName: string;
+      secondName: string;
+      thirdName: string;
+      lastName: string;
+      nationalId: string;
+      classId: number;
+      parentId?: string;
+      parentName?: string;
+      parentPhoneNumber?: string;
+      academicYearId?: number;
+      schoolCode?: string;
+    },
+    schoolCode?: string
+  ): Promise<Student> {
+    const headers = schoolCode ? { 'X-School-Code': schoolCode } : undefined;
+    return await apiClient.post<Student>('/Students/create-with-enrollment', data, {
+      headers,
+      params: schoolCode ? { schoolCode } : undefined,
+    });
+  },
+
+  async updateStudentDetails(
+    studentId: number,
+    data: {
+      firstName: string;
+      secondName: string;
+      thirdName: string;
+      lastName: string;
+      nationalId: string;
+      parentName?: string;
+      parentPhoneNumber?: string;
+    }
+  ): Promise<Student> {
+    return await apiClient.put<Student>(`/Students/${studentId}/details`, data);
+  },
+
+  async getClassesBySchool(schoolCode: string): Promise<ClassItem[]> {
+    const raw = await apiClient.get<any[]>(`/Classes/by-school/${schoolCode}`);
+    return (raw || []).map((c) => {
+      const num = c.classNumber ?? c.classId;
+      return {
+        classId: c.classId,
+        classNumber: num,
+        className: c.className ?? num,
+        academicYearId: c.academicYearId,
+        totalCards: c.totalCards ?? 3,
+      };
+    });
   },
 };

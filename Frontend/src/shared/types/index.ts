@@ -21,18 +21,46 @@ export const CARD_REQUEST_STATUS_ARABIC: Record<CardRequestStatus, string> = {
   Rejected: 'مرفوض',
 };
 
-export type UserRole = 'Admin' | 'Representative' | 'Deputy';
+export type UserRole = 'Admin' | 'Representative' | 'Deputy' | 'AttendanceClerk';
 
 export interface AuthUser {
   id: number;
   username: string;
   role: UserRole;
   fullName?: string;
+  adminName?: string;
   classId?: number;
   classNumber?: number;
   className?: string;
   enrollmentId?: number;
   mustChangePassword?: boolean;
+  schoolCode?: string;
+  schoolName?: string;
+  access?: string;
+}
+
+export interface School {
+  schoolId: number;
+  schoolCode: string;
+  name: string;
+  isActive: boolean;
+  studentsCount?: number;
+  classesCount?: number;
+}
+
+export interface AttendanceClerk {
+  clerkId: number;
+  studentId: number;
+  studentName: string;
+  nationalId: string;
+  classId?: number;
+  classNumber?: number;
+  className?: string;
+  username: string;
+  isActive: boolean;
+  schoolCode?: string;
+  schoolName?: string;
+  access?: string;
 }
 
 export interface AcademicYear {
@@ -60,7 +88,15 @@ export interface Student {
   fullName: string;
   nationalId: string;
   parentId?: string | null;
+  parent?: Parent | null;
   parentName?: string | null;
+  parentPhoneNumber?: string | null;
+  schoolCode?: string | null;
+  schoolName?: string | null;
+  enrollmentId?: number | null;
+  classId?: number | null;
+  classNumber?: number | null;
+  className?: string | null;
 }
 
 export interface Parent {
