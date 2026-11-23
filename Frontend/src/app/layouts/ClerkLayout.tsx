@@ -1,5 +1,5 @@
 import { useState, Suspense } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../features/auth';
 import { ThemeToggle } from '../../shared/components/ui/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
@@ -14,10 +14,12 @@ import {
   ChevronLeft,
   Building,
   UserCheck,
+  User,
 } from 'lucide-react';
 
 export function ClerkLayout() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -25,10 +27,11 @@ export function ClerkLayout() {
     { to: '/clerk/dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
     { to: '/clerk/attendance', label: 'رصد الحضور والغياب', icon: CalendarCheck },
     { to: '/clerk/students', label: 'إدارة الطلاب', icon: GraduationCap },
+    { to: '/clerk/profile', label: 'الملف الشخصي والحساب', icon: User },
   ];
 
   return (
-    <div className="min-h-screen bg-[#F5F7F8] dark:bg-[#0F171A] flex flex-col md:flex-row text-right selection:bg-[#245B63] selection:text-white transition-colors duration-150">
+    <div dir="rtl" className="min-h-screen bg-[#F5F7F8] dark:bg-[#0F171A] flex flex-col md:flex-row text-right selection:bg-[#245B63] selection:text-white transition-colors duration-150">
       {/* Sidebar - Desktop */}
       <aside
         className={`hidden md:flex flex-col bg-white dark:bg-[#122B23] border-l border-[#DCE3E6] dark:border-[#1E4638] shrink-0 sticky top-0 h-screen select-none z-30 shadow-[1px_0_4px_rgba(0,0,0,0.02)] transition-all duration-200 ${
@@ -66,7 +69,7 @@ export function ClerkLayout() {
                 title="طي القائمة الجانبية"
                 className="p-1.5 rounded-lg text-[#5F6B73] dark:text-[#8EAA90] hover:bg-[#F0F4F6] dark:hover:bg-[#1E4638] transition-colors cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
               </button>
             </>
           )}
@@ -75,9 +78,11 @@ export function ClerkLayout() {
         {/* User / School Info Box */}
         <div className="p-3 border-b border-[#EEF2F3] dark:border-[#1E4638]">
           <div
-            className={`flex items-center gap-2.5 p-2 rounded-lg bg-[#F4F8F6] dark:bg-[#1A3B31]/60 ${
+            onClick={() => navigate('/clerk/profile')}
+            className={`flex items-center gap-2.5 p-2 rounded-lg bg-[#F4F8F6] dark:bg-[#1A3B31]/60 hover:bg-[#E8F1EC] dark:hover:bg-[#1A3B31] transition-colors cursor-pointer ${
               isSidebarCollapsed ? 'justify-center' : ''
             }`}
+            title="الملف الشخصي وإعدادات الحساب"
           >
             <div className="w-8 h-8 rounded-full bg-[#122B23] dark:bg-[#0B5D43] text-white flex items-center justify-center shrink-0">
               <UserCheck className="w-4 h-4" />
@@ -165,12 +170,18 @@ export function ClerkLayout() {
         {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
           <div className="md:hidden bg-white dark:bg-[#122B23] border-b border-[#DCE3E6] dark:border-[#1E4638] px-4 py-3 space-y-1">
-            <div className="p-2.5 mb-2 rounded-lg bg-[#F4F8F6] dark:bg-[#1A3B31]/60">
+            <div
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                navigate('/clerk/profile');
+              }}
+              className="p-2.5 mb-2 rounded-lg bg-[#F4F8F6] dark:bg-[#1A3B31]/60 cursor-pointer hover:bg-[#E8F1EC] dark:hover:bg-[#1A3B31] transition-colors"
+            >
               <div className="text-xs font-bold text-[#17252B] dark:text-[#E8F1EC]">
                 {user?.fullName || user?.username}
               </div>
               <div className="text-[11px] text-[#0B5D43] dark:text-[#75D39B]">
-                {user?.schoolName || 'مدرسة مواظب'} (مُسجّل الحضور)
+                {user?.schoolName || 'مدرسة مواظب'} (مُسجّل الحضور • {user?.access || 'جميع الشعب'})
               </div>
             </div>
             {navItems.map((item) => {

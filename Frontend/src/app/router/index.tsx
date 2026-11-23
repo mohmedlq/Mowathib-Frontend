@@ -41,6 +41,7 @@ const RepresentativeProfilePage = React.lazy(() => import('../../features/repres
 const ClerkDashboardPage = React.lazy(() => import('../../features/clerk/dashboard/pages/ClerkDashboardPage').then(m => ({ default: m.ClerkDashboardPage })));
 const ClerkAttendancePage = React.lazy(() => import('../../features/clerk/attendance/pages/ClerkAttendancePage').then(m => ({ default: m.ClerkAttendancePage })));
 const ClerkStudentsPage = React.lazy(() => import('../../features/clerk/students/pages/ClerkStudentsPage').then(m => ({ default: m.ClerkStudentsPage })));
+const ClerkProfilePage = React.lazy(() => import('../../features/clerk/profile/pages/ClerkProfilePage').then(m => ({ default: m.ClerkProfilePage })));
 
 // Landing Page
 import { LandingPage } from '../../components/landing';
@@ -191,6 +192,7 @@ export const router = createBrowserRouter([
       { path: 'dashboard', element: <ClerkDashboardPage /> },
       { path: 'attendance', element: <ClerkAttendancePage /> },
       { path: 'students', element: <ClerkStudentsPage /> },
+      { path: 'profile', element: <ClerkProfilePage /> },
     ],
   },
 

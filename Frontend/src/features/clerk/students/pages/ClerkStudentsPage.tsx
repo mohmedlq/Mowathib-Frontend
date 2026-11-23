@@ -45,6 +45,7 @@ export function ClerkStudentsPage() {
   const [nationalId, setNationalId] = useState('');
   const [parentName, setParentName] = useState('');
   const [parentPhoneNumber, setParentPhoneNumber] = useState('');
+  const [isParentNameCustomized, setIsParentNameCustomized] = useState(false);
   const [formClassId, setFormClassId] = useState<number>(0);
 
   // Check if opened with add=true param
@@ -62,6 +63,7 @@ export function ClerkStudentsPage() {
     setNationalId('');
     setParentName('');
     setParentPhoneNumber('');
+    setIsParentNameCustomized(false);
     setFormClassId(0);
     setEditingStudent(null);
   };
@@ -83,8 +85,12 @@ export function ClerkStudentsPage() {
     setThirdName(student.thirdName);
     setLastName(student.lastName);
     setNationalId(student.nationalId);
-    setParentName(student.parentName || '');
-    setParentPhoneNumber(student.parentPhoneNumber || '');
+
+    const concluded = `${student.secondName || ''} ${student.thirdName || ''} ${student.lastName || ''}`.trim();
+    const existingPName = student.parentName || (student as any).parent?.fullName;
+    setParentName(existingPName || concluded);
+    setIsParentNameCustomized(!!existingPName && existingPName !== concluded);
+    setParentPhoneNumber(student.parentPhoneNumber || (student as any).parent?.phoneNumber || '');
     setIsEditModalOpen(true);
   };
 
@@ -129,6 +135,9 @@ export function ClerkStudentsPage() {
         throw new Error('يرجى تحديد الشعبة الدراسية للطالب');
       }
 
+      const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+      const finalParentName = parentName.trim() || (concluded || undefined);
+
       return await schoolDataService.createStudentWithEnrollment(
         {
           firstName: firstName.trim(),
@@ -136,7 +145,7 @@ export function ClerkStudentsPage() {
           thirdName: thirdName.trim(),
           lastName: lastName.trim(),
           nationalId: nationalId.trim(),
-          parentName: parentName.trim() || undefined,
+          parentName: finalParentName,
           parentPhoneNumber: parentPhoneNumber.trim() || undefined,
           classId: formClassId,
           schoolCode,
@@ -160,13 +169,16 @@ export function ClerkStudentsPage() {
   const editMutation = useMutation({
     mutationFn: async () => {
       if (!editingStudent) return;
+      const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+      const finalParentName = parentName.trim() || (concluded || undefined);
+
       return await schoolDataService.updateStudentDetails(editingStudent.studentId, {
         firstName: firstName.trim(),
         secondName: secondName.trim(),
         thirdName: thirdName.trim(),
         lastName: lastName.trim(),
         nationalId: nationalId.trim(),
-        parentName: parentName.trim() || undefined,
+        parentName: finalParentName,
         parentPhoneNumber: parentPhoneNumber.trim() || undefined,
       });
     },
@@ -376,7 +388,13 @@ export function ClerkStudentsPage() {
             <Input
               label="اسم الأب *"
               value={secondName}
-              onChange={(e) => setSecondName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSecondName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${val} ${thirdName} ${lastName}`.trim());
+                }
+              }}
               placeholder="مثال: عبدالله"
               required
             />
@@ -386,14 +404,26 @@ export function ClerkStudentsPage() {
             <Input
               label="اسم الجد *"
               value={thirdName}
-              onChange={(e) => setThirdName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setThirdName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${secondName} ${val} ${lastName}`.trim());
+                }
+              }}
               placeholder="مثال: سعود"
               required
             />
             <Input
               label="اسم العائلة *"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLastName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${secondName} ${thirdName} ${val}`.trim());
+                }
+              }}
               placeholder="مثال: القحطاني"
               required
             />
@@ -410,20 +440,33 @@ export function ClerkStudentsPage() {
           />
 
           <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="اسم ولي الأمر"
-              value={parentName}
-              onChange={(e) => setParentName(e.target.value)}
-              placeholder="مثال: عبدالله سالم القحطاني"
-            />
-            <Input
-              label="رقم جوال ولي الأمر"
-              value={parentPhoneNumber}
-              onChange={(e) => setParentPhoneNumber(e.target.value)}
-              placeholder="05XXXXXXXX"
-              dir="ltr"
-              className="text-left font-mono"
-            />
+            <div>
+              <Input
+                label="اسم ولي الأمر"
+                value={parentName}
+                onChange={(e) => {
+                  setParentName(e.target.value);
+                  setIsParentNameCustomized(true);
+                }}
+                placeholder="مثال: عبدالله سالم القحطاني"
+              />
+              <p className="text-[10px] text-[#245B63] mt-1 font-medium">
+                {parentName ? 'مستنتج من اسم الأب والجد واللقب' : 'يُستنتج تلقائياً إن تُرِك فارغاً'}
+              </p>
+            </div>
+            <div>
+              <Input
+                label="رقم جوال ولي الأمر"
+                value={parentPhoneNumber}
+                onChange={(e) => setParentPhoneNumber(e.target.value)}
+                placeholder="05XXXXXXXX"
+                dir="ltr"
+                className="text-left font-mono"
+              />
+              <p className="text-[10px] text-[#5F6B73] mt-1">
+                تحديث جوال ولي الأمر للتنبيهات
+              </p>
+            </div>
           </div>
 
           <div>
@@ -479,7 +522,13 @@ export function ClerkStudentsPage() {
             <Input
               label="اسم الأب *"
               value={secondName}
-              onChange={(e) => setSecondName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSecondName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${val} ${thirdName} ${lastName}`.trim());
+                }
+              }}
               required
             />
           </div>
@@ -488,13 +537,25 @@ export function ClerkStudentsPage() {
             <Input
               label="اسم الجد *"
               value={thirdName}
-              onChange={(e) => setThirdName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setThirdName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${secondName} ${val} ${lastName}`.trim());
+                }
+              }}
               required
             />
             <Input
               label="اسم العائلة *"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLastName(val);
+                if (!isParentNameCustomized) {
+                  setParentName(`${secondName} ${thirdName} ${val}`.trim());
+                }
+              }}
               required
             />
           </div>
@@ -509,20 +570,33 @@ export function ClerkStudentsPage() {
           />
 
           <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="اسم ولي الأمر"
-              value={parentName}
-              onChange={(e) => setParentName(e.target.value)}
-              placeholder="اسم ولي الأمر"
-            />
-            <Input
-              label="رقم جوال ولي الأمر"
-              value={parentPhoneNumber}
-              onChange={(e) => setParentPhoneNumber(e.target.value)}
-              placeholder="05XXXXXXXX"
-              dir="ltr"
-              className="text-left font-mono"
-            />
+            <div>
+              <Input
+                label="اسم ولي الأمر"
+                value={parentName}
+                onChange={(e) => {
+                  setParentName(e.target.value);
+                  setIsParentNameCustomized(true);
+                }}
+                placeholder="اسم ولي الأمر"
+              />
+              <p className="text-[10px] text-[#245B63] mt-1 font-medium">
+                مستنتج: {secondName} {thirdName} {lastName}
+              </p>
+            </div>
+            <div>
+              <Input
+                label="رقم جوال ولي الأمر"
+                value={parentPhoneNumber}
+                onChange={(e) => setParentPhoneNumber(e.target.value)}
+                placeholder="05XXXXXXXX"
+                dir="ltr"
+                className="text-left font-mono"
+              />
+              <p className="text-[10px] text-[#5F6B73] mt-1">
+                تحديث جوال ولي الأمر للتنبيهات
+              </p>
+            </div>
           </div>
         </div>
 

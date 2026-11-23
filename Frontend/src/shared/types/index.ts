@@ -120,6 +120,14 @@ export interface ClassEnrollment {
   className?: number | string;
   academicYearName?: string;
   student?: Student;
+  firstName?: string;
+  secondName?: string;
+  thirdName?: string;
+  lastName?: string;
+  nationalId?: string;
+  parentId?: string;
+  parentName?: string;
+  parentPhoneNumber?: string;
 }
 
 export interface AttendanceWeek {

@@ -11,7 +11,7 @@ import {
   GraduationCap,
   CalendarCheck,
   UserPlus,
-  ArrowRight,
+  ArrowLeft,
   ShieldCheck,
   CheckCircle2,
 } from 'lucide-react';
@@ -148,7 +148,7 @@ export function ClerkDashboardPage() {
           </div>
           <div className="mt-3">
             <span className="text-sm font-bold text-[#0B5D43] dark:text-[#A3E2B8]">
-              كامل شعب المدرسة
+              {user?.access || 'جميع الشعب'}
             </span>
             <p className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
               رصد الحضور وتحديث بيانات الطلاب
@@ -175,7 +175,7 @@ export function ClerkDashboardPage() {
             className="text-xs"
           >
             <span>شاشة الرصد الشاملة</span>
-            <ArrowRight className="w-3.5 h-3.5 mr-1" />
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
           </Button>
         </div>
 

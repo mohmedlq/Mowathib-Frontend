@@ -134,11 +134,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (user.role === 'Representative' || user.role === 'Deputy') {
         await authApi.changeRepresentativePassword(user.id, newPassword);
+      } else if (user.role === 'AttendanceClerk') {
+        await schoolDataService.updateAttendanceClerk(user.id, { password: newPassword }, user.schoolCode);
       }
       setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : null));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const updateUserCredentials = (username?: string, fullName?: string) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = {
+        ...prev,
+        username: username ? username.trim() : prev.username,
+        fullName: fullName ? fullName.trim() : prev.fullName,
+        adminName: fullName ? fullName.trim() : prev.adminName,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const logout = () => {
@@ -159,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginRepresentative,
         loginClerk,
         changePassword,
+        updateUserCredentials,
         logout,
        activeAcademicYear,
       }}

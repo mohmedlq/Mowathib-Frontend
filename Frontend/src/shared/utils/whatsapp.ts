@@ -150,3 +150,50 @@ export function createWhatsAppAbsenceUrl(
     message,
   };
 }
+
+/**
+ * Default Arabic reminder message template for representatives who haven't logged attendance.
+ */
+export function buildRepresentativeReminderMessage(
+  repName: string,
+  className: string,
+  dayName: string,
+  schoolName?: string
+): string {
+  const schoolGreeting = schoolName ? `إدارة ${schoolName}` : 'إدارة المدرسة';
+  return (
+    `السلام عليكم ورحمة الله وبركاته،\n` +
+    `الأخ العريف ${repName}، تحية طيبة من ${schoolGreeting}.\n` +
+    `نود تذكيركم بضرورة تسجيل حضور ورصد غياب (${className}) ليوم ${dayName} عبر منصة مواظب في أقرب وقت.\n` +
+    `شاكرين ومقدرين جهودكم وتعاونكم حرصاً على سلامة وانضباط الطلاب.`
+  );
+}
+
+/**
+ * Builds the complete WhatsApp Click-to-Chat URL for representative attendance reminders.
+ */
+export function createWhatsAppRepresentativeUrl(
+  phone: string | null | undefined,
+  message: string
+): { url: string | null; isValid: boolean; normalizedPhone: string | null; message: string } {
+  const normalized = normalizeSaudiPhone(phone);
+
+  if (!normalized) {
+    return {
+      url: null,
+      isValid: false,
+      normalizedPhone: null,
+      message,
+    };
+  }
+
+  const encodedMessage = encodeURIComponent(message);
+  const url = `https://wa.me/${normalized}?text=${encodedMessage}`;
+
+  return {
+    url,
+    isValid: true,
+    normalizedPhone: normalized,
+    message,
+  };
+}

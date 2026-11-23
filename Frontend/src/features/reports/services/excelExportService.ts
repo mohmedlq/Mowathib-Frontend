@@ -53,16 +53,14 @@ async function writeWorkbookFast(workbook: ExcelJS.Workbook): Promise<ExcelJS.Bu
   return workbook.xlsx.writeBuffer(FAST_WRITE_OPTIONS);
 }
 
-const YIELD_EVERY_ROWS = 250;
+const YIELD_EVERY_ROWS = 600;
 
 async function yieldToUI(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-async function yieldAfterRow(index: number): Promise<void> {
-  if ((index + 1) % YIELD_EVERY_ROWS === 0) {
-    await yieldToUI();
-  }
+function shouldYieldAfterRow(index: number): boolean {
+  return (index + 1) % YIELD_EVERY_ROWS === 0;
 }
 
 let cachedArDate = '';
@@ -79,6 +77,70 @@ function getFastArabicDateString(): string {
 
 function getSchoolName(name?: string): string {
   return name || schoolSettingsService.getSchoolName();
+}
+
+/**
+ * Returns a meaningful display value and ignores default numeric zero values.
+ * Some API projections populate className with 0 while classNumber contains
+ * the actual school section number (for example, 101 or 203).
+ */
+function getValidDisplayValue(value: unknown): string | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value !== 0 ? String(value) : undefined;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized || /^0+(?:\.0+)?$/.test(normalized)) return undefined;
+    if (/^شعبة\s*0+$/.test(normalized)) return undefined;
+    return normalized;
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolve the real school-facing class label instead of accidentally printing
+ * a default `0` or an internal database identifier when a class number exists.
+ */
+function getClassDisplayName(
+  classItem?: ClassItem | Record<string, unknown> | null,
+  fallback?: unknown
+): string {
+  const item = classItem as unknown as Record<string, unknown> | null | undefined;
+  // Some export payloads wrap the real ClassItem alongside className/classNumber.
+  // Resolve the nested class before falling back to a display label or database ID.
+  const nestedClassItem = item?.classItem as Record<string, unknown> | undefined;
+  const candidates = [
+    item?.classNumber,
+    item?.classNo,
+    item?.classCode,
+    item?.sectionNumber,
+    nestedClassItem?.classNumber,
+    nestedClassItem?.classNo,
+    nestedClassItem?.classCode,
+    nestedClassItem?.sectionNumber,
+    item?.className,
+    item?.sectionName,
+    item?.name,
+    item?.displayName,
+    nestedClassItem?.className,
+    nestedClassItem?.sectionName,
+    nestedClassItem?.name,
+    nestedClassItem?.displayName,
+    fallback,
+    item?.classId,
+    item?.id,
+    nestedClassItem?.classId,
+    nestedClassItem?.id,
+  ];
+
+  for (const candidate of candidates) {
+    const value = getValidDisplayValue(candidate);
+    if (value !== undefined) return value;
+  }
+
+  return '—';
 }
 
 // =============================================================================
@@ -98,23 +160,42 @@ export function sanitizeWorksheetName(
   return cleaned || fallback.slice(0, 31);
 }
 
-/** Excel worksheet names must also be unique within a workbook. */
+/** Excel worksheet names must be unique within a workbook. */
+const worksheetNameCache = new WeakMap<
+  ExcelJS.Workbook,
+  { worksheetCount: number; names: Set<string> }
+>();
+
 function getUniqueWorksheetName(
   workbook: ExcelJS.Workbook,
   desiredName: string,
   fallback: string
 ): string {
   const base = sanitizeWorksheetName(desiredName, fallback);
-  const existing = new Set(
-    workbook.worksheets.map((sheet) => sheet.name.toLowerCase())
-  );
+  let cache = worksheetNameCache.get(workbook);
 
-  if (!existing.has(base.toLowerCase())) return base;
+  // Rebuild only when a worksheet has been added since the previous lookup.
+  if (!cache || cache.worksheetCount !== workbook.worksheets.length) {
+    cache = {
+      worksheetCount: workbook.worksheets.length,
+      names: new Set(workbook.worksheets.map((sheet) => sheet.name.toLowerCase())),
+    };
+    worksheetNameCache.set(workbook, cache);
+  }
+
+  if (!cache.names.has(base.toLowerCase())) {
+    cache.names.add(base.toLowerCase());
+    return base;
+  }
 
   for (let suffix = 2; suffix < 10_000; suffix++) {
     const suffixText = ` (${suffix})`;
     const candidate = `${base.slice(0, 31 - suffixText.length)}${suffixText}`;
-    if (!existing.has(candidate.toLowerCase())) return candidate;
+    const normalized = candidate.toLowerCase();
+    if (!cache.names.has(normalized)) {
+      cache.names.add(normalized);
+      return candidate;
+    }
   }
 
   throw new Error(`تعذر إنشاء اسم ورقة فريد للاسم: ${desiredName}`);
@@ -522,7 +603,7 @@ let cachedLayout: {
 function getWeeklyScheduleLayout() {
   if (cachedLayout) return cachedLayout;
 
-  let currentCol = 3;
+  let currentCol = 2;
   const dayHeaders: DayHeaderLayout[] = [];
   const flatSlots: FlatWeeklySlot[] = [];
 
@@ -567,9 +648,28 @@ function setRowStyles(
   row: ExcelJS.Row,
   styles: Array<Partial<ExcelJS.Style> | undefined>
 ): void {
+  // Apply common formatting once per row. Per-cell styles are only assigned
+  // when a cell needs a special font, fill, number format, or alignment.
+  row.alignment = ALIGN_CENTER;
+  row.border = BORDER_THIN;
+
   for (let index = 0; index < styles.length; index++) {
     const style = styles[index];
-    if (style) row.getCell(index + 1).style = style;
+    if (!style) continue;
+
+    const hasCellSpecificFormatting = Boolean(
+      style.font ||
+      style.fill ||
+      style.numFmt ||
+      (style.alignment && (
+        style.alignment.horizontal !== 'center' ||
+        style.alignment.vertical !== 'middle'
+      ))
+    );
+
+    if (hasCellSpecificFormatting) {
+      row.getCell(index + 1).style = style;
+    }
   }
 }
 
@@ -608,11 +708,12 @@ function configureIdentityColumns(
   lastColumn: number,
   periodWidth = 7.5
 ): void {
-  worksheet.getColumn(1).width = 16;
-  worksheet.getColumn(2).width = 28;
-  for (let column = 3; column <= lastColumn; column++) {
+  // Weekly layout: Student Name | daily attendance statuses | National ID.
+  worksheet.getColumn(1).width = 28;
+  for (let column = 2; column < lastColumn; column++) {
     worksheet.getColumn(column).width = periodWidth;
   }
+  worksheet.getColumn(lastColumn).width = 16;
 }
 
 function getWeeklySlotStatus(
@@ -648,8 +749,10 @@ function appendClassWeeklyPreparationToWorksheet(
 ): number {
   const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
   const totalCols = 2 + flatSlots.length;
-  const className = String(classData.className ?? classData.classNumber ?? 'شعبة');
-  const displayClassName = className.startsWith('شعبة') ? className : `شعبة ${className}`;
+  const className = getClassDisplayName(classData as unknown as Record<string, unknown>);
+  const displayClassName = className === '—'
+    ? 'الشعبة غير محددة'
+    : className.startsWith('شعبة') ? className : `شعبة ${className}`;
   const attendances = classData.attendances ?? [];
 
   worksheet.mergeCells(startRow, 1, startRow, totalCols);
@@ -671,14 +774,15 @@ function appendClassWeeklyPreparationToWorksheet(
   const headerRow2 = startRow + 4;
 
   worksheet.mergeCells(headerRow1, 1, headerRow2, 1);
-  worksheet.getCell(headerRow1, 1).value = 'رقم الهوية';
+  worksheet.getCell(headerRow1, 1).value = 'اسم الطالب';
   worksheet.getCell(headerRow1, 1).style = STYLES.headerGray10;
   worksheet.getCell(headerRow2, 1).style = STYLES.headerGray10;
 
-  worksheet.mergeCells(headerRow1, 2, headerRow2, 2);
-  worksheet.getCell(headerRow1, 2).value = 'اسم الطالب';
-  worksheet.getCell(headerRow1, 2).style = STYLES.headerGray10;
-  worksheet.getCell(headerRow2, 2).style = STYLES.headerGray10;
+  const nationalIdColumn = totalCols;
+  worksheet.mergeCells(headerRow1, nationalIdColumn, headerRow2, nationalIdColumn);
+  worksheet.getCell(headerRow1, nationalIdColumn).value = 'رقم الهوية';
+  worksheet.getCell(headerRow1, nationalIdColumn).style = STYLES.headerGray10;
+  worksheet.getCell(headerRow2, nationalIdColumn).style = STYLES.headerGray10;
 
   const topHeader = worksheet.getRow(headerRow1);
   const bottomHeader = worksheet.getRow(headerRow2);
@@ -711,25 +815,25 @@ function appendClassWeeklyPreparationToWorksheet(
     const styles = new Array<Partial<ExcelJS.Style>>(totalCols);
 
     values[0] =
-      item.enrollment.student?.nationalId ||
-      (item.enrollment as any).nationalId ||
-      '—';
-
-    values[1] =
       item.enrollment.studentName ||
       item.enrollment.student?.fullName ||
       'طالب';
 
-    styles[0] = STYLES.idCell9;
-    styles[1] = STYLES.nameCell95;
+    styles[0] = STYLES.nameCell95;
 
     for (let slotIndex = 0; slotIndex < flatSlots.length; slotIndex++) {
       const preset = getStatusStyle(
         getWeeklySlotStatus(item, flatSlots[slotIndex])
       );
-      values[2 + slotIndex] = preset.label;
-      styles[2 + slotIndex] = preset.fastCellStyle8;
+      values[1 + slotIndex] = preset.label;
+      styles[1 + slotIndex] = preset.fastCellStyle8;
     }
+
+    values[totalCols - 1] =
+      item.enrollment.student?.nationalId ||
+      (item.enrollment as any).nationalId ||
+      '—';
+    styles[totalCols - 1] = STYLES.idCell9;
 
     const row = worksheet.addRow(values);
     row.height = 19;
@@ -779,17 +883,17 @@ export const excelExportService = {
       worksheet,
       totalColumns,
       `${getSchoolName(meta.schoolName)} — ${meta.isAbsenceOnly ? 'تقرير الغياب اليومي' : 'تقرير الحضور اليومي'}`,
-      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | اليوم: ${meta.dayName} (${meta.date}) | تاريخ التوليد: ${getFastArabicDateString()}`
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className)} | اليوم: ${meta.dayName} (${meta.date}) | تاريخ التوليد: ${getFastArabicDateString()}`
     );
 
     worksheet.addRow([]);
 
     const headers = [
-      'رقم الهوية',
       'اسم الطالب',
+      'حالة الحضور',
+      'رقم الهوية',
       'الشعبة',
       'التاريخ',
-      'حالة الحضور',
     ];
 
     const header = worksheet.addRow(headers);
@@ -800,31 +904,31 @@ export const excelExportService = {
       const item = data[index];
       const preset = getStatusStyle(item.status);
       const values: Array<string | number> = [
-        String(item.nationalId ?? ''),
         item.studentName ?? '',
-        item.className ?? '',
-        item.date || meta.date,
         preset.label,
+        String(item.nationalId ?? ''),
+        getClassDisplayName(item as unknown as Record<string, unknown>, meta.className),
+        item.date || meta.date,
       ];
       const styles: Array<Partial<ExcelJS.Style> | undefined> = [
-        STYLES.idCell10,
         STYLES.nameCell10,
-        STYLES.centerDefault,
-        STYLES.centerDefault,
         preset.cellStyle9,
+        STYLES.idCell10,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
       ];
 
       const row = worksheet.addRow(values);
       row.height = 20;
       setRowStyles(row, styles);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
-    worksheet.getColumn(1).width = 16;
-    worksheet.getColumn(2).width = 28;
-    worksheet.getColumn(3).width = 14;
+    worksheet.getColumn(1).width = 28;
+    worksheet.getColumn(2).width = 16;
+    worksheet.getColumn(3).width = 16;
     worksheet.getColumn(4).width = 14;
-    worksheet.getColumn(5).width = 16;
+    worksheet.getColumn(5).width = 14;
 
     if (data.length) {
       worksheet.autoFilter = {
@@ -836,7 +940,7 @@ export const excelExportService = {
     const buffer = await writeWorkbookFast(workbook);
     saveExcelFile(
       buffer,
-      `Mowathib_Daily_Attendance_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`
+      `Mowathib_Daily_Attendance_${meta.academicYear}_${getClassDisplayName(undefined, meta.className)}_${meta.date}.xlsx`
     );
   },
 
@@ -862,20 +966,22 @@ export const excelExportService = {
     const lastColumn = 2 + flatSlots.length;
 
     const worksheet = workbook.addWorksheet('التقرير الأسبوعي', {
-      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 5 }],
     });
 
     addTitleAndMeta(
       worksheet,
       lastColumn,
       `${getSchoolName(meta.schoolName)} — تقرير الحضور والغياب الأسبوعي (الأسبوع ${meta.weekNumber})`,
-      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | الفترة: ${meta.weekRange} | عدد الطلاب: ${attendances.length}`
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className)} | الفترة: ${meta.weekRange} | عدد الطلاب: ${attendances.length}`
     );
 
     worksheet.mergeCells('A4:A5');
-    worksheet.getCell('A4').value = 'رقم الهوية';
-    worksheet.mergeCells('B4:B5');
-    worksheet.getCell('B4').value = 'اسم الطالب';
+    worksheet.getCell('A4').value = 'اسم الطالب';
+    worksheet.mergeCells(4, lastColumn, 5, lastColumn);
+    worksheet.getCell(4, lastColumn).value = 'رقم الهوية';
+    worksheet.getCell(4, lastColumn).style = STYLES.headerGray11;
+    worksheet.getRow(5).getCell(lastColumn).style = STYLES.headerGray11;
 
     const firstHeader = worksheet.getRow(4);
     const secondHeader = worksheet.getRow(5);
@@ -891,16 +997,13 @@ export const excelExportService = {
     }
 
     worksheet.getCell('A4').style = STYLES.headerGray11;
-    worksheet.getCell('B4').style = STYLES.headerGray11;
 
     for (let index = 0; index < attendances.length; index++) {
       const item = attendances[index];
       const values: Array<string | number> = [
-        String(item.enrollment.student?.nationalId ?? ''),
-        item.enrollment.studentName ?? '',
+        item.enrollment.studentName ?? item.enrollment.student?.fullName ?? '',
       ];
       const styles: Array<Partial<ExcelJS.Style> | undefined> = [
-        STYLES.idCellDefault,
         STYLES.nameCellBoldOnly,
       ];
 
@@ -910,10 +1013,13 @@ export const excelExportService = {
         styles.push(preset.cellStyle85);
       }
 
+      values.push(String(item.enrollment.student?.nationalId ?? ''));
+      styles.push(STYLES.idCellDefault);
+
       const row = worksheet.addRow(values);
       row.height = 20;
       setRowStyles(row, styles);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
     configureIdentityColumns(worksheet, lastColumn, 7.5);
@@ -928,7 +1034,7 @@ export const excelExportService = {
     const buffer = await writeWorkbookFast(workbook);
     saveExcelFile(
       buffer,
-      `Mowathib_Weekly_Attendance_${meta.academicYear}_Week-${meta.weekNumber}_${meta.className}.xlsx`
+      `Mowathib_Weekly_Attendance_${meta.academicYear}_Week-${meta.weekNumber}_${getClassDisplayName(undefined, meta.className)}.xlsx`
     );
   },
 
@@ -937,14 +1043,14 @@ export const excelExportService = {
   // ---------------------------------------------------------------------------
 
   async exportMonthlyReport(
-    _summaryData: MonthlyStudentSummaryRow[],
-    _detailedAbsences: MonthlyDetailedAbsenceRow[],
+    summaryData: MonthlyStudentSummaryRow[] = [],
+    detailedAbsences: MonthlyDetailedAbsenceRow[] = [],
     meta: {
       schoolName?: string;
       academicYear: string;
       className: number | string | undefined;
       month: string;
-      weeks: MonthlyAttendanceWeekData[];
+      weeks?: MonthlyAttendanceWeekData[];
     }
   ): Promise<void> {
     const monthMatch = /^(\d{4})-(\d{2})$/.exec(meta.month);
@@ -972,11 +1078,15 @@ export const excelExportService = {
       return date;
     };
 
-    if (!meta.weeks?.length) {
-      throw new Error('لا توجد بيانات للأسابيع المحددة. لم تصل بيانات الأسابيع إلى التصدير.');
+    const hasWeeks = Boolean(meta.weeks?.length);
+    const hasSummary = Boolean(summaryData?.length);
+    const hasAbsences = Boolean(detailedAbsences?.length);
+
+    if (!hasWeeks && !hasSummary && !hasAbsences) {
+      throw new Error('لا توجد بيانات حضور أو غياب للشهر المحدد.');
     }
 
-    const selectedWeeks = meta.weeks
+    const selectedWeeks = (meta.weeks || [])
       .map((week) => {
         const startDate = normalizeDate(week.startDate, 'تاريخ بداية الأسبوع');
         const endDate = normalizeDate(week.endDate, 'تاريخ نهاية الأسبوع');
@@ -997,14 +1107,178 @@ export const excelExportService = {
       .filter((item) => item.intersectsMonth)
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-    if (!selectedWeeks.length) {
-      throw new Error('لا توجد أسابيع دراسية تتقاطع تواريخها مع الشهر المحدد.');
-    }
-
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
+    const schoolName = getSchoolName(meta.schoolName);
 
+    // 1. Sheet 1: Monthly Attendance Summary (ملخص الحضور الشهري)
+    if (hasSummary) {
+      const summarySheet = workbook.addWorksheet('ملخص الحضور الشهري', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+      });
+
+      addTitleAndMeta(
+        summarySheet,
+        10,
+        `${schoolName} — ملخص الحضور والغياب الشهري (شهر ${meta.month})`,
+        `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className) === '—' ? 'كافة الشعب' : getClassDisplayName(undefined, meta.className)} | إجمالي الطلاب: ${summaryData.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+        STYLES.title14
+      );
+
+      summarySheet.addRow([]);
+
+      const headers = [
+        'اسم الطالب',
+        'أيام الحضور',
+        'أيام الغياب',
+        'أيام الانقطاع',
+        'غير محدد',
+        'رقم الهوية',
+        'الشعبة',
+        'الأيام المتوقعة',
+        'نسبة الحضور',
+        'م',
+      ];
+
+      const headerRow = summarySheet.addRow(headers);
+      headerRow.height = 24;
+      applyHeaderStyle(headerRow, 10);
+
+      for (let i = 0; i < summaryData.length; i++) {
+        const item = summaryData[i];
+        const rateStr = `${item.attendanceRate.toFixed(1)}%`;
+        const values: Array<string | number> = [
+          item.studentName ?? '',
+          item.presentCount,
+          item.absentCount,
+          item.discontinuedCount,
+          item.unmarkedCount,
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>, meta.className),
+          item.totalExpected,
+          rateStr,
+          i + 1,
+        ];
+
+        const rateStyle =
+          item.attendanceRate >= 90
+            ? STATUS_PRESETS.Present.cellStyle9
+            : item.attendanceRate >= 75
+            ? STATUS_PRESETS.Discontinued.cellStyle9
+            : STATUS_PRESETS.Absent.cellStyle9;
+
+        const styles = [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Present.cellStyle9,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STATUS_PRESETS.Discontinued.cellStyle9,
+          STATUS_PRESETS.Unmarked.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          rateStyle,
+          STYLES.centerDefault,
+        ];
+
+        const row = summarySheet.addRow(values);
+        row.height = 20;
+        setRowStyles(row, styles);
+        if (shouldYieldAfterRow(i)) await yieldToUI();
+      }
+
+      summarySheet.getColumn(1).width = 28;
+      summarySheet.getColumn(2).width = 14;
+      summarySheet.getColumn(3).width = 14;
+      summarySheet.getColumn(4).width = 14;
+      summarySheet.getColumn(5).width = 12;
+      summarySheet.getColumn(6).width = 16;
+      summarySheet.getColumn(7).width = 14;
+      summarySheet.getColumn(8).width = 14;
+      summarySheet.getColumn(9).width = 14;
+      summarySheet.getColumn(10).width = 6;
+
+      summarySheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + summaryData.length, column: 10 },
+      };
+      summarySheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1 };
+    }
+
+    // 2. Sheet 2: Detailed Absence Records (سجل الغياب التفصيلي)
+    if (hasAbsences) {
+      const detailedSheet = workbook.addWorksheet('سجل الغياب التفصيلي', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+      });
+
+      addTitleAndMeta(
+        detailedSheet,
+        7,
+        `${schoolName} — سجل الغياب التفصيلي لشهر (${meta.month})`,
+        `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className) === '—' ? 'كافة الشعب' : getClassDisplayName(undefined, meta.className)} | إجمالي حالات الغياب: ${detailedAbsences.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+        STYLES.titleAbsent14
+      );
+
+      detailedSheet.addRow([]);
+
+      const headers = [
+        'اسم الطالب',
+        'الحالة',
+        'رقم الهوية',
+        'الشعبة',
+        'التاريخ',
+        'اليوم',
+        'م',
+      ];
+
+      const headerRow = detailedSheet.addRow(headers);
+      headerRow.height = 24;
+      applyHeaderStyle(headerRow, 7);
+
+      for (let i = 0; i < detailedAbsences.length; i++) {
+        const item = detailedAbsences[i];
+        const values: Array<string | number> = [
+          item.studentName ?? '',
+          'غائب',
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>, meta.className),
+          item.date || '',
+          item.dayName || '',
+          i + 1,
+        ];
+
+        const styles = [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+        ];
+
+        const row = detailedSheet.addRow(values);
+        row.height = 20;
+        setRowStyles(row, styles);
+        if (shouldYieldAfterRow(i)) await yieldToUI();
+      }
+
+      detailedSheet.getColumn(1).width = 28;
+      detailedSheet.getColumn(2).width = 14;
+      detailedSheet.getColumn(3).width = 16;
+      detailedSheet.getColumn(4).width = 14;
+      detailedSheet.getColumn(5).width = 14;
+      detailedSheet.getColumn(6).width = 14;
+      detailedSheet.getColumn(7).width = 6;
+
+      detailedSheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + detailedAbsences.length, column: 7 },
+      };
+      detailedSheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1 };
+    }
+
+    // 3. Subsequent Sheets: Weekly attendance matrix for overlapping weeks
     const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
     const lastColumn = 2 + flatSlots.length;
 
@@ -1017,7 +1291,7 @@ export const excelExportService = {
       const worksheet = workbook.addWorksheet(
         getUniqueWorksheetName(workbook, `الأسبوع ${weekIndex + 1}`, `Week ${weekIndex + 1}`),
         {
-          views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
+          views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 5 }],
         }
       );
 
@@ -1033,15 +1307,17 @@ export const excelExportService = {
       addTitleAndMeta(
         worksheet,
         lastColumn,
-        `${getSchoolName(meta.schoolName)} — تقرير الحضور والغياب الأسبوعي (الأسبوع ${weekNumber})`,
-        `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className ?? '—'} | الفترة: ${startDate} - ${endDate} | عدد الطلاب: ${attendances.length}`
+        `${schoolName} — تفاصيل الحضور الأسبوعي (الأسبوع ${weekNumber})`,
+        `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className)} | الفترة: ${startDate} - ${endDate} | عدد الطلاب: ${attendances.length}`
       );
       worksheet.getRow(3).height = 10;
 
       worksheet.mergeCells('A4:A5');
-      worksheet.getCell('A4').value = 'رقم الهوية';
-      worksheet.mergeCells('B4:B5');
-      worksheet.getCell('B4').value = 'اسم الطالب';
+      worksheet.getCell('A4').value = 'اسم الطالب';
+      worksheet.mergeCells(4, lastColumn, 5, lastColumn);
+      worksheet.getCell(4, lastColumn).value = 'رقم الهوية';
+      worksheet.getCell(4, lastColumn).style = STYLES.headerGray11;
+      worksheet.getRow(5).getCell(lastColumn).style = STYLES.headerGray11;
 
       const firstHeader = worksheet.getRow(4);
       const secondHeader = worksheet.getRow(5);
@@ -1057,16 +1333,13 @@ export const excelExportService = {
       }
 
       worksheet.getCell('A4').style = STYLES.headerGray11;
-      worksheet.getCell('B4').style = STYLES.headerGray11;
 
       for (let studentIndex = 0; studentIndex < attendances.length; studentIndex++) {
         const item = attendances[studentIndex];
         const values: Array<string | number> = [
-          String(item.enrollment.student?.nationalId ?? ''),
-          item.enrollment.studentName ?? '',
+          item.enrollment.studentName ?? item.enrollment.student?.fullName ?? '',
         ];
         const styles: Array<Partial<ExcelJS.Style> | undefined> = [
-          STYLES.idCellDefault,
           STYLES.nameCell10,
         ];
 
@@ -1076,10 +1349,13 @@ export const excelExportService = {
           styles.push(preset.cellStyle85);
         }
 
+        values.push(String(item.enrollment.student?.nationalId ?? ''));
+        styles.push(STYLES.idCellDefault);
+
         const row = worksheet.addRow(values);
         row.height = 20;
         setRowStyles(row, styles);
-        await yieldAfterRow(studentIndex);
+        if (shouldYieldAfterRow(studentIndex)) await yieldToUI();
       }
 
       configureIdentityColumns(worksheet, lastColumn, 7.5);
@@ -1095,7 +1371,9 @@ export const excelExportService = {
     }
 
     const buffer = await writeWorkbookFast(workbook);
-    const safeClassName = String(meta.className ?? 'AllClasses').replace(/[\\/:*?"<>|]/g, '-');
+    const safeClassName = (getClassDisplayName(undefined, meta.className) === '—'
+      ? 'AllClasses'
+      : getClassDisplayName(undefined, meta.className)).replace(/[\\/:*?"<>|]/g, '-');
     saveExcelFile(buffer, `Mowathib_Monthly_Attendance_${meta.academicYear}_${meta.month}_${safeClassName}.xlsx`);
   },
 
@@ -1125,12 +1403,12 @@ export const excelExportService = {
       worksheet,
       6,
       `${getSchoolName(meta.schoolName)} — سجل الغياب اليومي (${meta.date})`,
-      `العام الدراسي: ${meta.academicYear} | الشعبة: ${meta.className} | اليوم: ${meta.dayName} | إجمالي حالات الغياب: ${records.length}`,
+      `العام الدراسي: ${meta.academicYear} | الشعبة: ${getClassDisplayName(undefined, meta.className)} | اليوم: ${meta.dayName} | إجمالي حالات الغياب: ${records.length}`,
       STYLES.titleAbsent14
     );
 
     const header = worksheet.addRow([
-      'رقم الهوية', 'اسم الطالب', 'الشعبة', 'التاريخ', 'اليوم', 'حالة الغياب',
+      'اسم الطالب', 'حالة الحضور', 'رقم الهوية', 'الشعبة', 'التاريخ', 'اليوم',
     ]);
     header.height = 24;
     applyHeaderStyle(header, 6);
@@ -1139,26 +1417,26 @@ export const excelExportService = {
       const item = records[index];
       const centerStyle = index % 2 ? STYLES.centerZebra : STYLES.centerDefault;
       const row = worksheet.addRow([
-        String(item.nationalId ?? ''),
         item.studentName,
-        item.className,
+        'غائب',
+        String(item.nationalId ?? ''),
+        getClassDisplayName(item as unknown as Record<string, unknown>, meta.className),
         item.date,
         item.dayName,
-        'غائب',
       ]);
       row.height = 20;
       setRowStyles(row, [
-        STYLES.idCellDefault,
         STYLES.nameCellBoldOnly,
-        centerStyle,
+        STATUS_PRESETS.Absent.cellStyle9,
+        STYLES.idCellDefault,
         centerStyle,
         centerStyle,
         centerStyle,
       ]);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
-    [16, 28, 14, 14, 14, 14].forEach((width, index) => {
+    [28, 16, 16, 14, 14, 14].forEach((width, index) => {
       worksheet.getColumn(index + 1).width = width;
     });
 
@@ -1170,7 +1448,7 @@ export const excelExportService = {
     }
 
     const buffer = await writeWorkbookFast(workbook);
-    saveExcelFile(buffer, `Mowathib_Daily_Absence_${meta.academicYear}_${meta.className}_${meta.date}.xlsx`);
+    saveExcelFile(buffer, `Mowathib_Daily_Absence_${meta.academicYear}_${getClassDisplayName(undefined, meta.className)}_${meta.date}.xlsx`);
   },
 
   // ---------------------------------------------------------------------------
@@ -1238,12 +1516,10 @@ export const excelExportService = {
       for (let studentIndex = 0; studentIndex < studentCount; studentIndex++) {
         const enrollment = classData.enrollments[studentIndex];
         const baseKey = enrollment.enrollmentId * 64;
-        const values: Array<string | number> = [
-          String(enrollment.student?.nationalId ?? ''),
-          enrollment.studentName ?? '',
+       const values: Array<string | number> = [
+          enrollment.studentName ?? enrollment.student?.fullName ?? '',
         ];
         const styles: Array<Partial<ExcelJS.Style> | undefined> = [
-          STYLES.idCellStage9,
           STYLES.nameCellStage10,
         ];
 
@@ -1274,6 +1550,8 @@ export const excelExportService = {
 
         const recorded = studentPresent + studentAbsent;
         const studentRate = recorded ? (studentPresent / recorded) * 100 : 0;
+        values.push(String(enrollment.student?.nationalId ?? ''));
+        styles.push(STYLES.idCellStage9);
         values.push(studentPresent, studentAbsent, `${studentRate.toFixed(0)}%`);
         styles.push(STYLES.stageColPresent, STYLES.stageColAbsent, STYLES.stageColRate);
 
@@ -1346,7 +1624,7 @@ export const excelExportService = {
       const base = zebra ? STYLES.summaryCellZebra : STYLES.summaryCellNormal;
       const row = summarySheet.addRow([
         index + 1,
-        item.classItem.className,
+        getClassDisplayName(item.classItem),
         item.studentCount,
         item.present,
         item.absent,
@@ -1365,7 +1643,7 @@ export const excelExportService = {
         zebra ? STYLES.stageColAbsentZebra : STYLES.stageColAbsent,
         base,
       ]);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
     const totalRow = summarySheet.addRow([
@@ -1391,10 +1669,10 @@ export const excelExportService = {
     for (let classIndex = 0; classIndex < preparedClasses.length; classIndex++) {
       await yieldToUI();
       const item = preparedClasses[classIndex];
-      const requestedName = String(item.classItem.className ?? `شعبة ${classIndex + 1}`);
+      const requestedName = getClassDisplayName(item.classItem, `شعبة ${classIndex + 1}`);
       const sheetName = getUniqueWorksheetName(workbook, requestedName, `Class ${classIndex + 1}`);
       const worksheet = workbook.addWorksheet(sheetName, {
-        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 5 }],
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 5 }],
       });
 
       worksheet.pageSetup = {
@@ -1404,15 +1682,18 @@ export const excelExportService = {
       addTitleAndMeta(
         worksheet,
         classLastColumn,
-        `${schoolName} — سجل الحضور والغياب الأسبوعي: ${item.classItem.className} (${stageData.stageName})`,
+        `${schoolName} — سجل الحضور والغياب الأسبوعي: ${getClassDisplayName(item.classItem)} (${stageData.stageName})`,
         `العام الدراسي: ${stageData.academicYear} | الأسبوع ${stageData.weekNumber} (${stageData.weekRange}) | عدد الطلاب: ${item.studentCount} | العريف: ${item.representativeName || 'غير مسند'}`,
         STYLES.title13
       );
 
       worksheet.mergeCells('A4:A5');
-      worksheet.getCell('A4').value = 'رقم الهوية';
-      worksheet.mergeCells('B4:B5');
-      worksheet.getCell('B4').value = 'اسم الطالب';
+      worksheet.getCell('A4').value = 'اسم الطالب';
+      const nationalIdColumn = 2 + slotCount;
+      worksheet.mergeCells(4, nationalIdColumn, 5, nationalIdColumn);
+      worksheet.getCell(4, nationalIdColumn).value = 'رقم الهوية';
+      worksheet.getCell(4, nationalIdColumn).style = STYLES.headerGray10;
+      worksheet.getRow(5).getCell(nationalIdColumn).style = STYLES.headerGray10;
 
       const top = worksheet.getRow(4);
       const bottom = worksheet.getRow(5);
@@ -1427,13 +1708,11 @@ export const excelExportService = {
         bottom.getCell(day.startCol).style = STYLES.headerGray11;
       }
 
-      for (const address of ['A4', 'B4']) {
-        worksheet.getCell(address).style = STYLES.headerGray10;
-      }
+      worksheet.getCell('A4').style = STYLES.headerGray10;
 
-      const colPresent = 2 + slotCount + 1;
-      const colAbsent = 2 + slotCount + 2;
-      const colRate = 2 + slotCount + 3;
+      const colPresent = 3 + slotCount;
+      const colAbsent = 4 + slotCount;
+      const colRate = 5 + slotCount;
 
       worksheet.mergeCells(4, colPresent, 5, colPresent);
       worksheet.getCell(4, colPresent).value = 'حاضر';
@@ -1450,8 +1729,8 @@ export const excelExportService = {
       for (let studentIndex = 0; studentIndex < item.studentRows.length; studentIndex++) {
         const student = item.studentRows[studentIndex];
         const zebra = studentIndex % 2 === 1;
-        student.styles[0] = zebra ? STYLES.idCellStage9Zebra : STYLES.idCellStage9;
-        student.styles[1] = zebra ? STYLES.nameCellStage10Zebra : STYLES.nameCellStage10;
+        student.styles[0] = zebra ? STYLES.nameCellStage10Zebra : STYLES.nameCellStage10;
+        student.styles[1 + slotCount] = zebra ? STYLES.idCellStage9Zebra : STYLES.idCellStage9;
         student.styles[2 + slotCount] = zebra ? STYLES.stageColPresentZebra : STYLES.stageColPresent;
         student.styles[3 + slotCount] = zebra ? STYLES.stageColAbsentZebra : STYLES.stageColAbsent;
         student.styles[4 + slotCount] = zebra ? STYLES.stageColRateZebra : STYLES.stageColRate;
@@ -1459,12 +1738,13 @@ export const excelExportService = {
         const row = worksheet.addRow(student.values);
         row.height = 20;
         setRowStyles(row, student.styles);
-        await yieldAfterRow(studentIndex);
+        if (shouldYieldAfterRow(studentIndex)) await yieldToUI();
       }
 
       const totalValues: Array<string | number> = [
-        'المجموع الإجمالي', `${item.studentCount} طالب`,
+        'المجموع الإجمالي',
         ...Array.from({ length: slotCount }, () => '—'),
+        '—',
         item.present,
         item.absent,
         `${item.attendanceRate.toFixed(1)}%`,
@@ -1476,11 +1756,11 @@ export const excelExportService = {
         totalRowClass.getCell(column).style = STYLES.summaryFooter10;
       }
 
-      worksheet.getColumn(1).width = 15;
-      worksheet.getColumn(2).width = 28;
-      for (let column = 3; column <= 2 + slotCount; column++) {
+      worksheet.getColumn(1).width = 28;
+      for (let column = 2; column <= 1 + slotCount; column++) {
         worksheet.getColumn(column).width = 4.2;
       }
+      worksheet.getColumn(2 + slotCount).width = 16;
       worksheet.getColumn(3 + slotCount).width = 12;
       worksheet.getColumn(4 + slotCount).width = 12;
       worksheet.getColumn(5 + slotCount).width = 12;
@@ -1537,7 +1817,7 @@ export const excelExportService = {
 
       return {
         classData,
-        className: String(classData.classItem.className ?? classData.classItem.classId),
+        className: getClassDisplayName(classData.classItem),
         totalStudents,
         absentStudents,
         rate,
@@ -1602,7 +1882,7 @@ export const excelExportService = {
         item.absentStudents ? STYLES.absentAlertCell : center,
         center,
       ]);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
     const totalRow = summary.addRow([
@@ -1651,7 +1931,7 @@ export const excelExportService = {
         worksheet.getRow(4).height = 32;
       } else {
         const classHeader = worksheet.addRow([
-          'م', 'رقم الهوية الوطنية', 'اسم الطالب الغائب', 'اليوم', 'حالة الغياب',
+          'اسم الطالب', 'حالة الحضور', 'رقم الهوية الوطنية', 'اليوم', 'م',
         ]);
         classHeader.height = 22;
         applyHeaderStyle(classHeader, 5, STYLES.headerRed10);
@@ -1662,19 +1942,19 @@ export const excelExportService = {
           const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
           const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
           const row = worksheet.addRow([
-            index + 1,
-            String(enrollment.student?.nationalId ?? ''),
             enrollment.studentName || enrollment.student?.fullName || '',
-            params.dayName,
             'غائب (كامل اليوم)',
+            String(enrollment.student?.nationalId ?? ''),
+            params.dayName,
+            index + 1,
           ]);
           row.height = 20;
-          setRowStyles(row, [center, center, right, center, center]);
-          await yieldAfterRow(index);
+          setRowStyles(row, [right, STATUS_PRESETS.Absent.cellStyle9, center, center, center]);
+          if (shouldYieldAfterRow(index)) await yieldToUI();
         }
       }
 
-      [6, 18, 28, 30, 14].forEach((width, index) => {
+      [28, 20, 18, 14, 6].forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
       });
     }
@@ -1739,7 +2019,7 @@ export const excelExportService = {
 
       return {
         classData,
-        className: String(classData.classItem.className ?? classData.classItem.classId),
+        className: getClassDisplayName(classData.classItem),
         totalStudents: classData.enrollments.length,
         absentSlots,
         presentSlots,
@@ -1785,7 +2065,7 @@ export const excelExportService = {
         item.absentSlots ? STYLES.absentAlertCell : center,
         center,
       ]);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
     [6, 16, 24, 16, 18, 16].forEach((width, index) => {
@@ -1809,8 +2089,8 @@ export const excelExportService = {
       );
 
       const headerRow = worksheet.addRow([
-        'م', 'رقم الهوية', 'اسم الطالب', 'الأحد', 'الاثنين', 'الثلاثاء',
-        'الأربعاء', 'الخميس', 'إجمالي الغياب',
+        'اسم الطالب', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس',
+        'إجمالي الغياب', 'رقم الهوية', 'م',
       ]);
       headerRow.height = 22;
       applyHeaderStyle(headerRow, 9, STYLES.headerTeal10);
@@ -1825,21 +2105,22 @@ export const excelExportService = {
         const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
 
         const row = worksheet.addRow([
-          studentIndex + 1,
-          String(enrollment.student?.nationalId ?? ''),
           enrollment.studentName || enrollment.student?.fullName || '',
           ...dailyCounts.map((count) => count ? `${count} حصة` : '—'),
           totalAbsent,
+          String(enrollment.student?.nationalId ?? ''),
+          studentIndex + 1,
         ]);
         row.height = 20;
         setRowStyles(row, [
-          center, center, right, center, center, center, center, center,
+          right, center, center, center, center, center,
           totalAbsent ? STYLES.absentAlertCell : center,
+          center, center,
         ]);
-        await yieldAfterRow(studentIndex);
+        if (shouldYieldAfterRow(studentIndex)) await yieldToUI();
       }
 
-      [6, 16, 28, 12, 12, 12, 12, 12, 14].forEach((width, index) => {
+      [28, 12, 12, 12, 12, 12, 14, 16, 6].forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
       });
     }
@@ -1893,7 +2174,7 @@ export const excelExportService = {
 
     for (let index = 0; index < params.classesData.length; index++) {
       const classData = params.classesData[index];
-      const className = String(classData.classItem.className ?? classData.classItem.classId);
+      const className = getClassDisplayName(classData.classItem);
       const totalStudents = classData.enrollments.length;
 
       let totalAbsences = 0;
@@ -1919,7 +2200,7 @@ export const excelExportService = {
       ]);
       row.height = 20;
       setRowStyles(row, [center, right, right, center, center, center]);
-      await yieldAfterRow(index);
+      if (shouldYieldAfterRow(index)) await yieldToUI();
     }
 
     [6, 16, 24, 16, 18, 16].forEach((width, index) => {
@@ -1929,7 +2210,7 @@ export const excelExportService = {
     for (let classIndex = 0; classIndex < params.classesData.length; classIndex++) {
       await yieldToUI();
       const classData = params.classesData[classIndex];
-      const className = String(classData.classItem.className ?? classData.classItem.classId);
+      const className = getClassDisplayName(classData.classItem);
       const worksheet = workbook.addWorksheet(
         getUniqueWorksheetName(workbook, `شعبة ${className}`, `Class ${classIndex + 1}`),
         { views: [{ rightToLeft: true }] }
@@ -1944,7 +2225,7 @@ export const excelExportService = {
       );
 
       const classHeader = worksheet.addRow([
-        'م', 'رقم الهوية', 'اسم الطالب', 'الحصص المتوقعة', 'حضور', 'غياب', 'نسبة الحضور',
+        'اسم الطالب', 'حضور', 'غياب', 'نسبة الحضور', 'الحصص المتوقعة', 'رقم الهوية', 'م',
       ]);
       classHeader.height = 22;
       applyHeaderStyle(classHeader, 7, STYLES.headerTeal10);
@@ -1955,24 +2236,28 @@ export const excelExportService = {
         const center = zebra ? STYLES.centerZebra : STYLES.centerDefault;
         const right = zebra ? STYLES.rightZebra : STYLES.rightDefault;
         const row = worksheet.addRow([
-          studentIndex + 1,
-          String(student.nationalId ?? ''),
           student.studentName,
-          student.totalExpected,
           student.presentCount,
           student.absentCount,
           `${student.attendanceRate.toFixed(1)}%`,
+          student.totalExpected,
+          String(student.nationalId ?? ''),
+          studentIndex + 1,
         ]);
         row.height = 20;
         setRowStyles(row, [
-          center, center, right, center, center,
+          right,
+          STATUS_PRESETS.Present.cellStyle9,
           student.absentCount > 0 ? STYLES.absentAlertCell : center,
+          STYLES.stageColRate,
+          center,
+          STYLES.idCellDefault,
           center,
         ]);
-        await yieldAfterRow(studentIndex);
+        if (shouldYieldAfterRow(studentIndex)) await yieldToUI();
       }
 
-      [6, 16, 28, 14, 12, 12, 14].forEach((width, index) => {
+      [28, 12, 12, 14, 14, 16, 6].forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
       });
     }
@@ -2002,7 +2287,7 @@ export const excelExportService = {
     const sheetName = getUniqueWorksheetName(workbook, params.gradeName, 'كشف المرحلة');
     const schoolName = getSchoolName();
     const worksheet = workbook.addWorksheet(sheetName, {
-      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 2 }],
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
     });
 
@@ -2064,7 +2349,7 @@ export const excelExportService = {
       );
 
       const worksheet = workbook.addWorksheet(sheetName, {
-        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 2 }],
         pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
       });
 
@@ -2082,7 +2367,7 @@ export const excelExportService = {
           }
         );
         currentRow += 2;
-        await yieldAfterRow(classIndex);
+        if (shouldYieldAfterRow(classIndex)) await yieldToUI();
       }
 
       configureIdentityColumns(worksheet, 2 + 5, 12);
@@ -2114,7 +2399,11 @@ export const excelExportService = {
     workbook.creator = 'Mowathib System';
     workbook.created = new Date();
 
-    const classLabel = String(params.classNumber || params.className || 'class');
+    const classLabel = getClassDisplayName(undefined, params.classNumber) !== '—'
+      ? getClassDisplayName(undefined, params.classNumber)
+      : getClassDisplayName(undefined, params.className) !== '—'
+        ? getClassDisplayName(undefined, params.className)
+        : 'class';
     const schoolName = getSchoolName();
     const sheetName = getUniqueWorksheetName(
       workbook,
@@ -2123,7 +2412,7 @@ export const excelExportService = {
     );
 
     const worksheet = workbook.addWorksheet(sheetName, {
-      views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 2 }],
+      views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 2 }],
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
     });
 
@@ -2155,6 +2444,1166 @@ export const excelExportService = {
     saveExcelFile(
       buffer,
       `Mowathib_Monthly_5Weeks_Class${safeClass}_RefWeek${params.referenceWeekNumber}.xlsx`
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5.12 GRADE DAILY ATTENDANCE (التقرير اليومي لمرحلة محددة)
+  // ---------------------------------------------------------------------------
+
+  async exportGradeDailyReport(params: {
+    gradeName: string;
+    academicYear: string;
+    date: string;
+    dayName: string;
+    schoolName?: string;
+    classesData: Array<{
+      classItem: ClassItem;
+      enrollments: ClassEnrollment[];
+      records: AttendanceRecord[];
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
+
+    // 1. Sheet 1: Summary of the Grade
+    const summarySheet = workbook.addWorksheet('ملخص المرحلة اليومي', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 5 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    addTitleAndMeta(
+      summarySheet,
+      7,
+      `${schoolName} — ملخص الحضور اليومي لـ ${params.gradeName}`,
+      `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | عدد الشعب: ${params.classesData.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+      STYLES.title14
+    );
+
+    summarySheet.addRow([]);
+
+    let totalGradeStudents = 0;
+    let totalGradePresent = 0;
+    let totalGradeAbsent = 0;
+    let totalGradeDiscontinued = 0;
+
+    const classSummaries = params.classesData.map((cd) => {
+      const studentCount = cd.enrollments.length;
+      let present = 0;
+      let absent = 0;
+      let discontinued = 0;
+
+      const recordsMap = new Map<number, string>();
+      cd.records.forEach((r) => recordsMap.set(r.enrollmentId, r.status));
+
+      cd.enrollments.forEach((e) => {
+        const st = recordsMap.get(e.enrollmentId);
+        if (st === 'Present') present++;
+        else if (st === 'Absent') absent++;
+        else if (st === 'Discontinued') discontinued++;
+      });
+
+      totalGradeStudents += studentCount;
+      totalGradePresent += present;
+      totalGradeAbsent += absent;
+      totalGradeDiscontinued += discontinued;
+
+      const recorded = present + absent;
+      const rate = recorded ? (present / recorded) * 100 : studentCount ? (present / studentCount) * 100 : 100;
+
+      return {
+        classItem: cd.classItem,
+        className: getClassDisplayName(cd.classItem),
+        studentCount,
+        present,
+        absent,
+        discontinued,
+        rate,
+        enrollments: cd.enrollments,
+        recordsMap,
+      };
+    });
+
+    const overallRecorded = totalGradePresent + totalGradeAbsent;
+    const overallRate = overallRecorded
+      ? (totalGradePresent / overallRecorded) * 100
+      : totalGradeStudents
+      ? (totalGradePresent / totalGradeStudents) * 100
+      : 100;
+
+    // KPI Cards row
+    const kpiRow = summarySheet.addRow([
+      'إجمالي طلاب المرحلة',
+      totalGradeStudents,
+      'إجمالي الحاضرين',
+      totalGradePresent,
+      'إجمالي الغائبين',
+      totalGradeAbsent,
+      'نسبة الحضور العامة',
+      `${overallRate.toFixed(1)}%`,
+    ]);
+    kpiRow.height = 24;
+    kpiRow.getCell(1).style = STYLES.metaBold10;
+    kpiRow.getCell(2).style = STYLES.totalBold10;
+    kpiRow.getCell(3).style = STYLES.stageColPresent;
+    kpiRow.getCell(4).style = STYLES.stageColPresent;
+    kpiRow.getCell(5).style = STYLES.stageColAbsent;
+    kpiRow.getCell(6).style = STYLES.stageColAbsent;
+    kpiRow.getCell(7).style = STYLES.stageColRate;
+    kpiRow.getCell(8).style = STYLES.stageColRate;
+
+    summarySheet.addRow([]);
+
+    const summaryHeaders = [
+      'م',
+      'الشعبة الدراسية',
+      'عدد الطلاب',
+      'الحاضرون',
+      'الغائبون',
+      'المنقطعون',
+      'نسبة الحضور',
+    ];
+    const sHeader = summarySheet.addRow(summaryHeaders);
+    sHeader.height = 24;
+    applyHeaderStyle(sHeader, 7);
+
+    classSummaries.forEach((cs, idx) => {
+      const row = summarySheet.addRow([
+        idx + 1,
+        cs.className,
+        cs.studentCount,
+        cs.present,
+        cs.absent,
+        cs.discontinued,
+        `${cs.rate.toFixed(1)}%`,
+      ]);
+      row.height = 20;
+      setRowStyles(row, [
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STATUS_PRESETS.Present.cellStyle9,
+        STATUS_PRESETS.Absent.cellStyle9,
+        STATUS_PRESETS.Discontinued.cellStyle9,
+        STYLES.stageColRate,
+      ]);
+    });
+
+    summarySheet.getColumn(1).width = 6;
+    summarySheet.getColumn(2).width = 20;
+    summarySheet.getColumn(3).width = 14;
+    summarySheet.getColumn(4).width = 14;
+    summarySheet.getColumn(5).width = 14;
+    summarySheet.getColumn(6).width = 14;
+    summarySheet.getColumn(7).width = 16;
+
+    // 2. Class Detail Sheets
+    for (let cIdx = 0; cIdx < classSummaries.length; cIdx++) {
+      await yieldToUI();
+      const cs = classSummaries[cIdx];
+      const sheetName = getUniqueWorksheetName(workbook, `شعبة ${cs.className}`, 'Class');
+      const classSheet = workbook.addWorksheet(sheetName, {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        classSheet,
+        6,
+        `${schoolName} — كشف حضور شعبة ${cs.className} (${params.gradeName})`,
+        `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | الطلاب: ${cs.studentCount}`
+      );
+      classSheet.addRow([]);
+
+      const cHeader = classSheet.addRow(['اسم الطالب', 'حالة الحضور', 'رقم الهوية', 'الشعبة', 'التاريخ', 'م']);
+      cHeader.height = 22;
+      applyHeaderStyle(cHeader, 6);
+
+      cs.enrollments.forEach((e, sIdx) => {
+        const rawStatus = cs.recordsMap.get(e.enrollmentId) as AttendanceStatus | undefined;
+        const preset = getStatusStyle(rawStatus);
+        const row = classSheet.addRow([
+          e.studentName ?? e.student?.fullName ?? '',
+          preset.label,
+          String(e.student?.nationalId ?? ''),
+          cs.className,
+          params.date,
+          sIdx + 1,
+        ]);
+        row.height = 20;
+        setRowStyles(row, [
+          STYLES.nameCell10,
+          preset.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+        ]);
+      });
+
+      classSheet.getColumn(1).width = 28;
+      classSheet.getColumn(2).width = 16;
+      classSheet.getColumn(3).width = 16;
+      classSheet.getColumn(4).width = 14;
+      classSheet.getColumn(5).width = 14;
+      classSheet.getColumn(6).width = 6;
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Daily_Attendance_${sanitizeFilename(params.gradeName)}_${params.date}.xlsx`
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5.13 ALL GRADES DAILY ATTENDANCE (التقرير اليومي لجميع المراحل في ملف واحد)
+  // ---------------------------------------------------------------------------
+
+  async exportAllGradesDailyReport(params: {
+    academicYear: string;
+    date: string;
+    dayName: string;
+    schoolName?: string;
+    gradesData: Array<{
+      gradeId: number;
+      gradeName: string;
+      classesData: Array<{
+        classItem: ClassItem;
+        enrollments: ClassEnrollment[];
+        records: AttendanceRecord[];
+      }>;
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
+
+    // 1. School Summary Sheet
+    const summarySheet = workbook.addWorksheet('ملخص المدرسة اليومي', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 5 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    addTitleAndMeta(
+      summarySheet,
+      8,
+      `${schoolName} — التقرير اليومي العام لكافة المراحل والشعب`,
+      `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+      STYLES.title15
+    );
+    summarySheet.addRow([]);
+
+    let grandTotalStudents = 0;
+    let grandTotalPresent = 0;
+    let grandTotalAbsent = 0;
+    let grandTotalClasses = 0;
+
+    const gradeSummaries = params.gradesData.map((gd) => {
+      let gStudents = 0;
+      let gPresent = 0;
+      let gAbsent = 0;
+      let gDiscontinued = 0;
+
+      const processedClasses = gd.classesData.map((cd) => {
+        const studentCount = cd.enrollments.length;
+        let cPresent = 0;
+        let cAbsent = 0;
+        let cDiscontinued = 0;
+        const recordsMap = new Map<number, string>();
+        cd.records.forEach((r) => recordsMap.set(r.enrollmentId, r.status));
+
+        cd.enrollments.forEach((e) => {
+          const st = recordsMap.get(e.enrollmentId);
+          if (st === 'Present') cPresent++;
+          else if (st === 'Absent') cAbsent++;
+          else if (st === 'Discontinued') cDiscontinued++;
+        });
+
+        gStudents += studentCount;
+        gPresent += cPresent;
+        gAbsent += cAbsent;
+        gDiscontinued += cDiscontinued;
+
+        return {
+          classItem: cd.classItem,
+          className: getClassDisplayName(cd.classItem),
+          studentCount,
+          present: cPresent,
+          absent: cAbsent,
+          discontinued: cDiscontinued,
+          enrollments: cd.enrollments,
+          recordsMap,
+        };
+      });
+
+      grandTotalStudents += gStudents;
+      grandTotalPresent += gPresent;
+      grandTotalAbsent += gAbsent;
+      grandTotalClasses += gd.classesData.length;
+
+      const gRecorded = gPresent + gAbsent;
+      const gRate = gRecorded ? (gPresent / gRecorded) * 100 : gStudents ? (gPresent / gStudents) * 100 : 100;
+
+      return {
+        ...gd,
+        studentCount: gStudents,
+        present: gPresent,
+        absent: gAbsent,
+        discontinued: gDiscontinued,
+        rate: gRate,
+        classes: processedClasses,
+      };
+    });
+
+    const grandRecorded = grandTotalPresent + grandTotalAbsent;
+    const grandRate = grandRecorded
+      ? (grandTotalPresent / grandRecorded) * 100
+      : grandTotalStudents
+      ? (grandTotalPresent / grandTotalStudents) * 100
+      : 100;
+
+    const kpiRow = summarySheet.addRow([
+      'إجمالي طلاب المدرسة',
+      grandTotalStudents,
+      'إجمالي الحاضرين',
+      grandTotalPresent,
+      'إجمالي الغائبين',
+      grandTotalAbsent,
+      'نسبة الحضور العامة',
+      `${grandRate.toFixed(1)}%`,
+    ]);
+    kpiRow.height = 26;
+    kpiRow.getCell(1).style = STYLES.metaBold10;
+    kpiRow.getCell(2).style = STYLES.totalBold10;
+    kpiRow.getCell(3).style = STYLES.stageColPresent;
+    kpiRow.getCell(4).style = STYLES.stageColPresent;
+    kpiRow.getCell(5).style = STYLES.stageColAbsent;
+    kpiRow.getCell(6).style = STYLES.stageColAbsent;
+    kpiRow.getCell(7).style = STYLES.stageColRate;
+    kpiRow.getCell(8).style = STYLES.stageColRate;
+
+    summarySheet.addRow([]);
+
+    const headers = [
+      'م',
+      'المرحلة الدراسية',
+      'عدد الشعب',
+      'إجمالي الطلاب',
+      'الحاضرون',
+      'الغائبون',
+      'المنقطعون',
+      'نسبة الحضور',
+    ];
+    const sHeader = summarySheet.addRow(headers);
+    sHeader.height = 24;
+    applyHeaderStyle(sHeader, 8);
+
+    gradeSummaries.forEach((gs, idx) => {
+      const row = summarySheet.addRow([
+        idx + 1,
+        gs.gradeName,
+        gs.classes.length,
+        gs.studentCount,
+        gs.present,
+        gs.absent,
+        gs.discontinued,
+        `${gs.rate.toFixed(1)}%`,
+      ]);
+      row.height = 20;
+      setRowStyles(row, [
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STATUS_PRESETS.Present.cellStyle9,
+        STATUS_PRESETS.Absent.cellStyle9,
+        STATUS_PRESETS.Discontinued.cellStyle9,
+        STYLES.stageColRate,
+      ]);
+    });
+
+    summarySheet.getColumn(1).width = 6;
+    summarySheet.getColumn(2).width = 24;
+    summarySheet.getColumn(3).width = 12;
+    summarySheet.getColumn(4).width = 14;
+    summarySheet.getColumn(5).width = 14;
+    summarySheet.getColumn(6).width = 14;
+    summarySheet.getColumn(7).width = 14;
+    summarySheet.getColumn(8).width = 16;
+
+    // 2. Add Worksheet per Grade with all students
+    for (let gIdx = 0; gIdx < gradeSummaries.length; gIdx++) {
+      await yieldToUI();
+      const gs = gradeSummaries[gIdx];
+      const sheetName = getUniqueWorksheetName(workbook, gs.gradeName, 'Grade');
+      const gradeSheet = workbook.addWorksheet(sheetName, {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        gradeSheet,
+        6,
+        `${schoolName} — كشف حضور ${gs.gradeName}`,
+        `العام الدراسي: ${params.academicYear} | اليوم: ${params.dayName} (${params.date}) | الطلاب: ${gs.studentCount}`
+      );
+      gradeSheet.addRow([]);
+
+      const gHeader = gradeSheet.addRow(['اسم الطالب', 'حالة الحضور', 'رقم الهوية', 'الشعبة', 'التاريخ', 'م']);
+      gHeader.height = 22;
+      applyHeaderStyle(gHeader, 6);
+
+      let rowIdx = 0;
+      for (const cls of gs.classes) {
+        for (const e of cls.enrollments) {
+          rowIdx++;
+          const rawStatus = cls.recordsMap.get(e.enrollmentId) as AttendanceStatus | undefined;
+          const preset = getStatusStyle(rawStatus);
+          const row = gradeSheet.addRow([
+            e.studentName ?? e.student?.fullName ?? '',
+            preset.label,
+            String(e.student?.nationalId ?? ''),
+            cls.className,
+            params.date,
+            rowIdx,
+          ]);
+          row.height = 20;
+          setRowStyles(row, [
+            STYLES.nameCell10,
+            preset.cellStyle9,
+            STYLES.idCell10,
+            STYLES.centerDefault,
+            STYLES.centerDefault,
+            STYLES.centerDefault,
+          ]);
+        }
+      }
+
+      gradeSheet.getColumn(1).width = 28;
+      gradeSheet.getColumn(2).width = 16;
+      gradeSheet.getColumn(3).width = 16;
+      gradeSheet.getColumn(4).width = 14;
+      gradeSheet.getColumn(5).width = 14;
+      gradeSheet.getColumn(6).width = 6;
+      gradeSheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + rowIdx, column: 6 },
+      };
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Daily_Attendance_AllGrades_${params.academicYear}_${params.date}.xlsx`
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5.14 ALL GRADES WEEKLY ATTENDANCE (التقرير الأسبوعي الشامل لجميع المراحل)
+  // ---------------------------------------------------------------------------
+
+  async exportAllGradesWeeklyReport(params: {
+    academicYear: string;
+    weekNumber: number;
+    weekRange: string;
+    schoolName?: string;
+    gradesData: Array<{
+      gradeId: number;
+      gradeName: string;
+      classesData: Array<{
+        classItem: ClassItem;
+        representativeName?: string;
+        enrollments: ClassEnrollment[];
+        records: AttendanceRecord[];
+      }>;
+    }>;
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
+
+    const { dayHeaders, flatSlots } = getWeeklyScheduleLayout();
+    const lastColumn = 2 + flatSlots.length;
+
+    // 1. School Summary Sheet
+    const summarySheet = workbook.addWorksheet('ملخص المدرسة الأسبوعي', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 5 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    addTitleAndMeta(
+      summarySheet,
+      8,
+      `${schoolName} — التقرير الأسبوعي الشامل للمدرسة (الأسبوع ${params.weekNumber})`,
+      `العام الدراسي: ${params.academicYear} | الفترة: ${params.weekRange} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+      STYLES.title15
+    );
+    summarySheet.addRow([]);
+
+    let totalSchoolStudents = 0;
+    let totalSchoolPresent = 0;
+    let totalSchoolAbsent = 0;
+
+    const processedGrades = params.gradesData.map((gd) => {
+      let gStudents = 0;
+      let gPresent = 0;
+      let gAbsent = 0;
+
+      const pClasses = gd.classesData.map((cd) => {
+        const studentCount = cd.enrollments.length;
+        gStudents += studentCount;
+
+        const recordIndex = indexClassRecordsFlat(cd.records);
+        let cPresent = 0;
+        let cAbsent = 0;
+
+        cd.enrollments.forEach((en) => {
+          const baseKey = en.enrollmentId * 64;
+          flatSlots.forEach((slot) => {
+            const st = recordIndex.get(baseKey + slot.slotOffset);
+            if (st === 'Present') cPresent++;
+            else if (st === 'Absent') cAbsent++;
+          });
+        });
+
+        gPresent += cPresent;
+        gAbsent += cAbsent;
+
+        return {
+          ...cd,
+          studentCount,
+          cPresent,
+          cAbsent,
+          recordIndex,
+        };
+      });
+
+      totalSchoolStudents += gStudents;
+      totalSchoolPresent += gPresent;
+      totalSchoolAbsent += gAbsent;
+
+      const gRec = gPresent + gAbsent;
+      const gRate = gRec ? (gPresent / gRec) * 100 : 100;
+
+      return {
+        ...gd,
+        studentCount: gStudents,
+        present: gPresent,
+        absent: gAbsent,
+        rate: gRate,
+        classes: pClasses,
+      };
+    });
+
+    const sRec = totalSchoolPresent + totalSchoolAbsent;
+    const sRate = sRec ? (totalSchoolPresent / sRec) * 100 : 100;
+
+    const kpi = summarySheet.addRow([
+      'إجمالي طلاب المدرسة',
+      totalSchoolStudents,
+      'إجمالي الحصص المحضورة',
+      totalSchoolPresent,
+      'إجمالي الحصص الغائبة',
+      totalSchoolAbsent,
+      'نسبة الحضور الأسبوعية',
+      `${sRate.toFixed(1)}%`,
+    ]);
+    kpi.height = 26;
+    kpi.getCell(1).style = STYLES.metaBold10;
+    kpi.getCell(2).style = STYLES.totalBold10;
+    kpi.getCell(3).style = STYLES.stageColPresent;
+    kpi.getCell(4).style = STYLES.stageColPresent;
+    kpi.getCell(5).style = STYLES.stageColAbsent;
+    kpi.getCell(6).style = STYLES.stageColAbsent;
+    kpi.getCell(7).style = STYLES.stageColRate;
+    kpi.getCell(8).style = STYLES.stageColRate;
+
+    summarySheet.addRow([]);
+
+    const headers = [
+      'م',
+      'المرحلة الدراسية',
+      'الشعبة',
+      'عريف الصف',
+      'عدد الطلاب',
+      'الحصص المحضورة',
+      'الحصص الغائبة',
+      'نسبة الحضور',
+    ];
+    const sHeader = summarySheet.addRow(headers);
+    sHeader.height = 24;
+    applyHeaderStyle(sHeader, 8);
+
+    let rowCount = 0;
+    processedGrades.forEach((g) => {
+      g.classes.forEach((c) => {
+        rowCount++;
+        const rec = c.cPresent + c.cAbsent;
+        const rate = rec ? (c.cPresent / rec) * 100 : 100;
+        const className = getClassDisplayName(c.classItem);
+
+        const row = summarySheet.addRow([
+          rowCount,
+          g.gradeName,
+          className,
+          c.representativeName || '—',
+          c.studentCount,
+          c.cPresent,
+          c.cAbsent,
+          `${rate.toFixed(1)}%`,
+        ]);
+        row.height = 20;
+        setRowStyles(row, [
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STATUS_PRESETS.Present.cellStyle9,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STYLES.stageColRate,
+        ]);
+      });
+    });
+
+    summarySheet.getColumn(1).width = 6;
+    summarySheet.getColumn(2).width = 22;
+    summarySheet.getColumn(3).width = 14;
+    summarySheet.getColumn(4).width = 20;
+    summarySheet.getColumn(5).width = 14;
+    summarySheet.getColumn(6).width = 16;
+    summarySheet.getColumn(7).width = 16;
+    summarySheet.getColumn(8).width = 16;
+
+    // 2. Class matrix sheets
+    for (const g of processedGrades) {
+      for (const c of g.classes) {
+        await yieldToUI();
+        const className = getClassDisplayName(c.classItem);
+        const sheetName = getUniqueWorksheetName(workbook, `شعبة ${className}`, 'Class');
+        const sheet = workbook.addWorksheet(sheetName, {
+          views: [{ rightToLeft: true, state: 'frozen', xSplit: 1, ySplit: 5 }],
+          pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+        });
+
+        addTitleAndMeta(
+          sheet,
+          lastColumn,
+          `${schoolName} — سجل الحضور الأسبوعي لشعبة ${className} (${g.gradeName})`,
+          `العام الدراسي: ${params.academicYear} | الأسبوع: ${params.weekNumber} (${params.weekRange}) | الطلاب: ${c.studentCount}`
+        );
+        sheet.getRow(3).height = 10;
+
+        sheet.mergeCells('A4:A5');
+        sheet.getCell('A4').value = 'اسم الطالب';
+        sheet.mergeCells(4, lastColumn, 5, lastColumn);
+        sheet.getCell(4, lastColumn).value = 'رقم الهوية';
+        sheet.getCell(4, lastColumn).style = STYLES.headerGray11;
+        sheet.getRow(5).getCell(lastColumn).style = STYLES.headerGray11;
+
+        const h1 = sheet.getRow(4);
+        const h2 = sheet.getRow(5);
+        h1.height = 22;
+        h2.height = 20;
+
+        for (const day of dayHeaders) {
+          sheet.mergeCells(4, day.startCol, 5, day.endCol);
+          const cell = sheet.getCell(4, day.startCol);
+          cell.value = day.name;
+          cell.style = STYLES.headerGray11;
+          h2.getCell(day.startCol).style = STYLES.headerGray11;
+        }
+
+        sheet.getCell('A4').style = STYLES.headerGray11;
+
+        c.enrollments.forEach((en) => {
+          const baseKey = en.enrollmentId * 64;
+          const values: Array<string | number> = [
+            en.studentName ?? en.student?.fullName ?? '',
+          ];
+          const styles: Array<Partial<ExcelJS.Style> | undefined> = [
+            STYLES.nameCellBoldOnly,
+          ];
+
+          for (const slot of flatSlots) {
+            const rawStatus = c.recordIndex.get(baseKey + slot.slotOffset);
+            const preset = getStatusStyle(rawStatus as AttendanceStatus | undefined);
+            values.push(preset.label);
+            styles.push(preset.cellStyle85);
+          }
+
+          values.push(String(en.student?.nationalId ?? ''));
+          styles.push(STYLES.idCellDefault);
+
+          const r = sheet.addRow(values);
+          r.height = 20;
+          setRowStyles(r, styles);
+        });
+
+        configureIdentityColumns(sheet, lastColumn, 7.5);
+      }
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Weekly_Attendance_AllGrades_${params.academicYear}_Week-${params.weekNumber}.xlsx`
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5.15 GRADE MONTHLY ATTENDANCE (التقرير الشهري لمرحلة محددة)
+  // ---------------------------------------------------------------------------
+
+  async exportGradeMonthlyReport(params: {
+    gradeName: string;
+    academicYear: string;
+    month: string;
+    schoolName?: string;
+    summaryRows: MonthlyStudentSummaryRow[];
+    detailedAbsences: MonthlyDetailedAbsenceRow[];
+    weeks?: MonthlyAttendanceWeekData[];
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
+
+    // 1. Sheet 1: Monthly Attendance Summary for Grade
+    if (params.summaryRows && params.summaryRows.length > 0) {
+      const summarySheet = workbook.addWorksheet('ملخص المرحلة الشهري', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        summarySheet,
+        10,
+        `${schoolName} — ملخص الحضور والغياب الشهري لـ ${params.gradeName} (${params.month})`,
+        `العام الدراسي: ${params.academicYear} | الطلاب: ${params.summaryRows.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+        STYLES.title14
+      );
+
+      summarySheet.addRow([]);
+
+      const headers = [
+        'اسم الطالب',
+        'أيام الحضور',
+        'أيام الغياب',
+        'أيام الانقطاع',
+        'غير محدد',
+        'رقم الهوية',
+        'الشعبة',
+        'الأيام المتوقعة',
+        'نسبة الحضور',
+        'م',
+      ];
+
+      const headerRow = summarySheet.addRow(headers);
+      headerRow.height = 24;
+      applyHeaderStyle(headerRow, 10);
+
+      for (let i = 0; i < params.summaryRows.length; i++) {
+        const item = params.summaryRows[i];
+        const rateStr = `${item.attendanceRate.toFixed(1)}%`;
+        const values: Array<string | number> = [
+          item.studentName ?? '',
+          item.presentCount,
+          item.absentCount,
+          item.discontinuedCount,
+          item.unmarkedCount,
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>),
+          item.totalExpected,
+          rateStr,
+          i + 1,
+        ];
+
+        const rateStyle =
+          item.attendanceRate >= 90
+            ? STATUS_PRESETS.Present.cellStyle9
+            : item.attendanceRate >= 75
+            ? STATUS_PRESETS.Discontinued.cellStyle9
+            : STATUS_PRESETS.Absent.cellStyle9;
+
+        const styles = [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Present.cellStyle9,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STATUS_PRESETS.Discontinued.cellStyle9,
+          STATUS_PRESETS.Unmarked.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          rateStyle,
+          STYLES.centerDefault,
+        ];
+
+        const row = summarySheet.addRow(values);
+        row.height = 20;
+        setRowStyles(row, styles);
+        if (shouldYieldAfterRow(i)) await yieldToUI();
+      }
+
+      summarySheet.getColumn(1).width = 28;
+      summarySheet.getColumn(2).width = 14;
+      summarySheet.getColumn(3).width = 14;
+      summarySheet.getColumn(4).width = 14;
+      summarySheet.getColumn(5).width = 12;
+      summarySheet.getColumn(6).width = 16;
+      summarySheet.getColumn(7).width = 14;
+      summarySheet.getColumn(8).width = 14;
+      summarySheet.getColumn(9).width = 14;
+      summarySheet.getColumn(10).width = 6;
+
+      summarySheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + params.summaryRows.length, column: 10 },
+      };
+    }
+
+    // 2. Sheet 2: Detailed Absence Records
+    if (params.detailedAbsences && params.detailedAbsences.length > 0) {
+      const detailedSheet = workbook.addWorksheet('سجل غياب المرحلة', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        detailedSheet,
+        7,
+        `${schoolName} — سجل غياب ${params.gradeName} (${params.month})`,
+        `العام الدراسي: ${params.academicYear} | إجمالي حالات الغياب: ${params.detailedAbsences.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+        STYLES.titleAbsent14
+      );
+
+      detailedSheet.addRow([]);
+
+      const headers = ['اسم الطالب', 'الحالة', 'رقم الهوية', 'الشعبة', 'التاريخ', 'اليوم', 'م'];
+      const headerRow = detailedSheet.addRow(headers);
+      headerRow.height = 24;
+      applyHeaderStyle(headerRow, 7);
+
+      for (let i = 0; i < params.detailedAbsences.length; i++) {
+        const item = params.detailedAbsences[i];
+        const values: Array<string | number> = [
+          item.studentName ?? '',
+          'غائب',
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>),
+          item.date || '',
+          item.dayName || '',
+          i + 1,
+        ];
+
+        const styles = [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+        ];
+
+        const row = detailedSheet.addRow(values);
+        row.height = 20;
+        setRowStyles(row, styles);
+        if (shouldYieldAfterRow(i)) await yieldToUI();
+      }
+
+      detailedSheet.getColumn(1).width = 28;
+      detailedSheet.getColumn(2).width = 14;
+      detailedSheet.getColumn(3).width = 16;
+      detailedSheet.getColumn(4).width = 14;
+      detailedSheet.getColumn(5).width = 14;
+      detailedSheet.getColumn(6).width = 14;
+      detailedSheet.getColumn(7).width = 6;
+
+      detailedSheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + params.detailedAbsences.length, column: 7 },
+      };
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Monthly_Attendance_${sanitizeFilename(params.gradeName)}_${params.month}.xlsx`
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5.16 ALL GRADES MONTHLY ATTENDANCE (التقرير الشهري العام لكافة المراحل)
+  // ---------------------------------------------------------------------------
+
+  async exportAllGradesMonthlyReport(params: {
+    academicYear: string;
+    month: string;
+    schoolName?: string;
+    gradesData: Array<{
+      gradeId: number;
+      gradeName: string;
+      summaryRows: MonthlyStudentSummaryRow[];
+      detailedAbsences: MonthlyDetailedAbsenceRow[];
+    }>;
+    overallSummary: MonthlyStudentSummaryRow[];
+    overallAbsences: MonthlyDetailedAbsenceRow[];
+    weeks?: MonthlyAttendanceWeekData[];
+  }): Promise<void> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mowathib System';
+    workbook.created = new Date();
+    const schoolName = getSchoolName(params.schoolName);
+
+    // 1. School Summary Sheet
+    const summarySheet = workbook.addWorksheet('ملخص المدرسة الشهري', {
+      views: [{ rightToLeft: true, state: 'frozen', ySplit: 5 }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+    });
+
+    addTitleAndMeta(
+      summarySheet,
+      8,
+      `${schoolName} — التقرير الشهري العام لجميع المراحل (${params.month})`,
+      `العام الدراسي: ${params.academicYear} | إجمالي طلاب المدرسة: ${params.overallSummary.length} | تاريخ الاستخراج: ${getFastArabicDateString()}`,
+      STYLES.title15
+    );
+    summarySheet.addRow([]);
+
+    let totalExpectedDays = 0;
+    let totalPresentDays = 0;
+    let totalAbsentDays = 0;
+
+    params.overallSummary.forEach((s) => {
+      totalExpectedDays += s.totalExpected;
+      totalPresentDays += s.presentCount;
+      totalAbsentDays += s.absentCount;
+    });
+
+    const recordedDays = totalPresentDays + totalAbsentDays;
+    const overallRate = recordedDays ? (totalPresentDays / recordedDays) * 100 : 100;
+
+    const kpi = summarySheet.addRow([
+      'إجمالي طلاب المدرسة',
+      params.overallSummary.length,
+      'إجمالي أيام الحضور',
+      totalPresentDays,
+      'إجمالي أيام الغياب',
+      totalAbsentDays,
+      'النسبة الشهرية العامة',
+      `${overallRate.toFixed(1)}%`,
+    ]);
+    kpi.height = 26;
+    kpi.getCell(1).style = STYLES.metaBold10;
+    kpi.getCell(2).style = STYLES.totalBold10;
+    kpi.getCell(3).style = STYLES.stageColPresent;
+    kpi.getCell(4).style = STYLES.stageColPresent;
+    kpi.getCell(5).style = STYLES.stageColAbsent;
+    kpi.getCell(6).style = STYLES.stageColAbsent;
+    kpi.getCell(7).style = STYLES.stageColRate;
+    kpi.getCell(8).style = STYLES.stageColRate;
+
+    summarySheet.addRow([]);
+
+    const headers = [
+      'م',
+      'المرحلة الدراسية',
+      'عدد الطلاب',
+      'الأيام المتوقعة',
+      'أيام الحضور',
+      'أيام الغياب',
+      'حالات الغياب المسجلة',
+      'نسبة الحضور',
+    ];
+    const sHeader = summarySheet.addRow(headers);
+    sHeader.height = 24;
+    applyHeaderStyle(sHeader, 8);
+
+    params.gradesData.forEach((g, idx) => {
+      let gExp = 0;
+      let gPres = 0;
+      let gAbs = 0;
+      g.summaryRows.forEach((r) => {
+        gExp += r.totalExpected;
+        gPres += r.presentCount;
+        gAbs += r.absentCount;
+      });
+      const gRec = gPres + gAbs;
+      const gRate = gRec ? (gPres / gRec) * 100 : 100;
+
+      const row = summarySheet.addRow([
+        idx + 1,
+        g.gradeName,
+        g.summaryRows.length,
+        gExp,
+        gPres,
+        gAbs,
+        g.detailedAbsences.length,
+        `${gRate.toFixed(1)}%`,
+      ]);
+      row.height = 20;
+      setRowStyles(row, [
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STYLES.centerDefault,
+        STATUS_PRESETS.Present.cellStyle9,
+        STATUS_PRESETS.Absent.cellStyle9,
+        STATUS_PRESETS.Absent.cellStyle9,
+        STYLES.stageColRate,
+      ]);
+    });
+
+    summarySheet.getColumn(1).width = 6;
+    summarySheet.getColumn(2).width = 24;
+    summarySheet.getColumn(3).width = 14;
+    summarySheet.getColumn(4).width = 16;
+    summarySheet.getColumn(5).width = 16;
+    summarySheet.getColumn(6).width = 16;
+    summarySheet.getColumn(7).width = 20;
+    summarySheet.getColumn(8).width = 16;
+
+    // 2. School All Students Summary
+    if (params.overallSummary.length > 0) {
+      const allStudentsSheet = workbook.addWorksheet('سجل الطلاب الشهري العام', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        allStudentsSheet,
+        10,
+        `${schoolName} — كشف الحضور الشهري لجميع طلاب المدرسة (${params.month})`,
+        `العام الدراسي: ${params.academicYear} | إجمالي الطلاب: ${params.overallSummary.length}`
+      );
+      allStudentsSheet.addRow([]);
+
+      const stHeaders = [
+        'اسم الطالب',
+        'أيام الحضور',
+        'أيام الغياب',
+        'أيام الانقطاع',
+        'غير محدد',
+        'رقم الهوية',
+        'الشعبة',
+        'الأيام المتوقعة',
+        'نسبة الحضور',
+        'م',
+      ];
+      const hRow = allStudentsSheet.addRow(stHeaders);
+      hRow.height = 22;
+      applyHeaderStyle(hRow, 10);
+
+      params.overallSummary.forEach((item, i) => {
+        const rateStr = `${item.attendanceRate.toFixed(1)}%`;
+        const row = allStudentsSheet.addRow([
+          item.studentName ?? '',
+          item.presentCount,
+          item.absentCount,
+          item.discontinuedCount,
+          item.unmarkedCount,
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>),
+          item.totalExpected,
+          rateStr,
+          i + 1,
+        ]);
+        row.height = 20;
+        setRowStyles(row, [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Present.cellStyle9,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STATUS_PRESETS.Discontinued.cellStyle9,
+          STATUS_PRESETS.Unmarked.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.stageColRate,
+          STYLES.centerDefault,
+        ]);
+      });
+
+      allStudentsSheet.getColumn(1).width = 28;
+      allStudentsSheet.getColumn(2).width = 14;
+      allStudentsSheet.getColumn(3).width = 14;
+      allStudentsSheet.getColumn(4).width = 14;
+      allStudentsSheet.getColumn(5).width = 12;
+      allStudentsSheet.getColumn(6).width = 16;
+      allStudentsSheet.getColumn(7).width = 14;
+      allStudentsSheet.getColumn(8).width = 14;
+      allStudentsSheet.getColumn(9).width = 14;
+      allStudentsSheet.getColumn(10).width = 6;
+      allStudentsSheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + params.overallSummary.length, column: 10 },
+      };
+    }
+
+    // 3. School All Absences
+    if (params.overallAbsences.length > 0) {
+      const absencesSheet = workbook.addWorksheet('سجل الغياب الشهري العام', {
+        views: [{ rightToLeft: true, state: 'frozen', xSplit: 2, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      });
+
+      addTitleAndMeta(
+        absencesSheet,
+        7,
+        `${schoolName} — سجل الغياب الشهري العام (${params.month})`,
+        `العام الدراسي: ${params.academicYear} | إجمالي الغيابات: ${params.overallAbsences.length}`
+      );
+      absencesSheet.addRow([]);
+
+      const abHeaders = ['اسم الطالب', 'الحالة', 'رقم الهوية', 'الشعبة', 'التاريخ', 'اليوم', 'م'];
+      const hRow = absencesSheet.addRow(abHeaders);
+      hRow.height = 22;
+      applyHeaderStyle(hRow, 7);
+
+      params.overallAbsences.forEach((item, i) => {
+        const row = absencesSheet.addRow([
+          item.studentName ?? '',
+          'غائب',
+          String(item.nationalId ?? ''),
+          getClassDisplayName(item as unknown as Record<string, unknown>),
+          item.date || '',
+          item.dayName || '',
+          i + 1,
+        ]);
+        row.height = 20;
+        setRowStyles(row, [
+          STYLES.nameCell10,
+          STATUS_PRESETS.Absent.cellStyle9,
+          STYLES.idCell10,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+          STYLES.centerDefault,
+        ]);
+      });
+
+      absencesSheet.getColumn(1).width = 28;
+      absencesSheet.getColumn(2).width = 14;
+      absencesSheet.getColumn(3).width = 16;
+      absencesSheet.getColumn(4).width = 14;
+      absencesSheet.getColumn(5).width = 14;
+      absencesSheet.getColumn(6).width = 14;
+      absencesSheet.getColumn(7).width = 6;
+      absencesSheet.autoFilter = {
+        from: { row: 4, column: 1 },
+        to: { row: 4 + params.overallAbsences.length, column: 7 },
+      };
+    }
+
+    const buffer = await writeWorkbookFast(workbook);
+    saveExcelFile(
+      buffer,
+      `Mowathib_Monthly_Attendance_AllGrades_${params.academicYear}_${params.month}.xlsx`
     );
   },
 };

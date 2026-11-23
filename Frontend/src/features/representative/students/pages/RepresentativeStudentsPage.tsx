@@ -53,6 +53,29 @@ export function RepresentativeStudentsPage() {
   const [nationalId, setNationalId] = useState('');
   const [parentName, setParentName] = useState('');
   const [parentPhoneNumber, setParentPhoneNumber] = useState('');
+  const [isParentNameCustomized, setIsParentNameCustomized] = useState(false);
+
+  // تحديث أسماء الطالب وتحديث اسم ولي الأمر تلقائياً
+  const updateSecondName = (val: string) => {
+    setSecondName(val);
+    if (!isParentNameCustomized) {
+      setParentName(`${val.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim());
+    }
+  };
+
+  const updateThirdName = (val: string) => {
+    setThirdName(val);
+    if (!isParentNameCustomized) {
+      setParentName(`${secondName.trim()} ${val.trim()} ${lastName.trim()}`.trim());
+    }
+  };
+
+  const updateLastName = (val: string) => {
+    setLastName(val);
+    if (!isParentNameCustomized) {
+      setParentName(`${secondName.trim()} ${thirdName.trim()} ${val.trim()}`.trim());
+    }
+  };
 
   // إعادة تعيين النموذج
   const resetForm = () => {
@@ -63,6 +86,7 @@ export function RepresentativeStudentsPage() {
     setNationalId('');
     setParentName('');
     setParentPhoneNumber('');
+    setIsParentNameCustomized(false);
     setEditingStudentId(null);
   };
 
@@ -96,14 +120,17 @@ export function RepresentativeStudentsPage() {
   // إضافة طالب
   const addMutation = useMutation({
     mutationFn: async () => {
+      const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+      const finalParentName = parentName.trim() || (concluded || undefined);
+
       return await schoolDataService.createStudent(
         {
-          firstName,
-          secondName,
-          thirdName,
-          lastName,
-          nationalId,
-          parentName: parentName.trim() || undefined,
+          firstName: firstName.trim(),
+          secondName: secondName.trim(),
+          thirdName: thirdName.trim(),
+          lastName: lastName.trim(),
+          nationalId: nationalId.trim(),
+          parentName: finalParentName,
           parentPhoneNumber: parentPhoneNumber.trim() || undefined,
         },
         classId,
@@ -212,18 +239,26 @@ const handleEditStudent = (
 
   // تعبئة البيانات من الحقول المفصلة أو الاسم الكامل
   const resolvedFirstName =
-    student?.firstName || nameParts[0] || '';
+    (enrollment as any)?.firstName ||
+    student?.firstName ||
+    nameParts[0] ||
+    '';
 
   const resolvedSecondName =
-    student?.secondName || nameParts[1] || '';
+    (enrollment as any)?.secondName ||
+    student?.secondName ||
+    nameParts[1] ||
+    '';
 
   const resolvedThirdName =
+    (enrollment as any)?.thirdName ||
     student?.thirdName ||
     (nameParts.length >= 4
       ? nameParts.slice(2, -1).join(' ')
       : nameParts[2] || '');
 
   const resolvedLastName =
+    (enrollment as any)?.lastName ||
     student?.lastName ||
     (nameParts.length >= 4
       ? nameParts[nameParts.length - 1]
@@ -237,11 +272,24 @@ const handleEditStudent = (
   setLastName(resolvedLastName);
 
   setNationalId(
-    String(student?.nationalId ?? '')
+    String((enrollment as any)?.nationalId ?? student?.nationalId ?? '')
   );
 
-  setParentName(student?.parent?.fullName || (student as any)?.parentName || '');
-  setParentPhoneNumber(student?.parent?.phoneNumber || (student as any)?.parentPhoneNumber || '');
+  const concluded = `${resolvedSecondName} ${resolvedThirdName} ${resolvedLastName}`.trim();
+  const existingPName =
+    (enrollment as any)?.parentName ||
+    student?.parent?.fullName ||
+    (student as any)?.parentName ||
+    '';
+  const existingPhone =
+    (enrollment as any)?.parentPhoneNumber ||
+    student?.parent?.phoneNumber ||
+    (student as any)?.parentPhoneNumber ||
+    '';
+
+  setParentName(existingPName || concluded);
+  setIsParentNameCustomized(Boolean(existingPName && existingPName !== concluded));
+  setParentPhoneNumber(existingPhone);
 
   setIsFormModalOpen(true);
 };
@@ -249,13 +297,16 @@ const handleEditStudent = (
 
   // حفظ النموذج
   const handleSubmit = () => {
+    const concludedParentName = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+    const finalParentName = parentName.trim() || (concludedParentName || undefined);
+
     const studentData: StudentFormData = {
       firstName: firstName.trim(),
       secondName: secondName.trim(),
       thirdName: thirdName.trim(),
       lastName: lastName.trim(),
       nationalId: nationalId.trim(),
-      parentName: parentName.trim() || undefined,
+      parentName: finalParentName,
       parentPhoneNumber: parentPhoneNumber.trim() || undefined,
     };
 
@@ -356,8 +407,9 @@ const handleEditStudent = (
                 </tr>
               ) : (
                 enrollments.map((en, idx) => {
-                  const pName = en.student?.parent?.fullName || (en.student as any)?.parentName;
-                  const pPhone = en.student?.parent?.phoneNumber || (en.student as any)?.parentPhoneNumber;
+                  const pName = (en as any).parentName || en.student?.parent?.fullName || (en.student as any)?.parentName ||
+                    `${(en as any).secondName || en.student?.secondName || ''} ${(en as any).thirdName || en.student?.thirdName || ''} ${(en as any).lastName || en.student?.lastName || ''}`.trim();
+                  const pPhone = (en as any).parentPhoneNumber || en.student?.parent?.phoneNumber || (en.student as any)?.parentPhoneNumber;
                   return (
                   <tr
                     key={en.enrollmentId}
@@ -369,7 +421,7 @@ const handleEditStudent = (
 
                     <td className="px-4 py-3 font-mono font-medium">
                       <span className="bg-[#F5F7F8] px-2 py-0.5 rounded border border-[#DCE3E6] text-[#17252B]">
-                        {en.student?.nationalId ?? '—'}
+                        {en.student?.nationalId ?? (en as any).nationalId ?? '—'}
                       </span>
                     </td>
 
@@ -473,7 +525,7 @@ const handleEditStudent = (
               label="اسم الأب"
               placeholder="مثال: إبراهيم"
               value={secondName}
-              onChange={(e) => setSecondName(e.target.value)}
+              onChange={(e) => updateSecondName(e.target.value)}
             />
           </div>
 
@@ -482,14 +534,14 @@ const handleEditStudent = (
               label="اسم الجد"
               placeholder="مثال: علي"
               value={thirdName}
-              onChange={(e) => setThirdName(e.target.value)}
+              onChange={(e) => updateThirdName(e.target.value)}
             />
 
             <Input
               label="اسم العائلة"
               placeholder="مثال: الغامدي"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(e) => updateLastName(e.target.value)}
             />
           </div>
 
@@ -501,12 +553,22 @@ const handleEditStudent = (
           />
 
           <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="اسم ولي الأمر"
-              placeholder="مثال: علي الغامدي"
-              value={parentName}
-              onChange={(e) => setParentName(e.target.value)}
-            />
+            <div>
+              <Input
+                label="اسم ولي الأمر"
+                placeholder="مثال: إبراهيم علي الغامدي"
+                value={parentName}
+                onChange={(e) => {
+                  setParentName(e.target.value);
+                  setIsParentNameCustomized(true);
+                }}
+              />
+              {!isParentNameCustomized && (secondName || thirdName || lastName) && (
+                <span className="text-[10px] text-[#245B63] mt-1 block">
+                  * يُستنتج تلقائياً من اسم الأب والجد والعائلة
+                </span>
+              )}
+            </div>
 
             <Input
               label="رقم جوال ولي الأمر"

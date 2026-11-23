@@ -49,6 +49,7 @@ export interface AuthContextType {
   loginRepresentative: (credentials: LoginCredentials) => Promise<void>;
   loginClerk: (credentials: LoginCredentials) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
+  updateUserCredentials?: (username?: string, fullName?: string) => void;
   logout: () => void;
   activeAcademicYear: () => Promise<string>;
 }
