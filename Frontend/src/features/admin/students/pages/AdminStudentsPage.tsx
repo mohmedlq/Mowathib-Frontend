@@ -212,8 +212,7 @@ export function AdminStudentsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['paged_enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['class_enrollments_all'] });
-      queryClient.invalidateQueries({ queryKey: ['enrollments'] });
+      queryClient.invalidateQueries({ queryKey: ['students_paged'] });
       toast.show('تمت إضافة الطالب وقيده في الشعبة بنجاح', 'success');
       closeAddModal();
     },
@@ -244,9 +243,56 @@ export function AdminStudentsPage() {
       });
     },
     onSuccess: () => {
+      // Optimistic cache update for instantaneous UI reaction
+      const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+      const finalParentName = parentName.trim() || concluded;
+      const finalPhone = parentPhoneNumber.trim();
+
+      queryClient.setQueriesData<any>(
+        { queryKey: ['paged_enrollments'] },
+        (old: any) => {
+          if (!old || !Array.isArray(old.items)) return old;
+          return {
+            ...old,
+            items: old.items.map((item: any) => {
+              const sid = item.student?.studentId || item.studentId;
+              if (sid === editingStudentId) {
+                return {
+                  ...item,
+                  firstName: firstName.trim(),
+                  secondName: secondName.trim(),
+                  thirdName: thirdName.trim(),
+                  lastName: lastName.trim(),
+                  studentName: `${firstName.trim()} ${concluded}`.trim(),
+                  nationalId: nationalId.trim(),
+                  parentName: finalParentName,
+                  parentPhoneNumber: finalPhone,
+                  student: {
+                    ...(item.student || {}),
+                    firstName: firstName.trim(),
+                    secondName: secondName.trim(),
+                    thirdName: thirdName.trim(),
+                    lastName: lastName.trim(),
+                    fullName: `${firstName.trim()} ${concluded}`.trim(),
+                    nationalId: nationalId.trim(),
+                    parentName: finalParentName,
+                    parentPhoneNumber: finalPhone,
+                    parent: {
+                      ...(item.student?.parent || {}),
+                      fullName: finalParentName,
+                      phoneNumber: finalPhone,
+                    },
+                  },
+                };
+              }
+              return item;
+            }),
+          };
+        }
+      );
+
       queryClient.invalidateQueries({ queryKey: ['paged_enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['class_enrollments_all'] });
-      queryClient.invalidateQueries({ queryKey: ['enrollments'] });
+      queryClient.invalidateQueries({ queryKey: ['students_paged'] });
       toast.show('تم تحديث بيانات الطالب وولي الأمر بنجاح', 'success');
       closeEditModal();
     },
@@ -260,9 +306,22 @@ export function AdminStudentsPage() {
     mutationFn: async (enrollmentId: number) => {
       await schoolDataService.removeStudentFromClass(enrollmentId);
     },
-    onSuccess: () => {
+    onSuccess: (_, enrollmentId) => {
+      // Optimistic cache update: remove the enrollment immediately from the visible list
+      queryClient.setQueriesData<any>(
+        { queryKey: ['paged_enrollments'] },
+        (old: any) => {
+          if (!old || !Array.isArray(old.items)) return old;
+          return {
+            ...old,
+            totalCount: Math.max(0, (old.totalCount || 1) - 1),
+            items: old.items.filter((item: any) => item.enrollmentId !== enrollmentId),
+          };
+        }
+      );
+
       queryClient.invalidateQueries({ queryKey: ['paged_enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['class_enrollments_all'] });
+      queryClient.invalidateQueries({ queryKey: ['students_paged'] });
       setEnrollmentToRemove(null);
       toast.show('تم إنهاء قيد الطالب من الشعبة بنجاح. بقيت بياناته محفوظة في سجل الطلاب.', 'success');
     },

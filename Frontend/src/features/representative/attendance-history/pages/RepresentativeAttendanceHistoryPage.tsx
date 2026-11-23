@@ -16,7 +16,7 @@ import { formatArabicDateShort } from '../../../../shared/utils/date';
 
 export function RepresentativeAttendanceHistoryPage() {
   const { user } = useAuth();
-  const classId = user?.classId || 105;
+  const classId = user?.classId||0;
 
   const [selectedWeekId, setSelectedWeekId] = useState<number>(currentWeek);
 
@@ -83,16 +83,7 @@ export function RepresentativeAttendanceHistoryPage() {
         </div>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            icon={<Printer className="w-4 h-4" />}
-            onClick={handlePrint}
-            className="text-xs font-bold"
-          >
-            طباعة الكشف
-          </Button>
+        
 
           <div className="w-full sm:w-64">
             <AttendanceWeekSelector

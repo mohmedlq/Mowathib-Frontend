@@ -95,5 +95,5 @@ export function useSchoolSettings() {
   };
 }
 
-export const currentWeek=11
+export const currentWeek=14
 export const totalWeeks=18;
