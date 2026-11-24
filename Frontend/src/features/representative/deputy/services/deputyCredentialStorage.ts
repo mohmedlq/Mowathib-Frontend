@@ -35,14 +35,17 @@ export function generateSecureDeputyPassword(): string {
  * Checks against existing usernames before returning.
  */
 export function generateDeputyUsername(
-  existingUsernames: string[] = []
+  existingUsernames: string[] = [],
+  classNumber?: number | string
 ): string {
   const existing = new Set(
     existingUsernames.map((username) => username.toLowerCase())
   );
 
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const randomBytes = new Uint8Array(8);
+  const prefix = classNumber ? `dep_${classNumber}_` : 'dep_';
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const randomBytes = new Uint8Array(3);
 
     crypto.getRandomValues(randomBytes);
 
@@ -50,14 +53,14 @@ export function generateDeputyUsername(
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
 
-    const username = `dep_${suffix}`;
+    const username = `${prefix}${suffix}`;
 
     if (!existing.has(username.toLowerCase())) {
       return username;
     }
   }
 
-  throw new Error('Failed to generate a unique deputy username.');
+  return `${prefix}${Date.now().toString().slice(-4)}`;
 }
 
 export const deputyCredentialStorage = {

@@ -275,12 +275,16 @@ const handleEditStudent = (
     String((enrollment as any)?.nationalId ?? student?.nationalId ?? '')
   );
 
-  const concluded = `${resolvedSecondName} ${resolvedThirdName} ${resolvedLastName}`.trim();
-  const existingPName =
+  const concluded = `${resolvedSecondName} ${resolvedThirdName} ${resolvedLastName}`.trim() ||
+    (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+  const rawExistingPName =
     (enrollment as any)?.parentName ||
     student?.parent?.fullName ||
     (student as any)?.parentName ||
     '';
+  const existingPName = (rawExistingPName && rawExistingPName.trim() !== 'ولي أمر')
+    ? rawExistingPName.trim()
+    : '';
   const existingPhone =
     (enrollment as any)?.parentPhoneNumber ||
     student?.parent?.phoneNumber ||
@@ -407,8 +411,14 @@ const handleEditStudent = (
                 </tr>
               ) : (
                 enrollments.map((en, idx) => {
-                  const pName = (en as any).parentName || en.student?.parent?.fullName || (en.student as any)?.parentName ||
-                    `${(en as any).secondName || en.student?.secondName || ''} ${(en as any).thirdName || en.student?.thirdName || ''} ${(en as any).lastName || en.student?.lastName || ''}`.trim();
+                  const nameParts = (en.studentName || en.student?.fullName || '').trim().split(/\s+/).filter(Boolean);
+                  const fallbackFromFullName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+                  const concludedFromParts = `${(en as any).secondName || en.student?.secondName || ''} ${(en as any).thirdName || en.student?.thirdName || ''} ${(en as any).lastName || en.student?.lastName || ''}`.trim();
+                  const concludedParent = concludedFromParts || fallbackFromFullName;
+                  const rawPName = (en as any).parentName || en.student?.parent?.fullName || (en.student as any)?.parentName;
+                  const pName = (rawPName && rawPName.trim() !== 'ولي أمر')
+                    ? rawPName.trim()
+                    : (concludedParent || 'ولي أمر');
                   const pPhone = (en as any).parentPhoneNumber || en.student?.parent?.phoneNumber || (en.student as any)?.parentPhoneNumber;
                   return (
                   <tr
@@ -430,14 +440,14 @@ const handleEditStudent = (
                     </td>
 
                     <td className="px-4 py-3">
-                      {pName || pPhone ? (
-                        <div className="text-xs">
-                          <span className="font-semibold block text-[#17252B]">{pName || 'ولي أمر'}</span>
-                          {pPhone && <span className="font-mono text-[#5F6B73] text-[11px]">{pPhone}</span>}
-                        </div>
-                      ) : (
-                        <span className="text-[#89949A] text-[11px]">غير مسجل</span>
-                      )}
+                      <div className="text-xs">
+                        <span className="font-semibold block text-[#17252B]">{pName}</span>
+                        {pPhone ? (
+                          <span className="font-mono text-[#5F6B73] text-[11px]">{pPhone}</span>
+                        ) : (
+                          <span className="text-[#89949A] text-[10px] block">لا يوجد رقم جوال</span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-4 py-3 font-mono text-[#5F6B73]">

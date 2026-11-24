@@ -43,12 +43,14 @@ import {
   type AttendanceRecord,
   type ClassEnrollment,
   type ClassItem,
+  type AttendanceWeek,
 } from '../../../shared/types';
 
 import {
   formatArabicDateShort,
   getRiyadhDateOnly,
   resolveDefaultAttendanceWeek,
+  calculateDateForDay,
 } from '../../../shared/utils/date';
 
 import { BrandLogo } from '../../../components/common/BrandLogo';
@@ -527,86 +529,116 @@ function ReportTab({
   );
 }
 
-/** Direct date selection without a large embedded calendar. */
-function DailyDateField({
-  value,
-  onChange,
+/** Week and School Day selector for Daily Reports (no calendar popup). */
+function DailyWeekDaySelector({
+  weeks,
+  selectedWeekId,
+  onSelectWeek,
+  selectedDayNumber,
+  onSelectDay,
+  dailyDate,
+  today,
   isValid,
-  weekLabel,
 }: {
-  value: string;
-  onChange: (value: string) => void;
+  weeks: AttendanceWeek[];
+  selectedWeekId: number;
+  onSelectWeek: (weekId: number) => void;
+  selectedDayNumber: number;
+  onSelectDay: (dayNumber: number) => void;
+  dailyDate: string;
+  today: string;
   isValid: boolean;
-  weekLabel?: string;
 }) {
-  const today = getRiyadhDateOnly();
+  const activeWeek =
+    weeks.find((w) => w.attendanceWeekId === selectedWeekId) ||
+    weeks[0];
 
-  const info = getDayInfoFromDate(value);
-
-  let message = 'حدد تاريخ التقرير';
-
-  if (value) {
-    if (!info.isSchoolDay) {
-      message = 'الجمعة والسبت خارج أيام الدوام';
-    } else if (value > today) {
-      message = 'لا يمكن اختيار تاريخ مستقبلي';
-    } else if (!isValid) {
-      message = 'التاريخ خارج الأسابيع المسجلة';
-    } else {
-      message = 'التاريخ صالح للتقرير';
-    }
-  }
+  const info = getDayInfoFromDate(dailyDate);
 
   return (
-    <div className="min-w-0">
-      <label
-        htmlFor="daily-report-date"
-        className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300"
-      >
-        تاريخ التقرير
-      </label>
+    <div className="space-y-3 min-w-0">
+      <div>
+        <label
+          htmlFor="daily-report-week"
+          className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300"
+        >
+          الأسبوع الدراسي
+        </label>
 
-      <div className="flex gap-2">
-        <input
-          id="daily-report-date"
-          type="date"
-          value={value}
-          max={today}
-          onChange={(event) => onChange(event.target.value)}
+        <select
+          id="daily-report-week"
+          value={selectedWeekId || activeWeek?.attendanceWeekId}
+          onChange={(event) => onSelectWeek(Number(event.target.value))}
           className={inputClassName}
-        />
-
-        <button
-          type="button"
-          onClick={() => onChange(today)}
-          className="h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-[#245B63] transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-teal-300 dark:hover:bg-slate-800"
         >
-          اليوم
-        </button>
+          {weeks.map((week) => (
+            <option
+              key={week.attendanceWeekId}
+              value={week.attendanceWeekId}
+            >
+              الأسبوع {week.weekNumber} ({formatArabicDateShort(week.startDate)} — {formatArabicDateShort(week.endDate)})
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-          {info.dayName}
-          {value ? `، ${info.formattedDate}` : ''}
-        </p>
+      <div>
+        <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">
+          اليوم الدراسي
+        </label>
 
-        <span
-          className={`text-[11px] font-semibold ${
-            isValid
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : 'text-amber-600 dark:text-amber-400'
-          }`}
-        >
-          {message}
-        </span>
+        <div className="grid grid-cols-5 gap-1.5">
+          {SCHOOL_DAYS.map((day) => {
+            const dayDateStr = activeWeek
+              ? calculateDateForDay(activeWeek.startDate, day.dayNumber)
+              : '';
+            const isSelected = selectedDayNumber === day.dayNumber;
+
+            return (
+              <button
+                key={day.dayNumber}
+                type="button"
+                onClick={() => onSelectDay(day.dayNumber)}
+                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${
+                  isSelected
+                    ? 'bg-[#0B5D43] text-white border-[#0B5D43] shadow-xs dark:bg-[#3E9B78] dark:border-[#3E9B78]'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>{day.nameAr}</span>
+                {dayDateStr && (
+                  <span
+                    className={`text-[10px] font-mono font-normal mt-0.5 ${
+                      isSelected
+                        ? 'text-white/80'
+                        : 'text-slate-400 dark:text-slate-500'
+                    }`}
+                  >
+                    {dayDateStr.slice(5).replace('-', '/')}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+            {info.dayName}
+            {dailyDate ? `، ${info.formattedDate}` : ''}
+          </p>
+
+          <span
+            className={`text-[11px] font-semibold ${
+              isValid
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-amber-600 dark:text-amber-400'
+            }`}
+          >
+            {dailyDate > today ? 'تاريخ مستقبلي (لا توجد بيانات بعد)' : isValid ? 'التاريخ معتمد للتقرير' : 'التاريخ خارج نطاق الدوام'}
+          </span>
+        </div>
       </div>
-
-      {weekLabel && isValid && (
-        <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-          {weekLabel}
-        </p>
-      )}
     </div>
   );
 }
@@ -680,6 +712,15 @@ export function ReportCenterPage() {
 
   const [dailyClassId, setDailyClassId] =
     useState(0);
+
+  const [dailyWeekId, setDailyWeekId] =
+    useState(0);
+
+  const [dailyDayNumber, setDailyDayNumber] =
+    useState<number>(() => {
+      const day = new Date().getDay();
+      return day >= 0 && day <= 4 ? day + 1 : 1;
+    });
 
   const [dailyDate, setDailyDate] =
     useState(() => getRiyadhDateOnly());
@@ -792,21 +833,54 @@ export function ReportCenterPage() {
   useEffect(() => {
     if (weeks.length === 0) return;
 
-    if (
-      !weeklyWeekId ||
-      !weeks.some(
-        (week) =>
-          week.attendanceWeekId === weeklyWeekId,
-      )
-    ) {
-      const defaultWeek =
-        resolveDefaultAttendanceWeek(weeks) || weeks[0];
+    const defaultWeek =
+      resolveDefaultAttendanceWeek(weeks) || weeks[0];
 
-      if (defaultWeek) {
-        setWeeklyWeekId(defaultWeek.attendanceWeekId);
+    if (
+      defaultWeek &&
+      (!weeklyWeekId ||
+        !weeks.some(
+          (week) => week.attendanceWeekId === weeklyWeekId,
+        ))
+    ) {
+      setWeeklyWeekId(defaultWeek.attendanceWeekId);
+    }
+
+    if (
+      defaultWeek &&
+      (!dailyWeekId ||
+        !weeks.some(
+          (week) => week.attendanceWeekId === dailyWeekId,
+        ))
+    ) {
+      setDailyWeekId(defaultWeek.attendanceWeekId);
+      const computed = calculateDateForDay(
+        defaultWeek.startDate,
+        dailyDayNumber,
+      );
+      if (computed) {
+        setDailyDate(computed);
       }
     }
-  }, [weeks, weeklyWeekId]);
+  }, [weeks, weeklyWeekId, dailyWeekId]);
+
+  useEffect(() => {
+    if (weeks.length === 0 || !dailyWeekId) return;
+
+    const targetWeek =
+      weeks.find((w) => w.attendanceWeekId === dailyWeekId) ||
+      weeks[0];
+
+    if (targetWeek?.startDate) {
+      const targetDate = calculateDateForDay(
+        targetWeek.startDate,
+        dailyDayNumber,
+      );
+      if (targetDate && targetDate !== dailyDate) {
+        setDailyDate(targetDate);
+      }
+    }
+  }, [weeks, dailyWeekId, dailyDayNumber]);
 
 
   useEffect(() => {
@@ -2507,15 +2581,44 @@ export function ReportCenterPage() {
             <div className="min-w-0">
 
               {activeReportType === 'daily' && (
-                <DailyDateField
-                  value={dailyDate}
-                  onChange={setDailyDate}
-                  isValid={isDailyDateValid}
-                  weekLabel={
-                    dailyMatchingWeek
-                      ? `الأسبوع الدراسي ${dailyMatchingWeek.weekNumber}`
-                      : undefined
+                <DailyWeekDaySelector
+                  weeks={weeks}
+                  selectedWeekId={
+                    dailyWeekId || dailyMatchingWeek?.attendanceWeekId || 0
                   }
+                  onSelectWeek={(weekId) => {
+                    setDailyWeekId(weekId);
+                    const selected = weeks.find(
+                      (w) => w.attendanceWeekId === weekId,
+                    );
+                    if (selected) {
+                      setDailyDate(
+                        calculateDateForDay(
+                          selected.startDate,
+                          dailyDayNumber,
+                        ),
+                      );
+                    }
+                  }}
+                  selectedDayNumber={dailyDayNumber}
+                  onSelectDay={(dayNum) => {
+                    setDailyDayNumber(dayNum);
+                    const activeW =
+                      weeks.find(
+                        (w) => w.attendanceWeekId === dailyWeekId,
+                      ) || dailyMatchingWeek;
+                    if (activeW) {
+                      setDailyDate(
+                        calculateDateForDay(
+                          activeW.startDate,
+                          dayNum,
+                        ),
+                      );
+                    }
+                  }}
+                  dailyDate={dailyDate}
+                  today={today}
+                  isValid={isDailyDateValid}
                 />
               )}
 
@@ -2544,7 +2647,7 @@ export function ReportCenterPage() {
                         key={week.attendanceWeekId}
                         value={week.attendanceWeekId}
                       >
-                        الأسبوع {week.weekNumber}
+                        الأسبوع {week.weekNumber} ({formatArabicDateShort(week.startDate)} — {formatArabicDateShort(week.endDate)})
                       </option>
                     ))}
                   </select>

@@ -15,7 +15,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
-import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 import type { Student } from '../../../../shared/types';
@@ -80,16 +80,28 @@ export function ClerkStudentsPage() {
 
   const openEditModal = (student: Student) => {
     setEditingStudent(student);
-    setFirstName(student.firstName);
-    setSecondName(student.secondName);
-    setThirdName(student.thirdName);
-    setLastName(student.lastName);
+
+    const nameParts = (student.fullName || '').trim().split(/\s+/).filter(Boolean);
+    const resolvedFirstName = student.firstName || nameParts[0] || '';
+    const resolvedSecondName = student.secondName || nameParts[1] || '';
+    const resolvedThirdName = student.thirdName || (nameParts.length >= 4 ? nameParts.slice(2, -1).join(' ') : nameParts[2] || '');
+    const resolvedLastName = student.lastName || (nameParts.length >= 4 ? nameParts[nameParts.length - 1] : '');
+
+    setFirstName(resolvedFirstName);
+    setSecondName(resolvedSecondName);
+    setThirdName(resolvedThirdName);
+    setLastName(resolvedLastName);
     setNationalId(student.nationalId);
 
-    const concluded = `${student.secondName || ''} ${student.thirdName || ''} ${student.lastName || ''}`.trim();
-    const existingPName = student.parentName || (student as any).parent?.fullName;
+    const concluded = `${resolvedSecondName} ${resolvedThirdName} ${resolvedLastName}`.trim() ||
+      (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+    const rawExistingPName = student.parentName || (student as any).parent?.fullName;
+    const existingPName = (rawExistingPName && rawExistingPName.trim() !== 'ولي أمر')
+      ? rawExistingPName.trim()
+      : '';
+
     setParentName(existingPName || concluded);
-    setIsParentNameCustomized(!!existingPName && existingPName !== concluded);
+    setIsParentNameCustomized(Boolean(existingPName && existingPName !== concluded));
     setParentPhoneNumber(student.parentPhoneNumber || (student as any).parent?.phoneNumber || '');
     setIsEditModalOpen(true);
   };
@@ -272,7 +284,9 @@ export function ClerkStudentsPage() {
       {/* Students Table */}
       <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs overflow-hidden">
         {isLoading ? (
-          <MuwathibTableLoading colSpan={5} message="جاري استرجاع بيانات طلاب المدرسة..." />
+          <div className="p-8 sm:p-12">
+            <MuwathibLoading message="جاري استرجاع بيانات طلاب المدرسة..." />
+          </div>
         ) : students.length === 0 ? (
           <div className="p-12 text-center text-xs text-[#5F6B73] dark:text-[#9BAAB1]">
             <GraduationCap className="w-10 h-10 mx-auto mb-3 opacity-40" />
@@ -318,20 +332,32 @@ export function ClerkStudentsPage() {
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      {student.parentName || student.parentPhoneNumber ? (
-                        <div className="text-xs">
-                          <span className="font-semibold block text-[#17252B] dark:text-[#F0F4F6]">
-                            {student.parentName || 'ولي أمر'}
-                          </span>
-                          {student.parentPhoneNumber && (
-                            <span className="font-mono text-[#5F6B73] dark:text-[#9BAAB1] text-[11px]">
-                              {student.parentPhoneNumber}
+                      {(() => {
+                        const nameParts = (student.fullName || '').trim().split(/\s+/).filter(Boolean);
+                        const fallbackFromFullName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+                        const concludedFromParts = `${student.secondName || ''} ${student.thirdName || ''} ${student.lastName || ''}`.trim();
+                        const concludedParent = concludedFromParts || fallbackFromFullName;
+                        const rawExisting = student.parentName || (student as any).parent?.fullName;
+                        const displayParentName = (rawExisting && rawExisting.trim() !== 'ولي أمر')
+                          ? rawExisting.trim()
+                          : (concludedParent || 'ولي أمر');
+                        const displayPhone = student.parentPhoneNumber || (student as any).parent?.phoneNumber;
+
+                        return (
+                          <div className="text-xs">
+                            <span className="font-semibold block text-[#17252B] dark:text-[#F0F4F6]">
+                              {displayParentName}
                             </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[#89949A] text-[11px]">غير مسجل</span>
-                      )}
+                            {displayPhone ? (
+                              <span className="font-mono text-[#5F6B73] dark:text-[#9BAAB1] text-[11px]">
+                                {displayPhone}
+                              </span>
+                            ) : (
+                              <span className="text-[#89949A] text-[10px] block">لا يوجد رقم جوال</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <Button

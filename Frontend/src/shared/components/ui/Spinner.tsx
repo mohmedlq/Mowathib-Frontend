@@ -23,7 +23,7 @@ export function Spinner({ className, size = 'md' }: MuwathibSpinnerProps) {
   return (
     <div
       className={cn(
-        'inline-block rounded-full animate-spin shrink-0',
+        'inline-flex items-center justify-center rounded-full animate-spin shrink-0',
         'border-[#0B5D43]/20 border-t-[#0B5D43] dark:border-[#3E9B78]/25 dark:border-t-[#3E9B78]',
         sizes[size],
         className
@@ -64,13 +64,13 @@ export function MuwathibLoading({
     sm: 'p-6',
     md: 'p-10',
     lg: 'p-16',
-    fullscreen: 'min-h-[60vh] p-8',
+    fullscreen: 'w-full min-h-[60vh] p-8',
   };
 
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center text-center select-none animate-in fade-in zoom-in-95 duration-300',
+        'w-full mx-auto flex flex-col items-center justify-center text-center self-center select-none animate-in fade-in zoom-in-95 duration-300',
         containerPadding[size],
         className
       )}
@@ -78,37 +78,37 @@ export function MuwathibLoading({
       aria-live="polite"
     >
       {/* Branded Emblem with Pulsing Aura & Spinning Orbit */}
-      <div className="relative flex items-center justify-center mb-5">
+      <div className="relative flex items-center justify-center mb-5 mx-auto shrink-0">
         {/* Soft Glowing Aura */}
-        <div className="absolute -inset-3 rounded-2xl bg-[#0B5D43]/15 dark:bg-[#3E9B78]/20 blur-md animate-pulse" />
+        <div className="absolute -inset-3 rounded-2xl bg-[#0B5D43]/15 dark:bg-[#3E9B78]/20 blur-md animate-pulse pointer-events-none" />
 
         {/* Orbit Ring */}
-        <div className="absolute -inset-2 rounded-2xl border-2 border-dashed border-[#0B5D43]/30 dark:border-[#3E9B78]/40 animate-[spin_8s_linear_infinite]" />
+        <div className="absolute -inset-2 rounded-2xl border-2 border-dashed border-[#0B5D43]/30 dark:border-[#3E9B78]/40 animate-[spin_8s_linear_infinite] pointer-events-none" />
 
         {/* Muwazib Favicon App Icon */}
         <img
           src={faviconSvg}
           alt="أيقونة مواظب"
           className={cn(
-            'relative z-10 rounded-xl shadow-md object-contain transition-transform duration-300 hover:scale-105',
+            'relative z-10 rounded-xl shadow-md object-contain transition-transform duration-300 hover:scale-105 mx-auto',
             iconSizes[size]
           )}
         />
       </div>
 
       {/* Primary Message */}
-      <p className="text-sm sm:text-base font-bold text-[#122B23] dark:text-[#F4F8F6] tracking-tight">
+      <p className="text-sm sm:text-base font-bold text-[#122B23] dark:text-[#F4F8F6] tracking-tight text-center mx-auto max-w-lg">
         {message}
       </p>
 
       {/* Dynamic Indeterminate Progress Indicator */}
-      <div className="w-36 sm:w-44 h-1.5 bg-[#D8E5DF] dark:bg-[#1E4638] rounded-full overflow-hidden mt-3 mb-2">
+      <div className="w-36 sm:w-44 h-1.5 bg-[#D8E5DF] dark:bg-[#1E4638] rounded-full overflow-hidden mt-3 mb-2 mx-auto relative">
         <div className="h-full bg-gradient-to-r from-[#0B5D43] via-[#3E9B78] to-[#0B5D43] rounded-full animate-indeterminate" />
       </div>
 
       {/* Submessage / Tagline */}
       {submessage && (
-        <span className="text-[11px] font-medium text-[#718A80] dark:text-[#A3C7B9]">
+        <span className="text-[11px] font-medium text-[#718A80] dark:text-[#A3C7B9] text-center mx-auto max-w-md">
           {submessage}
         </span>
       )}
@@ -135,8 +135,10 @@ export function MuwathibTableLoading({
 }) {
   return (
     <tr>
-      <td colSpan={colSpan} className={cn('p-8 text-center', className)}>
-        <MuwathibLoading message={message} size="sm" />
+      <td colSpan={colSpan} className={cn('p-8 text-center align-middle', className)}>
+        <div className="w-full flex items-center justify-center mx-auto">
+          <MuwathibLoading message={message} size="sm" />
+        </div>
       </td>
     </tr>
   );

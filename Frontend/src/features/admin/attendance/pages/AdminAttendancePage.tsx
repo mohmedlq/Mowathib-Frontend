@@ -1,6 +1,16 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import {
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Edit3,
+  Eye,
+  FileSpreadsheet,
+  UserX,
+} from 'lucide-react';
+
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { useNotifications } from '../../../notifications';
@@ -13,110 +23,116 @@ import {
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
-import { resolveDefaultAttendanceWeek, formatArabicDateShort } from '../../../../shared/utils/date';
 import {
-  CalendarCheck,
-  Eye,
-  Edit3,
-  UserX,
-  Building2,
-  Calendar,
-  FileSpreadsheet,
-} from 'lucide-react';
+  resolveDefaultAttendanceWeek,
+  formatArabicDateShort,
+} from '../../../../shared/utils/date';
 import { SCHOOL_DAYS } from '../../../../shared/types';
 import type { ClassItem } from '../../../../shared/types';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+type ViewMode = 'matrix' | 'quick' | 'absences';
+
+const GRADE_OPTIONS = [
+  { value: 0, label: 'جميع المراحل' },
+  { value: 1, label: 'الأول الثانوي' },
+  { value: 2, label: 'الثاني الثانوي' },
+  { value: 3, label: 'الثالث الثانوي' },
+] as const;
 
 function getClassNum(c: ClassItem): number {
   if (typeof c.classNumber === 'number' && Number.isFinite(c.classNumber)) {
     return c.classNumber;
   }
   const match = String(c.className ?? c.classId ?? '').match(/\d+/);
-  if (match) {
-    return Number(match[0]);
-  }
-  return Number(c.classId);
+  return match ? Number(match[0]) : Number(c.classId);
 }
+
+function matchesGrade(c: ClassItem, grade: number): boolean {
+  if (grade === 0) return true;
+  const cnum = getClassNum(c);
+  const cstr = String(c.className ?? c.classNumber ?? c.classId);
+
+  if (grade === 1) {
+    return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
+  }
+  if (grade === 2) {
+    return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
+  }
+  if (grade === 3) {
+    return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
+  }
+  return true;
+}
+
+// =============================================================================
+// Main Page
+// =============================================================================
 
 export function AdminAttendancePage() {
   const [searchParams] = useSearchParams();
+  const { toast } = useNotifications();
 
   const urlClassParam = searchParams.get('classId');
+  const urlDayParam = searchParams.get('day');
+
   const initialClassId =
     urlClassParam !== null && Number.isFinite(Number(urlClassParam))
       ? Number(urlClassParam)
       : 0;
 
+  const initialDay =
+    urlDayParam !== null && Number(urlDayParam) >= 1 && Number(urlDayParam) <= 5
+      ? Number(urlDayParam)
+      : 1;
+
   const [selectedClassId, setSelectedClassId] = useState<number>(initialClassId);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
-  const [selectedGrade, setSelectedGrade] = useState<number>(0); // 0 = all, 1 = 1st, 2 = 2nd, 3 = 3rd
-  const [viewMode, setViewMode] = useState<'matrix' | 'absences' | 'quick'>('matrix');
+  const [selectedGrade, setSelectedGrade] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<ViewMode>(urlDayParam ? 'quick' : 'matrix');
+  const [quickDay, setQuickDay] = useState<number>(initialDay);
 
-  // Quick attendance slots
-  const [quickDay, setQuickDay] = useState<number>(1);
-
-  // Absence list pagination
   const [absentPage, setAbsentPage] = useState(1);
   const [absentPageSize, setAbsentPageSize] = useState(10);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
-  // Classes query
+  // Reference Queries
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  // Attendance weeks query
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  // Active academic year query
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
     queryFn: () => schoolDataService.getActiveAcademicYear(),
   });
 
-  const { toast } = useNotifications();
-  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  // Derived Class & Week
+  const gradeFilteredClasses = useMemo(
+    () => classes.filter((c) => matchesGrade(c, selectedGrade)),
+    [classes, selectedGrade]
+  );
 
-  // Filter classes by grade with robust matching
-  const gradeFilteredClasses = useMemo(() => {
-    if (selectedGrade === 0) return classes;
-    return classes.filter((c) => {
-      const cnum = getClassNum(c);
-      const cstr = String(c.className ?? c.classNumber ?? c.classId);
-      if (selectedGrade === 1) {
-        return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
-      }
-      if (selectedGrade === 2) {
-        return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
-      }
-      if (selectedGrade === 3) {
-        return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
-      }
-      return true;
-    });
-  }, [classes, selectedGrade]);
-
-  // Resolve selected class (defaults to 0 for all school students)
   const selectedClass = useMemo(() => {
     if (selectedClassId === 0) return null;
     const pool = gradeFilteredClasses.length > 0 ? gradeFilteredClasses : classes;
     if (pool.length === 0) return undefined;
-
-    if (selectedClassId > 0) {
-      const matched = pool.find(
-        (c) => c.classId === selectedClassId || getClassNum(c) === selectedClassId
-      );
-      if (matched) return matched;
-    }
-
-    return null;
+    return (
+      pool.find((c) => c.classId === selectedClassId || getClassNum(c) === selectedClassId) ?? null
+    );
   }, [classes, gradeFilteredClasses, selectedClassId]);
 
-  const effectiveClassId = selectedClassId === 0 ? 0 : (selectedClass?.classId ?? selectedClassId);
+  const effectiveClassId =
+    selectedClassId === 0 ? 0 : (selectedClass?.classId ?? selectedClassId);
 
-  // Resolve active week automatically using centralized policy
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
   const selectedWeek = useMemo(() => {
     if (weeks.length === 0) return undefined;
@@ -141,26 +157,29 @@ export function AdminAttendancePage() {
 
   const isLoading = isClassesLoading || isWeeksLoading || isMatrixLoading;
 
-  // Absent students calculation
+  const currentScopeLabel =
+    effectiveClassId === 0
+      ? 'جميع طلاب المدرسة'
+      : String(selectedClass?.className || selectedClass?.classNumber || `شعبة ${effectiveClassId}`);
+
+  // Absences Calculation
   const absentStudents = useMemo(() => {
     if (!matrix || matrix.length === 0) return [];
 
     return matrix
       .map((student) => {
-        let absentCount = 0;
         const absentDetails: Array<{ dayName: string; date?: string }> = [];
 
         SCHOOL_DAYS.forEach((day) => {
           const slot = student.slots[day.dayNumber];
           if (slot && slot.status === 'Absent') {
-            absentCount++;
             absentDetails.push({ dayName: day.nameAr, date: slot.attendanceDate });
           }
         });
 
         return {
           enrollment: student.enrollment,
-          absentCount,
+          absentCount: absentDetails.length,
           absentDetails,
         };
       })
@@ -174,6 +193,7 @@ export function AdminAttendancePage() {
     return absentStudents.slice(start, start + absentPageSize);
   }, [absentStudents, absentPage, absentPageSize]);
 
+  // Handlers
   const handleClassChange = (newClassId: number) => {
     setSelectedClassId(newClassId);
     setAbsentPage(1);
@@ -189,30 +209,20 @@ export function AdminAttendancePage() {
       handleClassChange(0);
       return;
     }
-    const inGrade = classes.filter((c) => {
-      const num = getClassNum(c);
-      if (grade === 1) return num >= 101 && num <= 110;
-      if (grade === 2) return num >= 201 && num <= 210;
-      if (grade === 3) return num >= 301 && num <= 310;
-      return true;
-    });
+    const inGrade = classes.filter((c) => matchesGrade(c, grade));
     if (inGrade.length > 0 && !inGrade.some((c) => c.classId === effectiveClassId)) {
       handleClassChange(inGrade[0].classId);
     }
   };
 
-  const handleSlotSelect = (
-    _enrollmentId: number,
-    dayNumber: number,
-    _periodNumber?: number
-  ) => {
+  const handleSlotSelect = (_enrollmentId: number, dayNumber: number) => {
     setQuickDay(dayNumber);
     setViewMode('quick');
   };
 
   const handleExportCurrentClass = async () => {
     if (matrix.length === 0) {
-      toast.show('لا توجد بيانات حضور متاحة للتصدير', 'warning');
+      toast.show('لا توجد بيانات حضور متاحة للتصدير.', 'warning');
       return;
     }
     try {
@@ -220,286 +230,321 @@ export function AdminAttendancePage() {
       const weekRange = selectedWeek
         ? `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(selectedWeek.endDate)}`
         : '';
-      const cname =
-        effectiveClassId === 0
-          ? 'جميع طلاب المدرسة'
-          : String(selectedClass?.className || selectedClass?.classNumber || `شعبة ${effectiveClassId}`);
+
       await excelExportService.exportWeeklyAttendance(matrix, {
-        className: cname,
+        className: currentScopeLabel,
         weekNumber: selectedWeek?.weekNumber || 1,
         weekRange,
         academicYear: activeYear?.yearName || '1448-1449هـ',
       });
-      toast.show(`تم تصدير كشف حضور ${cname} بنجاح!`, 'success');
+      toast.show(`تم تصدير كشف حضور ${currentScopeLabel} بنجاح.`, 'success');
     } catch (err: any) {
       console.error('Attendance Export Error:', err);
-      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف الحضور', 'danger');
+      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف الحضور.', 'danger');
     } finally {
       setIsExportingExcel(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
+    <main dir="rtl" className="min-w-0 space-y-4 pb-8 text-[#20362B] dark:text-[#EAF3ED]">
+      {/* 1. Compact Top Bar */}
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold">
-              <CalendarCheck className="w-5 h-5" />
+          <h1 className="text-xl font-black tracking-tight text-[#142B22] dark:text-[#F0F7F3]">
+            الحضور والغياب
+          </h1>
+          <p className="mt-0.5 text-xs text-[#647C70] dark:text-[#9DB5A8]">
+            {currentScopeLabel}
+            {selectedWeek && ` · الأسبوع ${selectedWeek.weekNumber}`}
+            {!isLoading && ` · ${matrix.length} طالب`}
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          icon={<FileSpreadsheet className="h-4 w-4 text-[#176B4B] dark:text-[#6DD39A]" />}
+          onClick={handleExportCurrentClass}
+          isLoading={isExportingExcel}
+          className="h-9 rounded-xl border-[#DCE7E2] bg-white text-xs font-bold text-[#294337] hover:bg-[#F0F7F2] dark:border-[#293E35] dark:bg-[#17251F] dark:text-[#E2F0E7] dark:hover:bg-[#1F332A]"
+        >
+          تصدير Excel
+        </Button>
+      </header>
+
+      {/* 2. Unified Filter & View Mode Bar */}
+      <section className="rounded-2xl border border-[#DCE7E2] bg-white p-3.5 shadow-xs dark:border-[#293E35] dark:bg-[#17251F] sm:p-4 space-y-3.5">
+        {/* Row A: Grade + Class + Week */}
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          {/* Grade Filter Pills */}
+          <div className="flex items-center gap-1 overflow-x-auto rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
+            {GRADE_OPTIONS.map((grade) => {
+              const active = selectedGrade === grade.value;
+              return (
+                <button
+                  key={grade.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => handleGradeChange(grade.value)}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    active
+                      ? 'bg-white text-[#176B4B] shadow-2xs dark:bg-[#1F352B] dark:text-[#9BD5B7]'
+                      : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
+                  }`}
+                >
+                  {grade.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Class & Week Selectors */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:w-[500px]">
+            <div className="relative">
+              <Building2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71837A]" />
+              <select
+                aria-label="الشعبة الدراسية"
+                value={effectiveClassId}
+                onChange={(e) => handleClassChange(Number(e.target.value))}
+                className="h-10 w-full appearance-none rounded-xl border border-[#DCE7E2] bg-[#FAFCFA] py-2 pl-3 pr-9 text-xs font-bold text-[#1E3429] outline-none transition focus:border-[#176B4B] dark:border-[#2C4539] dark:bg-[#13201A] dark:text-[#EAF3ED]"
+              >
+                <option value={0}>جميع طلاب المدرسة</option>
+                {gradeFilteredClasses.map((c) => (
+                  <option key={c.classId} value={c.classId}>
+                    {c.className || `شعبة ${c.classId}`}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#17252B] dark:text-[#F0F4F6]">رصد ومتابعة الحضور والغياب</h1>
-              <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
-                متابعة جدول الحضور الأسبوعي، تدقيق كشف الغائبين، أو التحضير السريع للحصص الدراسية
-              </p>
+
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4 shrink-0 text-[#71837A] hidden sm:block" />
+              <div className="min-w-0 flex-1">
+                <AttendanceWeekSelector
+                  weeks={weeks}
+                  selectedWeekId={effectiveWeekId || null}
+                  onSelectWeek={setSelectedWeekId}
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Global Actions & View Mode Toggle */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            icon={<FileSpreadsheet className="w-4 h-4 text-[#176B3A] dark:text-[#4ADE80]" />}
-            onClick={handleExportCurrentClass}
-            isLoading={isExportingExcel}
-            className="text-xs font-bold border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EAF6EE] dark:hover:bg-[#143224]"
-          >
-            {effectiveClassId === 0 ? 'تصدير كشف المدرسة (Excel)' : 'تصدير الشعبة (Excel)'}
-          </Button>
-
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-[#F5F7F8] dark:bg-[#151E22] p-1 rounded-lg border border-[#DCE3E6] dark:border-[#28373D] self-start lg:self-auto flex-wrap">
-          <button
-            type="button"
-            onClick={() => setViewMode('matrix')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-              viewMode === 'matrix'
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>جدول الحضور الأسبوعي</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode('absences')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-              viewMode === 'absences'
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <UserX className="w-3.5 h-3.5" />
-            <span>كشف الغائبين ({absentStudents.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode('quick')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
-              viewMode === 'quick'
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>نمط التحضير السريع</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-      {/* Grade Filters & Selection Controls */}
-      <div className="bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-3 transition-colors">
-        {/* Grade tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          <span className="text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1] shrink-0 ml-1">المرحلة:</span>
-          <button
-            type="button"
-            onClick={() => handleGradeChange(0)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              selectedGrade === 0
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            جميع المراحل
-          </button>
-          <button
-            type="button"
-            onClick={() => handleGradeChange(1)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              selectedGrade === 1
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            الأول الثانوي
-          </button>
-          <button
-            type="button"
-            onClick={() => handleGradeChange(2)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              selectedGrade === 2
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            الثاني الثانوي
-          </button>
-          <button
-            type="button"
-            onClick={() => handleGradeChange(3)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              selectedGrade === 3
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            الثالث الثانوي
-          </button>
-        </div>
-
-        {/* Class and Week Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#EEF2F3] dark:border-[#28373D]">
-          <div>
-            <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-[#245B63] dark:text-[#388B96]" />
-              <span>الشعبة الدراسية:</span>
-            </label>
-            <select
-              value={effectiveClassId}
-              onChange={(e) => handleClassChange(Number(e.target.value))}
-              className="w-full h-10 px-3 text-xs bg-[#F5F7F8] dark:bg-[#151E22] border border-[#DCE3E6] dark:border-[#28373D] rounded-lg text-[#17252B] dark:text-[#F0F4F6] font-medium focus:bg-white dark:focus:bg-[#182226] focus:border-[#245B63] outline-none cursor-pointer transition-colors"
+        {/* Row B: View Mode Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#EDF2EF] pt-3 dark:border-[#263B31]">
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
+            <button
+              type="button"
+              aria-pressed={viewMode === 'matrix'}
+              onClick={() => setViewMode('matrix')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                viewMode === 'matrix'
+                  ? 'bg-[#176B4B] text-white shadow-2xs dark:bg-[#23845B]'
+                  : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
+              }`}
             >
-              <option value={0} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] font-bold">
-                جميع طلاب المدرسة (كافة الشعب)
-              </option>
-              {gradeFilteredClasses.map((c) => (
-                <option key={c.classId} value={c.classId} className="bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6]">
-                  {c.className || `شعبة ${c.classId}`}
-                </option>
-              ))}
-            </select>
+              <Eye className="h-3.5 w-3.5" />
+              <span>جدول الأسبوع</span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={viewMode === 'quick'}
+              onClick={() => setViewMode('quick')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                viewMode === 'quick'
+                  ? 'bg-[#176B4B] text-white shadow-2xs dark:bg-[#23845B]'
+                  : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
+              }`}
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              <span>التحضير السريع</span>
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={viewMode === 'absences'}
+              onClick={() => setViewMode('absences')}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                viewMode === 'absences'
+                  ? 'bg-[#A61B1B] text-white shadow-2xs dark:bg-[#991B1B]'
+                  : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
+              }`}
+            >
+              <UserX className="h-3.5 w-3.5" />
+              <span>الغائبون</span>
+              <span
+                className={`rounded-md px-1.5 py-0.5 text-[10px] tabular-nums ${
+                  viewMode === 'absences'
+                    ? 'bg-white/20 text-white'
+                    : absentStudents.length > 0
+                      ? 'bg-[#FDECEC] text-[#A61B1B] dark:bg-[#3A1A1D] dark:text-[#F87171]'
+                      : 'bg-black/5 text-[#647C70] dark:bg-white/10 dark:text-[#9DB5A8]'
+                }`}
+              >
+                {absentStudents.length}
+              </span>
+            </button>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-[#245B63] dark:text-[#388B96]" />
-              <span>الأسبوع الدراسي:</span>
-            </label>
-            <AttendanceWeekSelector
-              weeks={weeks}
-              selectedWeekId={effectiveWeekId || null}
-              onSelectWeek={setSelectedWeekId}
-            />
-          </div>
+          {viewMode === 'matrix' && !isLoading && (
+            <span className="text-[11px] text-[#71837A] dark:text-[#9DB5A8]">
+              اضغط على أي يوم في الجدول للتعديل السريع
+            </span>
+          )}
         </div>
-      </div>
+      </section>
 
-      {/* Main View Area */}
+      {/* 3. Active Workspace */}
       {isLoading ? (
-        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] p-12 shadow-xs">
-          <LoadingState message="جاري تحميل سجلات حضور الفصل المختار..." />
+        <div className="rounded-2xl border border-[#DCE7E2] bg-white p-12 shadow-xs dark:border-[#293E35] dark:bg-[#17251F]">
+          <LoadingState message="جاري تحميل سجلات الحضور..." />
         </div>
       ) : viewMode === 'matrix' ? (
-        <div className="space-y-4">
-          <div className="p-3.5 bg-[#F0F7F7] dark:bg-[#19383E]/50 border border-[#245B63]/20 dark:border-[#388B96]/30 rounded-xl text-xs text-[#245B63] dark:text-[#52B4C2] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs transition-colors">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#245B63] dark:bg-[#388B96]" />
-              <strong>تلميح الإدارة:</strong>
-              يمكنك النقر على أي حصة داخل الجدول للانتقال المباشر وتعديل حالتها في نمط التحضير السريع.
-            </span>
-
-            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white dark:bg-[#182226] border border-[#245B63]/20 dark:border-[#388B96]/30 text-[#17252B] dark:text-[#F0F4F6] self-start sm:self-auto">
-              {matrix.length} طالب مقيد
-            </span>
-          </div>
-
-          <AttendanceTable
-            attendances={matrix}
-            weekStartDate={selectedWeek?.startDate}
-            onSlotSelect={handleSlotSelect}
-            interactive={true}
-          />
-        </div>
-      ) : viewMode === 'absences' ? (
-        /* Absent Students Roster */
-        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs overflow-hidden transition-colors">
-          <div className="p-4 border-b border-[#DCE3E6] dark:border-[#28373D] bg-[#FAFCFD] dark:bg-[#151E22] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserX className="w-4 h-4 text-[#A61B1B] dark:text-[#F87171]" />
-              <h2 className="text-sm font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                كشف الطلاب المتغيبين في {effectiveClassId === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : (selectedClass?.className || `شعبة ${effectiveClassId}`)} — الأسبوع {selectedWeek?.weekNumber}
-              </h2>
-            </div>
-            <span className="text-xs font-bold text-[#A61B1B] dark:text-[#F87171] bg-[#FDECEC] dark:bg-[#331518] px-2.5 py-1 rounded-md border border-[#F5C2C2] dark:border-[#592226] font-mono">
-              إجمالي المتغيبين: {absentStudents.length} طلاب
-            </span>
-          </div>
-
+        <AttendanceTable
+          attendances={matrix}
+          weekStartDate={selectedWeek?.startDate}
+          onSlotSelect={handleSlotSelect}
+          interactive={true}
+        />
+      ) : viewMode === 'quick' ? (
+        <QuickAttendancePanel
+          classNameTitle={currentScopeLabel}
+          weekNumber={selectedWeek?.weekNumber || 1}
+          selectedDay={quickDay}
+          onSelectDay={setQuickDay}
+          enrollments={enrollments}
+          records={records}
+          onSaveSlot={async (day, changes) => {
+            await saveSlot(day, changes);
+          }}
+          isSaving={isSaving}
+        />
+      ) : (
+        /* Absences View */
+        <section className="overflow-hidden rounded-2xl border border-[#DCE7E2] bg-white shadow-xs dark:border-[#293E35] dark:bg-[#17251F]">
           {absentStudents.length === 0 ? (
-            <div className="p-12 text-center text-xs text-[#176B3A] dark:text-[#4ADE80] bg-[#E8F5EC]/30 dark:bg-[#122B1E]/30">
-              <div className="w-10 h-10 rounded-full bg-[#E8F5EC] dark:bg-[#122B1E] text-[#176B3A] dark:text-[#4ADE80] flex items-center justify-center mx-auto mb-2 font-bold">
-                ✓
-              </div>
-              <strong className="block text-sm mb-1">لا يوجد غياب مسجل!</strong>
-              نسبة الحضور مكتملة 100% {effectiveClassId === 0 ? 'في المدرسة' : 'في هذه الشعبة'} خلال هذا الأسبوع.
+            <div className="px-6 py-12 text-center">
+              <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#E8F6EE] text-[#176B4B] dark:bg-[#193B2A] dark:text-[#6DD39A]">
+                <CheckCircle2 className="h-5 w-5" />
+              </span>
+              <h2 className="mt-3 text-sm font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                لا يوجد غياب مسجل هذا الأسبوع
+              </h2>
+              <p className="mt-1 text-xs text-[#647C70] dark:text-[#9DB5A8]">
+                نسبة الحضور مكتملة 100% في {currentScopeLabel}.
+              </p>
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border-b border-[#DCE3E6] dark:border-[#28373D]">
-                      <th className="px-4 py-3 font-bold w-12 text-center">#</th>
-                      <th className="px-4 py-3 font-bold">اسم الطالب</th>
-                      <th className="px-4 py-3 font-bold">رقم الهوية الوطنية</th>
-                      {effectiveClassId === 0 && (
-                        <th className="px-4 py-3 font-bold w-28">الشعبة</th>
-                      )}
-                      <th className="px-4 py-3 font-bold text-center">إجمالي الحصص المتغيب عنها</th>
-                      <th className="px-4 py-3 font-bold">تفاصيل الحصص والأيام</th>
+              {/* Mobile List */}
+              <div className="divide-y divide-[#EDF2EF] dark:divide-[#263B31] md:hidden">
+                {paginatedAbsentStudents.map((item) => (
+                  <article key={item.enrollment.enrollmentId} className="p-3.5 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-bold text-[#1E3429] dark:text-[#F0F7F3]">
+                          {item.enrollment.studentName}
+                        </h3>
+                        <p className="mt-0.5 text-[11px] text-[#647C70] dark:text-[#9DB5A8]">
+                          {effectiveClassId === 0 && (
+                            <span className="font-bold text-[#176B4B] dark:text-[#6DD39A]">
+                              {item.enrollment.className ||
+                                (item.enrollment.classNumber
+                                  ? `شعبة ${item.enrollment.classNumber}`
+                                  : '—')}
+                              {' · '}
+                            </span>
+                          )}
+                          <span className="font-mono">
+                            {item.enrollment.student?.nationalId || '—'}
+                          </span>
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[#FDECEC] px-2.5 py-0.5 text-[11px] font-bold text-[#A61B1B] dark:bg-[#3A1A1D] dark:text-[#F87171]">
+                        {item.absentCount} يوم
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.absentDetails.map((det, dIdx) => (
+                        <span
+                          key={dIdx}
+                          className="inline-flex items-center gap-1 rounded-md border border-[#E8EFEB] bg-[#FAFCFA] px-2 py-0.5 text-[11px] dark:border-[#2B4136] dark:bg-[#1B2C23]"
+                        >
+                          <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">
+                            {det.dayName}
+                          </span>
+                          {det.date && (
+                            <span className="font-mono text-[10px] text-[#647C70] dark:text-[#9DB5A8]">
+                              {det.date}
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {/* Desktop Table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#F7FAF8] text-[11px] font-bold text-[#647C70] dark:bg-[#14201B] dark:text-[#9DB5A8]">
+                    <tr className="border-b border-[#E9EFEC] dark:border-[#263B31]">
+                      <th className="w-12 px-4 py-3 text-center">#</th>
+                      <th className="px-4 py-3">اسم الطالب</th>
+                      <th className="px-4 py-3">الهوية الوطنية</th>
+                      {effectiveClassId === 0 && <th className="w-28 px-4 py-3">الشعبة</th>}
+                      <th className="px-4 py-3 text-center">أيام الغياب</th>
+                      <th className="px-4 py-3">تفاصيل الأيام</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#EEF2F3] dark:divide-[#28373D]">
+                  <tbody className="divide-y divide-[#EDF2EF] dark:divide-[#263B31]">
                     {paginatedAbsentStudents.map((item, idx) => (
                       <tr
                         key={item.enrollment.enrollmentId}
-                        className={`hover:bg-[#FDF6F6] dark:hover:bg-[#331518]/30 transition-colors ${idx % 2 === 0 ? 'bg-white dark:bg-[#182226]' : 'bg-[#FAFCFD] dark:bg-[#151E22]'}`}
+                        className="transition-colors hover:bg-[#FAFCFA] dark:hover:bg-[#1B2C24]"
                       >
-                        <td className="px-4 py-3 text-center font-mono text-[#5F6B73] dark:text-[#9BAAB1]">{(absentPage - 1) * absentPageSize + idx + 1}</td>
-                        <td className="px-4 py-3 font-bold text-[#17252B] dark:text-[#F0F4F6]">
+                        <td className="px-4 py-3 text-center font-mono text-[#71837A] dark:text-[#9DB5A8]">
+                          {(absentPage - 1) * absentPageSize + idx + 1}
+                        </td>
+                        <td className="px-4 py-3 font-bold text-[#1E3429] dark:text-[#F0F7F3]">
                           {item.enrollment.studentName}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[#5F6B73] dark:text-[#9BAAB1]">
+                        <td className="px-4 py-3 font-mono text-[#647C70] dark:text-[#9DB5A8]">
                           {item.enrollment.student?.nationalId || '—'}
                         </td>
                         {effectiveClassId === 0 && (
-                          <td className="px-4 py-3 font-bold text-[#245B63] dark:text-[#388B96]">
-                            {item.enrollment.className || (item.enrollment.classNumber ? `شعبة ${item.enrollment.classNumber}` : '—')}
+                          <td className="px-4 py-3 font-bold text-[#176B4B] dark:text-[#6DD39A]">
+                            {item.enrollment.className ||
+                              (item.enrollment.classNumber
+                                ? `شعبة ${item.enrollment.classNumber}`
+                                : '—')}
                           </td>
                         )}
                         <td className="px-4 py-3 text-center">
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] border border-[#F5C2C2] dark:border-[#592226]">
+                          <span className="inline-block rounded-full bg-[#FDECEC] px-2.5 py-0.5 font-mono text-xs font-bold text-[#A61B1B] dark:bg-[#3A1A1D] dark:text-[#F87171]">
                             {item.absentCount} يوم
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {item.absentDetails.map((det, dIdx) => (
                               <span
                                 key={dIdx}
-                                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F7F8] dark:bg-[#151E22] text-[#17252B] dark:text-[#F0F4F6] border border-[#DCE3E6] dark:border-[#28373D]"
+                                className="inline-flex items-center gap-1 rounded-md border border-[#E8EFEB] bg-[#FAFCFA] px-2 py-0.5 text-[11px] dark:border-[#2B4136] dark:bg-[#1B2C23]"
                               >
-                                <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">{det.dayName}</span>
-                                {det.date && <span className="text-[#5F6B73] dark:text-[#9BAAB1] font-mono">{det.date}</span>}
+                                <span className="font-bold text-[#A61B1B] dark:text-[#F87171]">
+                                  {det.dayName}
+                                </span>
+                                {det.date && (
+                                  <span className="font-mono text-[10px] text-[#647C70] dark:text-[#9DB5A8]">
+                                    {det.date}
+                                  </span>
+                                )}
                               </span>
                             ))}
                           </div>
@@ -511,37 +556,26 @@ export function AdminAttendancePage() {
               </div>
 
               {absentStudents.length > absentPageSize && (
-                <PaginationControls
-                  pageNumber={absentPage}
-                  totalPages={totalAbsentPages}
-                  totalCount={absentStudents.length}
-                  pageSize={absentPageSize}
-                  onPageChange={(page) => setAbsentPage(page)}
-                  onPageSizeChange={(newSize) => {
-                    setAbsentPageSize(newSize);
-                    setAbsentPage(1);
-                  }}
-                  itemLabel="طالب متغيب"
-                />
+                <div className="border-t border-[#E9EFEC] px-3 py-3 dark:border-[#263B31] sm:px-4">
+                  <PaginationControls
+                    pageNumber={absentPage}
+                    totalPages={totalAbsentPages}
+                    totalCount={absentStudents.length}
+                    pageSize={absentPageSize}
+                    onPageChange={setAbsentPage}
+                    onPageSizeChange={(newSize) => {
+                      setAbsentPageSize(newSize);
+                      setAbsentPage(1);
+                    }}
+                    itemLabel="طالب متغيب"
+                  />
+                </div>
               )}
             </>
           )}
-        </div>
-      ) : (
-        <QuickAttendancePanel
-          classNameTitle={effectiveClassId === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : (selectedClass?.className || `شعبة ${effectiveClassId}`)}
-          weekNumber={selectedWeek?.weekNumber || 1}
-          selectedDay={quickDay}
-          onSelectDay={setQuickDay}
-          enrollments={enrollments}
-          records={records}
-          onSaveSlot={async (day, changes) => {
-            await saveSlot(day, changes);
-          }}
-          isSaving={isSaving}
-        />
+        </section>
       )}
-    </div>
+    </main>
   );
 }
 

@@ -60,7 +60,7 @@ export function RepresentativeDeputyPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<number>(0);
 
   const [generatedUserName, setGeneratedUserName] = useState<string>(
-    () => generateDeputyUsername()
+    () => generateDeputyUsername([], user?.classNumber)
   );
 
   const [generatedPassword, setGeneratedPassword] = useState<string>(
@@ -133,7 +133,9 @@ export function RepresentativeDeputyPage() {
       )
     : undefined;
 
-  const hasClassRepresentative = Boolean(classRepresentative);
+  const hasClassRepresentative = Boolean(
+    classRepresentative || (user?.role === 'Representative' && user?.classId === classId)
+  );
 
   // =========================================================
   // DEPUTY IDENTIFICATION
@@ -211,7 +213,8 @@ export function RepresentativeDeputyPage() {
     // Generate a new username and check against existing accounts.
     setGeneratedUserName(
       generateDeputyUsername(
-        reps.map((representative) => representative.username)
+        reps.map((representative) => representative.username),
+        user?.classNumber
       )
     );
 
@@ -270,7 +273,8 @@ export function RepresentativeDeputyPage() {
         generatedUserName.toLowerCase()
       )
         ? generateDeputyUsername(
-            reps.map((representative) => representative.username)
+            reps.map((representative) => representative.username),
+            user?.classNumber
           )
         : generatedUserName;
 
@@ -398,6 +402,22 @@ export function RepresentativeDeputyPage() {
   // =========================================================
   // UI
   // =========================================================
+
+  if (user?.role !== 'Representative') {
+    return (
+      <div className="bg-white dark:bg-[#122B23] p-8 sm:p-12 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-[#FDECEC] dark:bg-[#331518] text-[#A61B1B] dark:text-[#F87171] mx-auto flex items-center justify-center">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-bold text-[#17252B] dark:text-[#F0F4F6]">
+          خاصية مقتصرة على عريف الشعبة الأساسي
+        </h2>
+        <p className="text-sm text-[#5F6B73] dark:text-[#9BAAB1] max-w-md mx-auto">
+          صلاحية تعيين وإدارة نائب العريف متاحة حصرياً لعريف الشعبة الأساسي فقط، ولا يملك نائب العريف صلاحية تعيين نائب.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -694,8 +714,9 @@ export function RepresentativeDeputyPage() {
                     value={enrollment.enrollmentId}
                   >
                     {enrollment.studentName}
-                    {' '}
-                    ({enrollment.student?.nationalId})
+                    {enrollment.student?.nationalId || (enrollment as any).nationalId
+                      ? ` (${enrollment.student?.nationalId || (enrollment as any).nationalId})`
+                      : ''}
                   </option>
                 ))}
             </select>

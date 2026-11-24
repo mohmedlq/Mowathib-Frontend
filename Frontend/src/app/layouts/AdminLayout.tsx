@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -162,11 +162,13 @@ function DashboardOverview({
   schoolName,
   today,
   activeWeek,
+  sideSlot,
 }: {
   userName: string;
   schoolName: string;
   today: string;
   activeWeek?: AttendanceWeek;
+  sideSlot?: ReactNode;
 }) {
   const { toast } = useNotifications();
 
@@ -198,20 +200,13 @@ function DashboardOverview({
         : Promise.resolve([]),
     enabled: Boolean(activeWeek?.attendanceWeekId),
     staleTime: 1000 * 60 * 2,
-    refetchInterval: 1000 * 60, // Refresh every minute so admin gets live status
+    refetchInterval: 1000 * 60,
   });
 
   // 4. Determine Today's School Day Number (1 = Sunday, ..., 5 = Thursday)
   const { todayDayNumber, todayDayName } = useMemo(() => {
     const jsDay = new Date().getDay();
-    let dayNum = 1;
-    if (jsDay >= 0 && jsDay <= 4) {
-      dayNum = jsDay + 1;
-    } else {
-      // Weekend -> display Sunday
-      dayNum = 1;
-    }
-
+    const dayNum = jsDay >= 0 && jsDay <= 4 ? jsDay + 1 : 1;
     const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
     return {
       todayDayNumber: dayNum,
@@ -238,7 +233,6 @@ function DashboardOverview({
       };
     }
 
-    // Identify which classes have at least one attendance record for today's day number
     const preparedClassIdSet = new Set<number>();
     for (const rec of weekRecords) {
       if (rec.dayNumber === todayDayNumber && rec.classId) {
@@ -247,7 +241,6 @@ function DashboardOverview({
     }
 
     const unpreparedList: UnpreparedClassItem[] = [];
-
     let prepared = 0;
 
     for (const cls of classes) {
@@ -288,7 +281,10 @@ function DashboardOverview({
 
   const handleOpenWhatsApp = (item: UnpreparedClassItem) => {
     setSelectedRepForWhatsApp(item);
-    const rawPhone = item.representativePhone && item.representativePhone !== '0000000000' ? item.representativePhone : '';
+    const rawPhone =
+      item.representativePhone && item.representativePhone !== '0000000000'
+        ? item.representativePhone
+        : '';
     setWhatsAppPhone(rawPhone);
     setWhatsAppMessage(
       buildRepresentativeReminderMessage(
@@ -334,13 +330,6 @@ function DashboardOverview({
 
     setSelectedRepForWhatsApp(null);
   };
-
-  const quickActions = [
-    { to: '/admin/attendance', label: 'فتح سجل الحضور', description: 'تسجيل ومراجعة حضور اليوم', icon: ClipboardCheck },
-    { to: '/admin/weekly-preparation', label: 'التحضير الأسبوعي', description: 'مراجعة تحضير الفصول', icon: CalendarCheck },
-    { to: '/admin/reports', label: 'مركز التقارير', description: 'عرض وتصدير تقارير المدرسة', icon: FileSpreadsheet },
-    { to: '/admin/send-notifications', label: 'إشعارات أولياء الأمور', description: 'متابعة إشعارات الغياب', icon: BellRing },
-  ];
 
   return (
     <section className="mb-6 space-y-5" aria-label="ملخص لوحة المتابعة">
@@ -465,7 +454,7 @@ function DashboardOverview({
             </span>
           </div>
           <p className="mt-3 text-[11px] text-[#9A886F] dark:text-[#B7A27B]">
-            {unpreparedCount === 0 ? 'اكتمل تحضير جميع الشعب بنجاح ✨' : `تحتاج متابعة ورصد ليوم ${todayDayName}`}
+            {unpreparedCount === 0 ? 'اكتمل تحضير جميع الشعب بنجاح' : `تحتاج متابعة ورصد ليوم ${todayDayName}`}
           </p>
         </div>
 
@@ -502,8 +491,8 @@ function DashboardOverview({
         </div>
       </div>
 
-      {/* Daily follow-up + quick links */}
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]">
+      {/* Daily follow-up + Admin Dashboard Cards (replaces الوصول السريع) */}
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)] items-start">
         {/* Unprepared Classes Section */}
         <section className="overflow-hidden rounded-2xl border border-[#DCE7E2] bg-white shadow-sm dark:border-[#293E35] dark:bg-[#17251F]">
           <div className="flex flex-col gap-3 border-b border-[#E9EFEC] p-4 dark:border-[#2A4036] sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -552,7 +541,6 @@ function DashboardOverview({
               </p>
             </div>
           ) : unpreparedCount === 0 ? (
-            /* Celebratory State when all classes are prepared! */
             <div className="flex flex-col items-center justify-center p-10 text-center sm:p-12">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#E8F6EE] text-[#19734C] shadow-sm dark:bg-[#1D3B2B] dark:text-[#6DD39A]">
                 <CheckCircle2 className="h-8 w-8" />
@@ -659,43 +647,10 @@ function DashboardOverview({
           </div>
         </section>
 
-        {/* Quick Links */}
-        <section className="rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-sm dark:border-[#293E35] dark:bg-[#17251F] sm:p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="rounded-lg bg-[#EAF2F4] p-2 text-[#286B73] dark:bg-[#213A40] dark:text-[#80C6C7]">
-              <Activity className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-sm font-extrabold text-[#20362B] dark:text-[#EDF5F0]">الوصول السريع</h2>
-              <p className="mt-0.5 text-[11px] text-[#829188] dark:text-[#9DB5A8]">أهم المهام اليومية للإدارة</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <NavLink
-                  key={action.to}
-                  to={action.to}
-                  className="group flex items-center gap-3 rounded-xl border border-[#E8EFEB] bg-[#FAFCFA] p-3 transition hover:border-[#BFD8CA] hover:bg-[#F0F7F2] dark:border-[#2B4136] dark:bg-[#1B2C23] dark:hover:border-[#416E55] dark:hover:bg-[#21382A]"
-                >
-                  <span className="rounded-lg bg-white p-2 text-[#347456] shadow-sm dark:bg-[#263C30] dark:text-[#9BD5B7]">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-bold text-[#294337] dark:text-[#E2F0E7]">
-                      {action.label}
-                    </span>
-                    <span className="mt-0.5 block text-[10px] text-[#829188] dark:text-[#9AB0A1]">
-                      {action.description}
-                    </span>
-                  </span>
-                  <ArrowLeft className="h-4 w-4 text-[#98A79E] transition group-hover:-translate-x-1 group-hover:text-[#347456] dark:text-[#7F9B89] dark:group-hover:text-[#9BD5B7]" />
-                </NavLink>
-              );
-            })}
-          </div>
-        </section>
+        {/* Admin Dashboard Cards (replaces الوصول السريع) */}
+        <div className="min-w-0">
+          {sideSlot}
+        </div>
       </div>
 
       {/* Operational guidance hint */}
@@ -716,7 +671,6 @@ function DashboardOverview({
       >
         {selectedRepForWhatsApp && (
           <div className="space-y-4">
-            {/* Class & Representative Info */}
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#DCE7E1] bg-[#F7FAF8] p-3 text-xs dark:border-[#263D30] dark:bg-[#17251F]">
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-[#294337] dark:text-[#E2F0E7]">
@@ -737,7 +691,6 @@ function DashboardOverview({
               </span>
             </div>
 
-            {/* Representative Phone Input */}
             <div>
               <label htmlFor="rep-whatsapp-phone" className="block text-xs font-bold text-[#294337] dark:text-[#E2F0E7]">
                 رقم جوال العريف (المخصص لواتساب)
@@ -767,7 +720,6 @@ function DashboardOverview({
               </div>
             </div>
 
-            {/* Editable Message Textarea */}
             <div>
               <div className="flex items-center justify-between">
                 <label htmlFor="rep-whatsapp-message" className="block text-xs font-bold text-[#294337] dark:text-[#E2F0E7]">
@@ -796,7 +748,6 @@ function DashboardOverview({
               </p>
             </div>
 
-            {/* Actions */}
             <DialogFooter className="mt-5">
               <button
                 type="button"
@@ -917,6 +868,18 @@ export function AdminLayout() {
     logout();
   };
 
+  const outletContent = (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl border border-[#DCE7E1] bg-white p-10 dark:border-[#263D30] dark:bg-[#14221A]">
+          <MuwathibLoading size="fullscreen" />
+        </div>
+      }
+    >
+      <Outlet />
+    </Suspense>
+  );
+
   return (
     <div dir="rtl" className="flex min-h-screen bg-[#F4F7F5] text-[#20362B] selection:bg-[#23764F] selection:text-white transition-colors duration-200 dark:bg-[#0E1712] dark:text-[#EAF3ED]">
       {/* Desktop sidebar */}
@@ -1027,17 +990,17 @@ export function AdminLayout() {
         </header>
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
-          {isDashboard && (
+          {isDashboard ? (
             <DashboardOverview
               userName={displayUserName}
               schoolName={displaySchoolName}
               today={today}
               activeWeek={activeWeek}
+              sideSlot={outletContent}
             />
+          ) : (
+            outletContent
           )}
-          <Suspense fallback={<div className="rounded-2xl border border-[#DCE7E1] bg-white p-10 dark:border-[#263D30] dark:bg-[#14221A]"><MuwathibLoading size="fullscreen" /></div>}>
-            <Outlet />
-          </Suspense>
         </main>
 
         <footer className="border-t border-[#E1EAE4] bg-white/75 px-4 py-3 text-center text-[10px] text-[#87978F] dark:border-[#263D30] dark:bg-[#14221A]/75 dark:text-[#829B8C] sm:px-6">

@@ -1,45 +1,76 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import {
+  Calendar,
+  Download,
+  FileSpreadsheet,
+  Layers,
+  Printer,
+} from 'lucide-react';
+
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
-import { AttendanceTable } from '../../../attendance';
-import { AttendanceWeekSelector } from '../../../attendance';
+import { AttendanceTable, AttendanceWeekSelector } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import {
-  CalendarCheck,
-  Download,
-  Printer,
-  FileSpreadsheet,
-  Layers,
-} from 'lucide-react';
-import { formatArabicDateShort, resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
+  formatArabicDateShort,
+  resolveDefaultAttendanceWeek,
+} from '../../../../shared/utils/date';
 import { useNotifications } from '../../../notifications';
 import type { ClassItem, ClassEnrollment } from '../../../../shared/types';
 import type { StudentWeeklyAttendance } from '../../../attendance';
 
+// =============================================================================
+// Helpers
+// =============================================================================
+
+type GradeTab = 0 | 1 | 2 | 3;
+
+function getClassNum(c: ClassItem): number {
+  if (c.classNumber && !isNaN(Number(c.classNumber))) return Number(c.classNumber);
+  const match = String(c.className || '').match(/\d+/);
+  return match ? Number(match[0]) : Number(c.classId);
+}
+
+function getClassesForGrade(classes: ClassItem[], gradeIndex: 1 | 2 | 3): ClassItem[] {
+  return classes.filter((c) => {
+    const cnum = getClassNum(c);
+    const cstr = String(c.className ?? c.classNumber ?? c.classId);
+    if (gradeIndex === 1) {
+      return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
+    }
+    if (gradeIndex === 2) {
+      return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
+    }
+    return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
+  });
+}
+
+// =============================================================================
+// Main Page
+// =============================================================================
+
 export function AdminWeeklyPreparationPage() {
   const { toast } = useNotifications();
-  const [selectedGradeTab, setSelectedGradeTab] = useState<0 | 1 | 2 | 3>(0);
+  const [selectedGradeTab, setSelectedGradeTab] = useState<GradeTab>(0);
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
-  const [previewClassId, setPreviewClassId] = useState<number | null>(null);
+  const [previewClassId, setPreviewClassId] = useState<number>(0); // 0 = all in current grade/school
   const [isExportingGrade, setIsExportingGrade] = useState(false);
   const [isExportingAll, setIsExportingAll] = useState(false);
 
-  // 1. Fetch Classes
+  // Reference Queries
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
     queryFn: () => schoolDataService.getClasses(),
   });
 
-  // 2. Fetch Weeks
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
   });
 
-  // 3. Fetch Active Academic Year
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
     queryFn: () => schoolDataService.getActiveAcademicYear(),
@@ -47,38 +78,13 @@ export function AdminWeeklyPreparationPage() {
 
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
   const effectiveWeekId = selectedWeekId ?? activeWeek?.attendanceWeekId;
-  const selectedWeek = weeks.find((w) => w.attendanceWeekId === effectiveWeekId) || activeWeek || weeks[0];
+  const selectedWeek =
+    weeks.find((w) => w.attendanceWeekId === effectiveWeekId) || activeWeek || weeks[0];
 
-  // Helper to extract numeric class identifier
-  const getClassNum = (c: ClassItem) => {
-    if (c.classNumber && !isNaN(Number(c.classNumber))) return Number(c.classNumber);
-    const match = String(c.className || '').match(/\d+/);
-    if (match) return Number(match[0]);
-    return Number(c.classId);
-  };
-
-  // Robust stage classification matching 100-series, 200-series, 300-series, and textual grade names
-  const getClassesForGrade = (gradeIndex: 1 | 2 | 3): ClassItem[] => {
-    return classes.filter((c) => {
-      const cnum = getClassNum(c);
-      const cstr = String(c.className ?? c.classNumber ?? c.classId);
-
-      if (gradeIndex === 1) {
-        return (cnum >= 100 && cnum < 200) || cstr.includes('الأول') || /^1\d{2}/.test(cstr);
-      }
-      if (gradeIndex === 2) {
-        return (cnum >= 200 && cnum < 300) || cstr.includes('الثاني') || /^2\d{2}/.test(cstr);
-      }
-      if (gradeIndex === 3) {
-        return (cnum >= 300 && cnum < 400) || cstr.includes('الثالث') || /^3\d{2}/.test(cstr);
-      }
-      return false;
-    });
-  };
-
-  const grade1Classes = useMemo(() => getClassesForGrade(1), [classes]);
-  const grade2Classes = useMemo(() => getClassesForGrade(2), [classes]);
-  const grade3Classes = useMemo(() => getClassesForGrade(3), [classes]);
+  // Grade Buckets
+  const grade1Classes = useMemo(() => getClassesForGrade(classes, 1), [classes]);
+  const grade2Classes = useMemo(() => getClassesForGrade(classes, 2), [classes]);
+  const grade3Classes = useMemo(() => getClassesForGrade(classes, 3), [classes]);
 
   const activeGradeClasses = useMemo(() => {
     if (selectedGradeTab === 0) return classes;
@@ -94,48 +100,47 @@ export function AdminWeeklyPreparationPage() {
     return 'الصف الثالث الثانوي';
   }, [selectedGradeTab]);
 
-  // Set default preview class
-  const activePreviewClass = useMemo(() => {
-    if (previewClassId !== null && previewClassId > 0) {
-      const found = classes.find((c) => c.classId === previewClassId);
-      if (found) return found;
-    }
-    if (selectedGradeTab === 0) {
-      return null;
-    }
-    return activeGradeClasses[0];
-  }, [previewClassId, selectedGradeTab, classes, activeGradeClasses]);
+  const activePreviewClass = useMemo(
+    () => (previewClassId > 0 ? classes.find((c) => c.classId === previewClassId) ?? null : null),
+    [previewClassId, classes]
+  );
 
-  const effectivePreviewClassId =
-    selectedGradeTab === 0 && (!previewClassId || previewClassId === 0)
-      ? 0
-      : (activePreviewClass?.classId ?? previewClassId ?? 0);
-
-  // 4. Fetch preview class enrollments & records
-  const { data: previewEnrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
-    queryKey: ['enrollments', effectivePreviewClassId],
+  // Preview Queries
+  const { data: rawEnrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
+    queryKey: ['enrollments', previewClassId],
     queryFn: () =>
-      effectivePreviewClassId > 0
-        ? schoolDataService.getEnrollmentsByClass(effectivePreviewClassId)
+      previewClassId > 0
+        ? schoolDataService.getEnrollmentsByClass(previewClassId)
         : schoolDataService.getAllEnrollments(),
-    enabled: effectivePreviewClassId >= 0,
   });
 
-  const { data: previewRecords = [], isLoading: isRecordsLoading } = useQuery({
-    queryKey: ['attendance_records', effectivePreviewClassId, selectedWeek?.attendanceWeekId],
+  const { data: rawRecords = [], isLoading: isRecordsLoading } = useQuery({
+    queryKey: ['attendance_records', previewClassId, selectedWeek?.attendanceWeekId],
     queryFn: () =>
-      effectivePreviewClassId > 0
-        ? schoolDataService.getAttendanceRecords(effectivePreviewClassId, selectedWeek!.attendanceWeekId)
+      previewClassId > 0
+        ? schoolDataService.getAttendanceRecords(previewClassId, selectedWeek!.attendanceWeekId)
         : schoolDataService.getAttendanceRecordsByWeek(selectedWeek!.attendanceWeekId),
-    enabled: effectivePreviewClassId >= 0 && !!selectedWeek?.attendanceWeekId,
+    enabled: Boolean(selectedWeek?.attendanceWeekId),
   });
 
-  const previewAttendances = useMemo(() => {
-    if (!previewEnrollments.length) return [];
-    return buildWeeklyAttendanceRows(previewEnrollments, previewRecords);
-  }, [previewEnrollments, previewRecords]);
+  // Filter enrollments & records to the active grade when previewing "all classes in grade"
+  const { previewEnrollments, previewAttendances } = useMemo(() => {
+    let enrollments = rawEnrollments;
+    let records = rawRecords;
 
-  // Helper to fetch attendance data for multiple classes with bulk enrollments & batch concurrency control
+    if (previewClassId === 0 && selectedGradeTab > 0) {
+      const allowedIds = new Set(activeGradeClasses.map((c) => c.classId));
+      enrollments = rawEnrollments.filter((e) => allowedIds.has(e.classId));
+      records = rawRecords.filter((r) => !r.classId || allowedIds.has(r.classId));
+    }
+
+    return {
+      previewEnrollments: enrollments,
+      previewAttendances: enrollments.length ? buildWeeklyAttendanceRows(enrollments, records) : [],
+    };
+  }, [rawEnrollments, rawRecords, previewClassId, selectedGradeTab, activeGradeClasses]);
+
+  // Bulk Data Fetcher for Excel Exports
   const fetchClassesWeeklyData = async (
     classList: ClassItem[],
     weekId: number,
@@ -154,19 +159,16 @@ export function AdminWeeklyPreparationPage() {
       });
     }
 
-    // 1. Try fetching all week records in one fast batch
-    let weekRecordsByClass: Map<number, typeof previewRecords> | null = null;
+    let weekRecordsByClass: Map<number, typeof rawRecords> | null = null;
     try {
       const allWeekRecs = await schoolDataService.getAttendanceRecordsByWeek(weekId);
-      if (allWeekRecs && allWeekRecs.length > 0) {
+      if (allWeekRecs?.length) {
         weekRecordsByClass = new Map();
         allWeekRecs.forEach((r) => {
-          const cId = r.classId;
-          if (cId) {
-            const list = weekRecordsByClass!.get(cId) || [];
-            list.push(r);
-            weekRecordsByClass!.set(cId, list);
-          }
+          if (!r.classId) return;
+          const list = weekRecordsByClass!.get(r.classId) || [];
+          list.push(r);
+          weekRecordsByClass!.set(r.classId, list);
         });
       }
     } catch {
@@ -180,44 +182,40 @@ export function AdminWeeklyPreparationPage() {
       attendances: StudentWeeklyAttendance[];
     }> = [];
 
-    // If batch succeeded, assemble results instantly in memory
     if (weekRecordsByClass && weekRecordsByClass.size > 0) {
       for (const cls of classList) {
-        let enrolls = enrollsMap!.get(cls.classId);
-        if (!enrolls || enrolls.length === 0) {
+        let enrolls = enrollsMap.get(cls.classId);
+        if (!enrolls?.length) {
           enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
         }
         const recs = weekRecordsByClass.get(cls.classId) || [];
-        const attendances = buildWeeklyAttendanceRows(enrolls, recs);
         results.push({
           classItem: cls,
           className: String(cls.className || cls.classNumber || `شعبة ${cls.classId}`),
           classNumber: getClassNum(cls),
-          attendances,
+          attendances: buildWeeklyAttendanceRows(enrolls, recs),
         });
       }
       return results;
     }
 
-    // Fallback: Process classes in chunks of 5
     const chunkSize = 5;
     for (let i = 0; i < classList.length; i += chunkSize) {
       const chunk = classList.slice(i, i + chunkSize);
       const chunkResults = await Promise.all(
         chunk.map(async (cls) => {
           let enrolls = enrollsMap!.get(cls.classId);
-          if (!enrolls || enrolls.length === 0) {
+          if (!enrolls?.length) {
             enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
           }
           const recs = await schoolDataService
             .getAttendanceRecords(cls.classId, weekId)
             .catch(() => []);
-          const attendances = buildWeeklyAttendanceRows(enrolls, recs);
           return {
             classItem: cls,
             className: String(cls.className || cls.classNumber || `شعبة ${cls.classId}`),
             classNumber: getClassNum(cls),
-            attendances,
+            attendances: buildWeeklyAttendanceRows(enrolls, recs),
           };
         })
       );
@@ -227,18 +225,14 @@ export function AdminWeeklyPreparationPage() {
     return results;
   };
 
-  // Export 1: Single Grade Workbook (Stacked classes)
+  // Export Single Grade
   const handleExportCurrentGrade = async () => {
     if (!selectedWeek) {
-      toast.show('يرجى تحديد أسبوع دراسي أولاً', 'warning');
-      return;
-    }
-    if (selectedGradeTab === 0) {
-      await handleExportAllGrades();
+      toast.show('يرجى تحديد أسبوع دراسي أولاً.', 'warning');
       return;
     }
     if (activeGradeClasses.length === 0) {
-      toast.show(`لا توجد شعب مسجلة حالياً لـ ${activeGradeName}`, 'warning');
+      toast.show(`لا توجد شعب مسجلة حالياً لـ ${activeGradeName}.`, 'warning');
       return;
     }
 
@@ -246,41 +240,42 @@ export function AdminWeeklyPreparationPage() {
       setIsExportingGrade(true);
       toast.show(`جاري تجهيز كشوف ${activeGradeName}...`, 'info');
 
-      const targetWeek = selectedWeek;
-      const classesData = await fetchClassesWeeklyData(activeGradeClasses, targetWeek.attendanceWeekId);
-      const weekRange = `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
+      const classesData = await fetchClassesWeeklyData(
+        activeGradeClasses,
+        selectedWeek.attendanceWeekId
+      );
+      const weekRange = `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(
+        selectedWeek.endDate
+      )}`;
 
       await excelExportService.exportGradeWeeklyPreparation({
         gradeName: activeGradeName,
-        weekNumber: targetWeek.weekNumber,
+        weekNumber: selectedWeek.weekNumber,
         weekRange,
         academicYear: activeYear?.yearName || '1448-1449هـ',
         classesData,
       });
 
-      toast.show(`تم تصدير كشف ${activeGradeName} بنجاح!`, 'success');
+      toast.show(`تم تصدير كشف ${activeGradeName} بنجاح.`, 'success');
     } catch (err: any) {
       console.error('Grade Export Error:', err);
-      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف المرحلة', 'danger');
+      toast.show(err?.message || 'حدث خطأ أثناء تصدير كشف المرحلة.', 'danger');
     } finally {
       setIsExportingGrade(false);
     }
   };
 
-  // Export 2: All 3 Grades Unified Workbook (3 Worksheets)
+  // Export All 3 Grades
   const handleExportAllGrades = async () => {
     if (!selectedWeek) {
-      toast.show('يرجى تحديد أسبوع دراسي أولاً', 'warning');
+      toast.show('يرجى تحديد أسبوع دراسي أولاً.', 'warning');
       return;
     }
 
     try {
       setIsExportingAll(true);
-      toast.show('جاري تجهيز المصنف المجمع لجميع المراحل الثلاث (قد يستغرق بضع ثوانٍ)...', 'info');
+      toast.show('جاري تجهيز المصنف المجمع للمراحل الثلاث...', 'info');
 
-      const targetWeek = selectedWeek;
-
-      // 1. Fetch all enrollments once in bulk
       const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
       const enrollsMap = new Map<number, ClassEnrollment[]>();
       allEnrolls.forEach((item) => {
@@ -289,15 +284,28 @@ export function AdminWeeklyPreparationPage() {
         enrollsMap.set(item.classId, list);
       });
 
-      // 2. Fetch data sequentially per grade with internal batching
-      const g1Data = await fetchClassesWeeklyData(grade1Classes, targetWeek.attendanceWeekId, enrollsMap);
-      const g2Data = await fetchClassesWeeklyData(grade2Classes, targetWeek.attendanceWeekId, enrollsMap);
-      const g3Data = await fetchClassesWeeklyData(grade3Classes, targetWeek.attendanceWeekId, enrollsMap);
+      const g1Data = await fetchClassesWeeklyData(
+        grade1Classes,
+        selectedWeek.attendanceWeekId,
+        enrollsMap
+      );
+      const g2Data = await fetchClassesWeeklyData(
+        grade2Classes,
+        selectedWeek.attendanceWeekId,
+        enrollsMap
+      );
+      const g3Data = await fetchClassesWeeklyData(
+        grade3Classes,
+        selectedWeek.attendanceWeekId,
+        enrollsMap
+      );
 
-      const weekRange = `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
+      const weekRange = `${formatArabicDateShort(selectedWeek.startDate)} - ${formatArabicDateShort(
+        selectedWeek.endDate
+      )}`;
 
       await excelExportService.exportAllGradesWeeklyPreparation({
-        weekNumber: targetWeek.weekNumber,
+        weekNumber: selectedWeek.weekNumber,
         weekRange,
         academicYear: activeYear?.yearName || '1448-1449هـ',
         gradesData: [
@@ -307,224 +315,191 @@ export function AdminWeeklyPreparationPage() {
         ],
       });
 
-      toast.show('تم تصدير المصنف المتكامل بنجاح (يشمل 3 أوراق عمل للمراحل الثلاث)', 'success');
+      toast.show('تم تصدير المصنف المجمع (3 أوراق عمل) بنجاح.', 'success');
     } catch (err: any) {
       console.error('All Grades Export Error:', err);
-      toast.show(err?.message || 'حدث خطأ أثناء تصدير المصنف المجمع، يرجى المحاولة مرة أخرى', 'danger');
+      toast.show(err?.message || 'حدث خطأ أثناء تصدير المصنف المجمع.', 'danger');
     } finally {
       setIsExportingAll(false);
     }
   };
 
-  const isInitialLoading = isClassesLoading || isWeeksLoading;
+  const isLoading = isClassesLoading || isWeeksLoading || isEnrollmentsLoading || isRecordsLoading;
+
+  const gradeTabs: Array<{ value: GradeTab; label: string; count: number }> = [
+    { value: 0, label: 'جميع المراحل', count: classes.length },
+    { value: 1, label: 'الأول الثانوي', count: grade1Classes.length },
+    { value: 2, label: 'الثاني الثانوي', count: grade2Classes.length },
+    { value: 3, label: 'الثالث الثانوي', count: grade3Classes.length },
+  ];
+
+  const previewTitle = activePreviewClass
+    ? activePreviewClass.className || `شعبة ${activePreviewClass.classId}`
+    : activeGradeName;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
+    <main dir="rtl" className="min-w-0 space-y-4 pb-8 text-[#20362B] dark:text-[#EAF3ED]">
+      {/* 1. Compact Header & Actions */}
+      <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] flex items-center justify-center font-bold">
-              <CalendarCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#17252B] dark:text-[#F0F4F6]">التحضير الأسبوعي للمراحل الدراسية</h1>
-              <p className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
-                تصدير وطباعة كشوف التحضير الأسبوعية المعتمدة للمراحل الدراسية الثلاث ومصنف الحضور المتكامل
-              </p>
-            </div>
-          </div>
+          <h1 className="text-xl font-black tracking-tight text-[#142B22] dark:text-[#F0F7F3]">
+            التحضير الأسبوعي
+          </h1>
+          <p className="mt-0.5 text-xs text-[#647C70] dark:text-[#9DB5A8]">
+            {selectedWeek
+              ? `الأسبوع ${selectedWeek.weekNumber} (${formatArabicDateShort(
+                  selectedWeek.startDate
+                )} - ${formatArabicDateShort(selectedWeek.endDate)})`
+              : 'معاينة وتصدير كشوف التحضير الأسبوعية'}
+          </p>
         </div>
 
-        {/* Global Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
-            size="md"
-            icon={<Printer className="w-4 h-4" />}
+            size="sm"
+            icon={<Printer className="h-3.5 w-3.5" />}
             onClick={() => window.print()}
-            className="text-xs font-bold"
+            className="h-9 rounded-xl border-[#DCE7E2] bg-white text-xs font-bold text-[#294337] hover:bg-[#F3F7F4] dark:border-[#293E35] dark:bg-[#17251F] dark:text-[#E2F0E7]"
           >
-            طباعة الكشف
+            طباعة
           </Button>
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            icon={<Download className="w-4 h-4" />}
-            onClick={handleExportCurrentGrade}
-            isLoading={isExportingGrade}
-            className="text-xs font-bold"
-          >
-            {selectedGradeTab === 0 ? 'تصدير كشف المدرسة (Excel)' : `تصدير ${activeGradeName} (Excel)`}
-          </Button>
+          {selectedGradeTab > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              icon={<Download className="h-3.5 w-3.5 text-[#176B4B] dark:text-[#6DD39A]" />}
+              onClick={handleExportCurrentGrade}
+              isLoading={isExportingGrade}
+              className="h-9 rounded-xl border-[#CFE2D8] bg-[#F4FAF7] text-xs font-bold text-[#176B4B] hover:bg-[#E7F3EE] dark:border-[#28573D] dark:bg-[#183329] dark:text-[#9BD5B7]"
+            >
+              تصدير {activeGradeName}
+            </Button>
+          )}
 
           <Button
             type="button"
             variant="primary"
-            size="md"
-            icon={<FileSpreadsheet className="w-4 h-4" />}
+            size="sm"
+            icon={<FileSpreadsheet className="h-4 w-4" />}
             onClick={handleExportAllGrades}
             isLoading={isExportingAll}
-            className="text-xs font-bold shadow-xs bg-[#176B3A] hover:bg-[#135830] dark:bg-[#1E7D45] dark:hover:bg-[#176B3A] border-[#135830] dark:border-[#1E7D45]"
+            className="h-9 rounded-xl bg-[#176B4B] text-xs font-bold text-white hover:bg-[#10583C] border-transparent dark:bg-[#23845B] dark:hover:bg-[#2A9669]"
           >
-            تصدير جميع المراحل (مصنف 3 أوراق عمل)
+            تصدير جميع المراحل (Excel)
           </Button>
         </div>
-      </div>
+      </header>
 
-      {/* Grade Selector Tabs & Week Selector */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-[#182226] p-4 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
-        {/* Grade Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedGradeTab(0);
-              setPreviewClassId(null);
-            }}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedGradeTab === 0
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <span>جميع طلاب المدرسة</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 0 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
-              كافة الشعب ({classes.length})
-            </span>
-          </button>
+      {/* 2. Unified Control Bar (Grade + Week + Class Pills) */}
+      <section className="rounded-2xl border border-[#DCE7E2] bg-white p-3.5 shadow-xs dark:border-[#293E35] dark:bg-[#17251F] sm:p-4 space-y-3 print:hidden">
+        {/* Row 1: Grade Tabs & Week Selector */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-1 overflow-x-auto rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
+            {gradeTabs.map((tab) => {
+              const active = selectedGradeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setSelectedGradeTab(tab.value);
+                    setPreviewClassId(0);
+                  }}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    active
+                      ? 'bg-white text-[#176B4B] shadow-2xs dark:bg-[#1F352B] dark:text-[#9BD5B7]'
+                      : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] tabular-nums dark:bg-white/10">
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedGradeTab(1);
-              setPreviewClassId(null);
-            }}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedGradeTab === 1
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <span>الأول الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 1 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
-              {grade1Classes.length} شعب
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedGradeTab(2);
-              setPreviewClassId(null);
-            }}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedGradeTab === 2
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <span>الثاني الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 2 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
-              {grade2Classes.length} شعب
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedGradeTab(3);
-              setPreviewClassId(null);
-            }}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-              selectedGradeTab === 3
-                ? 'bg-[#245B63] dark:bg-[#2D727B] text-white shadow-xs'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#17252B] dark:hover:text-[#F0F4F6]'
-            }`}
-          >
-            <span>الثالث الثانوي</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${selectedGradeTab === 3 ? 'bg-white/20 text-white' : 'bg-[#DCE3E6] dark:bg-[#28373D] text-[#5F6B73] dark:text-[#9BAAB1]'}`}>
-              {grade3Classes.length} شعب
-            </span>
-          </button>
+          <div className="flex items-center gap-2 lg:w-72">
+            <Calendar className="h-4 w-4 shrink-0 text-[#71837A] hidden sm:block" />
+            <div className="min-w-0 flex-1">
+              <AttendanceWeekSelector
+                weeks={weeks}
+                selectedWeekId={effectiveWeekId || null}
+                onSelectWeek={setSelectedWeekId}
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Week Selector */}
-        <div className="w-full md:w-72">
-          <AttendanceWeekSelector
-            weeks={weeks}
-            selectedWeekId={effectiveWeekId || null}
-            onSelectWeek={setSelectedWeekId}
-          />
-        </div>
-      </div>
+        {/* Row 2: Class Quick-Select Pills */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-[#EDF2EF] pt-3 dark:border-[#263B31]">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#647C70] dark:text-[#9DB5A8] ml-1">
+            <Layers className="h-3.5 w-3.5" />
+            الشعبة:
+          </span>
 
-      {/* Class Selector Pills within Grade */}
-      <div className="bg-white dark:bg-[#182226] p-3 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs transition-colors">
-        <div className="flex items-center gap-2 mb-2">
-          <Layers className="w-4 h-4 text-[#245B63] dark:text-[#388B96]" />
-          <span className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">اختر الشعبة للمعاينة المباشرة:</span>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
-            onClick={() => setPreviewClassId(null)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              !previewClassId || previewClassId === 0
-                ? 'bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] border-2 border-[#245B63] dark:border-[#388B96]'
-                : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33]'
+            aria-pressed={previewClassId === 0}
+            onClick={() => setPreviewClassId(0)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+              previewClassId === 0
+                ? 'bg-[#176B4B] text-white dark:bg-[#23845B]'
+                : 'bg-[#F4F7F5] text-[#587268] hover:bg-[#E8F1EC] dark:bg-[#1B2C23] dark:text-[#9DB5A8] dark:hover:bg-[#233A2E]'
             }`}
           >
-            {selectedGradeTab === 0 ? 'جميع طلاب المدرسة (كافة الشعب)' : `جميع شعب ${activeGradeName}`}
+            الكل
           </button>
-          {activeGradeClasses.map((c) => (
-            <button
-              key={c.classId}
-              type="button"
-              onClick={() => setPreviewClassId(c.classId)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                effectivePreviewClassId === c.classId
-                  ? 'bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] border-2 border-[#245B63] dark:border-[#388B96]'
-                  : 'bg-[#F5F7F8] dark:bg-[#151E22] text-[#5F6B73] dark:text-[#9BAAB1] border border-[#DCE3E6] dark:border-[#28373D] hover:bg-[#EEF2F3] dark:hover:bg-[#212E33]'
-              }`}
-            >
-              {c.className || `شعبة ${c.classId}`}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* Preview Section */}
-      {isInitialLoading || isEnrollmentsLoading || isRecordsLoading ? (
-        <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] p-12 shadow-xs">
-          <LoadingState message="جاري تجهيز جدول التحضير الأسبوعي للمعاينة..." />
+          {activeGradeClasses.map((c) => {
+            const active = previewClassId === c.classId;
+            return (
+              <button
+                key={c.classId}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setPreviewClassId(c.classId)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                  active
+                    ? 'bg-[#176B4B] text-white dark:bg-[#23845B]'
+                    : 'bg-[#F4F7F5] text-[#587268] hover:bg-[#E8F1EC] dark:bg-[#1B2C23] dark:text-[#9DB5A8] dark:hover:bg-[#233A2E]'
+                }`}
+              >
+                {c.className || `شعبة ${c.classId}`}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 3. Preview Sheet */}
+      {isLoading ? (
+        <div className="rounded-2xl border border-[#DCE7E2] bg-white p-12 shadow-xs dark:border-[#293E35] dark:bg-[#17251F]">
+          <LoadingState message="جاري تجهيز جدول التحضير الأسبوعي..." />
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#182226] p-5 rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs space-y-4 transition-colors">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EEF2F3] dark:border-[#28373D] pb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                  معاينة التحضير:{' '}
-                  {effectivePreviewClassId === 0
-                    ? 'جميع طلاب المدرسة (كافة الشعب)'
-                    : activePreviewClass?.className || `شعبة ${effectivePreviewClassId}`}
+        <section className="rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs dark:border-[#293E35] dark:bg-[#17251F] sm:p-5 space-y-4 print:border-0 print:p-0 print:shadow-none">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EDF2EF] pb-3 dark:border-[#263B31]">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                {previewTitle}
+              </h2>
+              {selectedWeek && (
+                <span className="text-xs text-[#647C70] dark:text-[#9DB5A8]">
+                  · الأسبوع {selectedWeek.weekNumber}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded bg-[#E8F1F1] dark:bg-[#19383E] text-[#245B63] dark:text-[#388B96] font-bold">
-                  {effectivePreviewClassId === 0 ? 'كافة المراحل' : activeGradeName}
-                </span>
-              </div>
-              <span className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] font-mono mt-0.5 block">
-                الأسبوع {selectedWeek?.weekNumber} ({formatArabicDateShort(selectedWeek?.startDate)} - {formatArabicDateShort(selectedWeek?.endDate)})
-              </span>
+              )}
             </div>
 
-            <div className="text-xs text-[#5F6B73] dark:text-[#9BAAB1] font-mono bg-[#F5F7F8] dark:bg-[#151E22] px-3 py-1.5 rounded-lg border border-[#DCE3E6] dark:border-[#28373D]">
-              {previewEnrollments.length} طالب مقيد
-            </div>
+            <span className="rounded-lg bg-[#F2F6F4] px-2.5 py-1 font-mono text-xs font-bold text-[#31463A] dark:bg-[#1B2C23] dark:text-[#D8E8DE]">
+              {previewEnrollments.length} طالب
+            </span>
           </div>
 
           <AttendanceTable
@@ -532,9 +507,9 @@ export function AdminWeeklyPreparationPage() {
             weekStartDate={selectedWeek?.startDate}
             interactive={false}
           />
-        </div>
+        </section>
       )}
-    </div>
+    </main>
   );
 }
 

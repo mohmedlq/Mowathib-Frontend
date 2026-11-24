@@ -9,8 +9,7 @@ import {
   useAttendanceMatrix,
 } from '../../../attendance';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
-import { History, Printer, Eye } from 'lucide-react';
-import { Button } from '../../../../shared/components/ui/Button';
+import { History, Eye } from 'lucide-react';
 import { currentWeek } from '@/shared/services/schoolSettingsService';
 import { formatArabicDateShort } from '../../../../shared/utils/date';
 
@@ -32,10 +31,6 @@ export function RepresentativeAttendanceHistoryPage() {
   } = useAttendanceMatrix(classId, selectedWeekId);
 
   const selectedWeek = weeks.find((w) => w.attendanceWeekId === selectedWeekId) || weeks[0];
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   return (
     <div className="space-y-6">

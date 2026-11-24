@@ -28,7 +28,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
-import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 import type { Representative, AttendanceClerk } from '../../../../shared/types';
@@ -806,7 +806,7 @@ export function AdminRepresentativesPage() {
           </div>
 
           {isClerksLoading ? (
-            <div className={`${SURFACE} p-10 text-center`}><MuwathibTableLoading message="جاري تحميل حسابات مسجلي الحضور..." /></div>
+            <div className={`${SURFACE} p-10 text-center`}><MuwathibLoading message="جاري تحميل حسابات مسجلي الحضور..." /></div>
           ) : clerks.length === 0 ? (
             <EmptyState
               icon={<UserCheck className="h-6 w-6" />}
@@ -933,7 +933,7 @@ export function AdminRepresentativesPage() {
           </div>
 
           {isRepsLoading ? (
-            <div className={`${SURFACE} p-10 text-center`}><MuwathibTableLoading message="جاري تحميل حسابات العرفاء والنواب..." /></div>
+            <div className={`${SURFACE} p-10 text-center`}><MuwathibLoading message="جاري تحميل حسابات العرفاء والنواب..." /></div>
           ) : reps.length === 0 ? (
             <EmptyState
               icon={<Users2 className="h-6 w-6" />}

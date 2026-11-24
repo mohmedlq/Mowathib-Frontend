@@ -20,7 +20,7 @@ import {
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
 import { Input } from '../../../../shared/components/ui/Input';
-import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
+import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 import { useNotifications } from '../../../notifications';
 
@@ -466,7 +466,7 @@ export function AdminStudentsPage() {
 
         {isLoading ? (
           <div className="p-8 sm:p-12">
-            <MuwathibTableLoading colSpan={8} message="جاري استرجاع سجلات الطلاب المقيدين..." />
+            <MuwathibLoading message="جاري استرجاع سجلات الطلاب المقيدين..." />
           </div>
         ) : enrollments.length === 0 ? (
           <div className="p-10 sm:p-14 text-center">

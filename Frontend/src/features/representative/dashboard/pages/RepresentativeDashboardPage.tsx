@@ -1,671 +1,378 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Calendar,
+  CalendarCheck,
+  CalendarCheck2,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  GraduationCap,
+  Info,
+  User,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
+
 import { useAuth } from '../../../auth';
 import { schoolDataService } from '../../../../shared/services/schoolDataService';
 import { useAttendanceMatrix } from '../../../attendance';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
-// import { Button } from '../../../../shared/components/ui/Button';
-import { PrintClassNumberModal } from '../../components/PrintClassNumberModal';
 import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
-// import type { CardRequest } from '../../../../shared/types';
-import {
-  SCHOOL_DAYS,
-} from '../../../../shared/types';
-import {
-  CalendarCheck,
-  CalendarCheck2,
-  Users,
-  // CreditCard,
-  CheckCircle2,
-  ChevronLeft,
-  GraduationCap,
-  UserCheck,
-  Sparkles,
-  User,
-  AlertCircle,
-  // Clock,
-  ArrowLeft,
-  Calendar,
-} from 'lucide-react';
+import { SCHOOL_DAYS } from '../../../../shared/types';
 
 export function RepresentativeDashboardPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const classId = user?.classId || 105;
+  const classId = user?.classId ?? 0;
   const isMainRep = user?.role === 'Representative';
   const className =
-    user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : `شعبة ${classId}`);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    user?.className || (user?.classNumber ? `شعبة ${user.classNumber}` : 'الشعبة الدراسية');
 
-  // Saudi School Day (Sunday = 1 ... Thursday = 5)
+  // Saudi School Day (Sunday = 1 ... Thursday = 5; weekends default to Sunday)
   const todayDayNumber = useMemo(() => {
-    const jsDay = new Date().getDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
-    if (jsDay >= 0 && jsDay <= 4) {
-      return jsDay + 1;
-    }
-    return 1; // Default to Sunday on weekends
+    const jsDay = new Date().getDay();
+    return jsDay >= 0 && jsDay <= 4 ? jsDay + 1 : 1;
   }, []);
 
-  const todaySchoolDay = useMemo(() => {
-    return SCHOOL_DAYS.find((d) => d.dayNumber === todayDayNumber) || SCHOOL_DAYS[0];
-  }, [todayDayNumber]);
+  const todaySchoolDay = useMemo(
+    () => SCHOOL_DAYS.find((d) => d.dayNumber === todayDayNumber) || SCHOOL_DAYS[0],
+    [todayDayNumber]
+  );
 
-  // Formatted date in Arabic
   const formattedTodayDate = useMemo(() => {
     try {
-      const now = new Date();
       return new Intl.DateTimeFormat('ar-SA', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
-      }).format(now);
+      }).format(new Date());
     } catch {
       return todaySchoolDay.nameAr;
     }
   }, [todaySchoolDay]);
 
-  // Fetch attendance weeks with stable cache
   const { data: weeks = [], isLoading: isLoadingWeeks } = useQuery({
     queryKey: ['weeks'],
     queryFn: () => schoolDataService.getAttendanceWeeks(),
-    staleTime: 1000 * 60 * 30, // 30 minutes
+    staleTime: 1000 * 60 * 30,
   });
 
-  const activeWeek = useMemo(() => {
-    return resolveDefaultAttendanceWeek(weeks);
-  }, [weeks]);
-
+  const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks) || weeks[0], [weeks]);
   const effectiveWeekId = activeWeek?.attendanceWeekId;
 
-  // Use the attendance matrix hook to fetch data
   const {
     enrollments,
     records,
     isLoading: isLoadingAttendance,
   } = useAttendanceMatrix(classId, effectiveWeekId);
 
-  /* =========================================================================
-   * مؤجل حتى إشعار آخر: جلب تفاصيل البطاقات وطلبات بطاقات الاستئذان
-   * =========================================================================
-  // Fetch Class details (for total bathroom cards count)
-  const { data: classItem, isLoading: isLoadingClass } = useQuery({
-    queryKey: ['class_details', classId],
-    queryFn: async () => {
-      const classes = await schoolDataService.getClasses();
-      return classes.find((c) => c.classId === classId);
-    },
-    enabled: !!classId,
-  });
+  // Per-day and today's attendance statistics (unique students)
+  const stats = useMemo(() => {
+    const daysStatus: Record<
+      number,
+      { isRecorded: boolean; absentCount: number; recordedCount: number }
+    > = {};
 
-  // Fetch card requests for badge counters
-  const { data: requests = [], isLoading: isLoadingRequests } = useQuery<CardRequest[]>({
-    queryKey: ['card_requests'],
-    queryFn: () => schoolDataService.getCardRequests(),
-  });
+    for (const day of SCHOOL_DAYS) {
+      const dayRecords = records.filter((r) => r.dayNumber === day.dayNumber);
+      const uniqueAbsents = new Set(
+        dayRecords
+          .filter((r) => r.status === 'Absent' || r.status === 'Discontinued')
+          .map((r) => r.enrollmentId)
+      );
 
-  const myRequests = useMemo(() => {
-    return requests.filter(
-      (r) =>
-        r.representativeUsername === user?.username ||
-        r.className?.toString()?.includes(String(classId))
-    );
-  }, [requests, user?.username, classId]);
-
-  const pendingRequestsCount = useMemo(() => {
-    return myRequests.filter((r) => r.status === 'Pending').length;
-  }, [myRequests]);
-  ========================================================================= */
-
-  // Calculate attendance statistics for today and school days this week
-  const todayStats = useMemo(() => {
-    const todayRecords = records.filter((r) => r.dayNumber === todayDayNumber);
-    const presentRecords = todayRecords.filter((r) => r.status === 'Present');
-    const absentRecords = todayRecords.filter(
-      (r) => r.status === 'Absent' || r.status === 'Discontinued'
-    );
-    const uniqueAbsentEnrollmentIds = new Set(absentRecords.map((r) => r.enrollmentId));
-
-    // Per day status for this week
-    const daysStatus: Record<number, { recordedCount: number; absentCount: number; presentCount: number }> = {};
-    SCHOOL_DAYS.forEach((day) => {
-      const dRecords = records.filter((r) => r.dayNumber === day.dayNumber);
-      const dAbsents = dRecords.filter((r) => r.status === 'Absent' || r.status === 'Discontinued');
-      const dPresents = dRecords.filter((r) => r.status === 'Present');
       daysStatus[day.dayNumber] = {
-        recordedCount: dRecords.length,
-        absentCount: dAbsents.length,
-        presentCount: dPresents.length,
+        isRecorded: dayRecords.length > 0,
+        absentCount: uniqueAbsents.size,
+        recordedCount: dayRecords.length,
       };
-    });
+    }
+
+    const todayStatus = daysStatus[todayDayNumber] ?? {
+      isRecorded: false,
+      absentCount: 0,
+      recordedCount: 0,
+    };
+
+    const completedDaysCount = SCHOOL_DAYS.filter(
+      (d) => daysStatus[d.dayNumber]?.isRecorded
+    ).length;
 
     return {
-      totalRecordedToday: todayRecords.length,
-      presentStudentsToday: presentRecords.length,
-      absentStudentsToday: uniqueAbsentEnrollmentIds.size,
+      todayStatus,
       daysStatus,
+      completedDaysCount,
     };
   }, [records, todayDayNumber]);
 
-  const isInitialLoading = isLoadingWeeks && isLoadingAttendance;
-  // && isLoadingClass && isLoadingRequests;
+  const isInitialLoading = isLoadingWeeks || (Boolean(effectiveWeekId) && isLoadingAttendance);
 
   if (isInitialLoading) {
     return (
-      <div className="min-h-[500px] flex items-center justify-center bg-white dark:bg-[#122B23] rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] p-8 shadow-xs">
-        <MuwathibLoading message="جاري تجهيز لوحة متابعة الشعبة والبيانات المدرسية..." />
+      <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-[#DCE7E2] bg-white p-8 dark:border-[#293E35] dark:bg-[#17251F]">
+        <MuwathibLoading message="جاري تحميل بيانات الشعبة..." />
       </div>
     );
   }
 
+  const isTodayRecorded = stats.todayStatus.isRecorded;
+  const todayAbsents = stats.todayStatus.absentCount;
+
   return (
-    <div className="space-y-6">
-      {/* Print Class Number Modal */}
-      <PrintClassNumberModal
-        isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
-      />
-
-      {/* Hero Welcome Header */}
-      <div className="bg-white dark:bg-[#122B23] p-5 sm:p-6 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-xl sm:text-2xl font-black text-[#122B23] dark:text-[#F4F8F6] tracking-tight">
-              أهلاً بك، {user?.fullName || user?.username}
-            </h1>
-            <span className="text-xs px-3 py-1 rounded-full bg-[#0B5D43] text-white font-bold shadow-2xs">
-              {isMainRep ? 'عريف الصف الأساسي' : 'نائب عريف الصف'}
+    <main dir="rtl" className="min-w-0 space-y-5 pb-6 text-[#20362B] dark:text-[#EAF3ED]">
+      {/* 1. Compact Header */}
+      <header className="flex flex-col justify-between gap-2 border-b border-[#DCE7E2] pb-4 dark:border-[#263B31] sm:flex-row sm:items-end">
+        <div>
+          <h1 className="text-xl font-black tracking-tight text-[#142B22] dark:text-[#F0F7F3] sm:text-2xl">
+            أهلاً بك، {user?.fullName || user?.username}
+          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[#647C70] dark:text-[#9DB5A8]">
+            <span className="inline-flex items-center gap-1.5 font-medium">
+              <Calendar className="h-3.5 w-3.5 text-[#176B4B] dark:text-[#6DD39A]" />
+              {formattedTodayDate}
             </span>
-            <span className="text-xs px-3 py-1 rounded-full bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] font-bold border border-[#D8E5DF] dark:border-[#1E4638]">
-              {className}
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-[#718A80] dark:text-[#A3C7B9] flex-wrap">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Calendar className="w-3.5 h-3.5 text-[#0B5D43] dark:text-[#3E9B78]" />
-              <span>{formattedTodayDate}</span>
-            </span>
-            <span className="text-[#D8E5DF] dark:text-[#1E4638]">•</span>
-            <span className="font-bold text-[#122B23] dark:text-[#F4F8F6]">
-              {activeWeek?.weekNumber ? `الأسبوع ${activeWeek.weekNumber}` : 'الأسبوع الأول'}
-            </span>
-            <span className="text-[#D8E5DF] dark:text-[#1E4638]">•</span>
-            <span className="text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-              {todaySchoolDay.nameAr}
-            </span>
+            {activeWeek?.weekNumber && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-bold text-[#20362B] dark:text-[#EAF3ED]">
+                  الأسبوع {activeWeek.weekNumber}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Quick Header Buttons 
-        <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            icon={<Printer className="w-4 h-4" />}
-            onClick={() => setIsPrintModalOpen(true)}
-            className="font-bold text-xs"
-          >
-            طباعة لافتة الشعبة
-          </Button>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-[#D9E7DE] bg-[#F1F7F3] px-3 py-1.5 text-xs font-bold text-[#176B4B] dark:border-[#315540] dark:bg-[#1B3324] dark:text-[#A4D7B9]">
+          {className} · {isMainRep ? 'العريف الأساسي' : 'نائب العريف'}
+        </span>
+      </header>
 
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            icon={<CalendarCheck2 className="w-4 h-4 ml-1" />}
-            onClick={() => navigate('/representative/weekly-attendance')}
-            className="font-bold text-xs"
-          >
-            التحضير الأسبوعي
-          </Button>
-        </div>
-        */}
-      </div>
-
-      {/* Primary Action Card: Daily Attendance Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0B5D43] via-[#0E6C4E] to-[#147D5C] text-white p-6 sm:p-7 shadow-sm border border-[#0B5D43]/20">
-        {/* Subtle decorative circles */}
-        <div className="absolute top-0 left-0 -translate-x-12 -translate-y-12 w-48 h-48 bg-white/10 rounded-full blur-xl pointer-events-none" />
-        <div className="absolute bottom-0 right-0 translate-x-10 translate-y-10 w-40 h-40 bg-[#3E9B78]/20 rounded-full blur-lg pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-bold text-[#E8F5F0]">
-              <Sparkles className="w-3.5 h-3.5 text-[#A3C7B9]" />
-              <span>المهمة الرئيسية لعريف الشعبة</span>
+      {/* 2. Primary Focus Card: Today's Attendance Status & CTA */}
+      <section
+        aria-label="رصد حضور اليوم"
+        className="rounded-2xl border border-[#1E4B39] bg-[#0F2C21] p-5 text-white shadow-xs sm:p-6"
+      >
+        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#9BE3B8]">
+              {isTodayRecorded ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>تم رصد حضور يوم {todaySchoolDay.nameAr}</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="h-4 w-4 text-[#F6CA7A]" />
+                  <span className="text-[#F6CA7A]">
+                    بانتظار رصد حضور يوم {todaySchoolDay.nameAr}
+                  </span>
+                </>
+              )}
             </div>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              رصد الحضور والغياب اليومي
+
+            <h2 className="text-xl font-black tracking-tight sm:text-2xl">
+              رصد الحضور اليومي — {className}
             </h2>
-            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              قم بتحضير طلاب <span className="font-bold text-white underline decoration-[#3E9B78]">{className}</span> وتوثيق حالات الحضور والغياب والانقطاع مباشرة لتصل لسجلات الإدارة المدرسية فورياً.
+
+            <p className="max-w-xl text-xs leading-6 text-[#C7E2D3] sm:text-sm">
+              {isTodayRecorded
+                ? todayAbsents > 0
+                  ? `تم تسجيل ${todayAbsents} طالب غائب اليوم من أصل ${enrollments.length} طالب. يمكنك مراجعة أو تعديل السجل في أي وقت.`
+                  : `جميع طلاب الشعبة (${enrollments.length} طالب) حاضرون حتى الآن. يمكنك مراجعة الحصص أو التعديل عند الحاجة.`
+                : `ابدأ بتحضير طلاب الشعبة (${enrollments.length} طالب) لتصل حالات الحضور والغياب مباشرة إلى إدارة المدرسة.`}
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={() => navigate(`/representative/daily-attendance?day=${todayDayNumber}`)}
-              className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white text-[#0B5D43] hover:bg-[#F4F8F6] text-sm font-black transition-all shadow-md hover:shadow-lg active:scale-98 cursor-pointer"
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+            <Link
+              to={`/representative/daily-attendance?day=${todayDayNumber}`}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-black text-[#0B4A34] transition-colors hover:bg-[#EAF5EE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <CalendarCheck className="w-5 h-5 text-[#0B5D43]" />
-              <span>بدء رصد حضور اليوم</span>
-              <ArrowLeft className="w-4 h-4 rtl:rotate-0" />
-            </button>
+              <CalendarCheck className="h-4 w-4" />
+              <span>{isTodayRecorded ? 'مراجعة وتعديل اليوم' : 'بدء رصد حضور اليوم'}</span>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+
+            {isTodayRecorded && todayAbsents > 0 && (
+              <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-bold text-[#F9B4B4] tabular-nums">
+                <UserX className="h-3.5 w-3.5" />
+                <span>{todayAbsents} غياب مسجل اليوم</span>
+              </div>
+            )}
           </div>
         </div>
+      </section>
 
-        {/* Weekly School Days Quick Bar Strip */}
-        <div className="relative z-10 mt-6 pt-5 border-t border-white/20">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-            <span className="text-xs font-bold text-emerald-100 flex items-center gap-1.5">
-              <span>أيام الأسبوع الدراسي ({activeWeek?.weekNumber ? `الأسبوع ${activeWeek.weekNumber}` : 'الأسبوع الحالي'}):</span>
-            </span>
-            <span className="text-[11px] text-emerald-200">
-              اضغط على أي يوم للانتقال الفوري لرصد حضوره
-            </span>
+      {/* 3. Weekly Progress Strip (Sun - Thu) */}
+      <section
+        aria-label="أيام الأسبوع الدراسي"
+        className="rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs dark:border-[#293E35] dark:bg-[#17251F] sm:p-5"
+      >
+        <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+              أيام الأسبوع {activeWeek?.weekNumber ? `(الأسبوع ${activeWeek.weekNumber})` : ''}
+            </h2>
+            <p className="mt-0.5 text-[11px] text-[#647C70] dark:text-[#9DB5A8]">
+              اضغط على أي يوم للانتقال مباشرة إلى شاشة رصد الحضور
+            </p>
           </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-            {SCHOOL_DAYS.map((day) => {
-              const status = todayStats.daysStatus[day.dayNumber];
-              const isRecorded = status && status.recordedCount > 0;
-              const hasAbsents = status && status.absentCount > 0;
-              const isToday = day.dayNumber === todayDayNumber;
-
-              return (
-                <button
-                  key={day.dayNumber}
-                  type="button"
-                  onClick={() =>
-                    navigate(
-                      `/representative/daily-attendance?day=${day.dayNumber}`
-                    )
-                  }
-                  className={`p-3 rounded-xl border backdrop-blur-xs flex flex-col items-center justify-center gap-1.5 transition-all text-center group cursor-pointer active:scale-95 ${
-                    isToday
-                      ? 'bg-white/25 border-white/40 ring-2 ring-white/30'
-                      : 'bg-white/10 hover:bg-white/20 border-white/15'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-black text-white group-hover:text-emerald-100">
-                      {day.nameAr}
-                    </span>
-                    {isToday && (
-                      <span className="text-[9px] bg-white/30 px-1.5 py-0.2 rounded font-bold">اليوم</span>
-                    )}
-                  </div>
-
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                      isRecorded
-                        ? hasAbsents
-                          ? 'bg-amber-400/30 text-amber-200'
-                          : 'bg-emerald-400/30 text-emerald-200'
-                        : 'bg-white/10 text-emerald-100'
-                    }`}
-                  >
-                    {isRecorded
-                      ? hasAbsents
-                        ? `${status.absentCount} غياب`
-                        : 'اكتمل الرصد'
-                      : 'جاهز للرصد'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        {/* Total Class Students */}
-        <div
-          onClick={() => navigate('/representative/students')}
-          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              طلاب الشعبة
-            </span>
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
-              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
-              {enrollments.length}
-            </span>
-            <span className="text-[10px] sm:text-[11px] text-[#0B5D43] dark:text-[#3E9B78] font-bold flex items-center gap-1 mt-1 truncate">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>القيد نشط ومكتمل</span>
-            </span>
-          </div>
-          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-            <span>عرض الطلاب</span>
-            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
-          </div>
-        </div>
-
-        {/* Today's Attendance Overview */}
-        <div
-          onClick={() => navigate('/representative/daily-attendance')}
-          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              حضور اليوم
-            </span>
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center border border-[#D8E5DF] dark:border-[#1E4638]">
-              <CalendarCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-[#122B23] dark:text-[#F4F8F6] font-mono block">
-              {todayStats.absentStudentsToday}{' '}
-              <span className="text-xs font-normal text-[#718A80] dark:text-[#A3C7B9]">
-                غياب
-              </span>
-            </span>
-            <span className="text-[10px] sm:text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block truncate">
-              {todayStats.totalRecordedToday > 0
-                ? `${todayStats.totalRecordedToday} سجل حضور`
-                : 'لم يتم الرصد بعد'}
-            </span>
-          </div>
-          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-            <span>الانتقال للرصد</span>
-            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
-          </div>
-        </div>
-
-        {/* مؤجل حتى إشعار آخر: بطاقات الاستئذان وطلبات البطاقات
-        <div
-          onClick={() => navigate('/representative/card-requests')}
-          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              بطاقات الاستئذان
-            </span>
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#FFF8EB] dark:bg-[#332514] text-[#B45309] dark:text-[#FBBF24] flex items-center justify-center border border-[#FDE68A]/60 dark:border-[#78350F]">
-              <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-[#B45309] dark:text-[#FBBF24] font-mono block">
-              {classItem?.totalCards || 3}{' '}
-              <span className="text-xs font-normal text-[#718A80] dark:text-[#A3C7B9]">
-                بطاقات
-              </span>
-            </span>
-            <span className="text-[10px] sm:text-[11px] text-[#B45309] dark:text-[#FBBF24] font-medium mt-1 block truncate">
-              العهدة المعتمدة لدى العريف
-            </span>
-          </div>
-          <div className="mt-3 pt-2.5 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-            <span>طلب بطاقة بديلة</span>
-            <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-          </div>
-        </div>
-
-        <div
-          onClick={() => navigate('/representative/card-requests')}
-          className="bg-white dark:bg-[#122B23] p-3.5 sm:p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] shadow-xs hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-sm transition-all cursor-pointer group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[#718A80] dark:text-[#A3C7B9] font-medium">
-              طلبات البطاقات
-            </span>
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#EFF6FF] dark:bg-[#172554] text-[#1D4ED8] dark:text-[#60A5FA] flex items-center justify-center border border-[#BFDBFE]/60 dark:border-[#1E40AF]">
-              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-black text-[#1D4ED8] dark:text-[#60A5FA] font-mono block">
-              {myRequests.length}
-            </span>
-            <span className="text-[10px] sm:text-[11px] text-[#718A80] dark:text-[#A3C7B9] font-medium mt-1 block truncate">
-              {pendingRequestsCount > 0
-                ? `${pendingRequestsCount} قيد المراجعة`
-                : 'لا توجد طلبات معلقة'}
-            </span>
-          </div>
-          <div className="mt-2.5 pt-2 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-xs font-semibold text-[#0B5D43] dark:text-[#3E9B78]">
-            <span>سجل الطلبات</span>
-            <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
-          </div>
-        </div>
-        */}
-      </div>
-
-      {/* Quick Action Navigation Grid */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-black text-[#122B23] dark:text-[#F4F8F6] tracking-tight">
-            بوابة الخدمات والمهام السريعة
-          </h2>
-          <span className="text-xs text-[#718A80] dark:text-[#A3C7B9]">
-            كل ما تحتاجه لإدارة حضور الشعبة
+          <span className="rounded-lg bg-[#F2F6F4] px-2.5 py-1 text-[11px] font-bold tabular-nums text-[#31463A] dark:bg-[#1B2C23] dark:text-[#D8E8DE]">
+            أُنجز {stats.completedDaysCount} من {SCHOOL_DAYS.length} أيام
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Daily Attendance Action Card */}
-          <div
-            onClick={() => navigate('/representative/daily-attendance')}
-            className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#E8F5F0] dark:bg-[#1A3B31] text-[#0B5D43] dark:text-[#3E9B78] flex items-center justify-center font-bold">
-                    <CalendarCheck className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                    رصد الحضور اليومي
-                  </h3>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+          {SCHOOL_DAYS.map((day) => {
+            const status = stats.daysStatus[day.dayNumber];
+            const isRecorded = Boolean(status?.isRecorded);
+            const absentCount = status?.absentCount ?? 0;
+            const isToday = day.dayNumber === todayDayNumber;
+
+            return (
+              <Link
+                key={day.dayNumber}
+                to={`/representative/daily-attendance?day=${day.dayNumber}`}
+                className={`group flex flex-col justify-between gap-2.5 rounded-xl border p-3 transition-colors ${
+                  isToday
+                    ? 'border-[#176B4B] bg-[#F1F8F4] dark:border-[#4BA87A] dark:bg-[#1A3327]'
+                    : 'border-[#E6EFEA] bg-[#FAFCFA] hover:border-[#BFD8CA] hover:bg-[#F3F8F5] dark:border-[#263B31] dark:bg-[#14201B] dark:hover:border-[#3A5E4B]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                    {day.nameAr}
+                  </span>
+                  {isToday && (
+                    <span className="rounded bg-[#176B4B] px-1.5 py-0.5 text-[9px] font-bold text-white dark:bg-[#23845B]">
+                      اليوم
+                    </span>
+                  )}
                 </div>
-                <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-              </div>
-              <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                تسجيل حضور وغياب الطلاب للحصة الحالية والتبديل السريع بين حصص اليوم مع حفظ التغييرات فوراً.
+
+                <div>
+                  {isRecorded ? (
+                    absentCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#FDECEC] px-2 py-0.5 text-[10px] font-bold text-[#A61B1B] dark:bg-[#3A1A1D] dark:text-[#F87171]">
+                        {absentCount} غياب
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#E8F6EE] px-2 py-0.5 text-[10px] font-bold text-[#176B4B] dark:bg-[#193B2A] dark:text-[#6DD39A]">
+                        <CheckCircle2 className="h-3 w-3" />
+                        مكتمل
+                      </span>
+                    )
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[#F1F4F2] px-2 py-0.5 text-[10px] font-semibold text-[#647C70] dark:bg-[#1E2E26] dark:text-[#9DB5A8]">
+                      لم يُرصد
+                    </span>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 4. Secondary Class Tools (No Duplicate Daily Attendance Links) */}
+      <section aria-label="أدوات الشعبة" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Link
+          to="/representative/students"
+          className="group flex items-center justify-between gap-3 rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs transition-colors hover:border-[#176B4B] dark:border-[#293E35] dark:bg-[#17251F] dark:hover:border-[#4BA87A]"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF6F1] text-[#176B4B] dark:bg-[#1D3529] dark:text-[#7AD4A2]">
+              <GraduationCap className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                طلاب الشعبة
               </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#0B5D43] dark:text-[#3E9B78] font-bold">
-              <span>بدء التحضير اليومي</span>
-              <span>←</span>
+              <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-[#647C70] dark:text-[#9DB5A8]">
+                {enrollments.length} طالب مقيد
+              </p>
             </div>
           </div>
+          <ChevronLeft className="h-4 w-4 shrink-0 text-[#87978F] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#176B4B] dark:group-hover:text-[#7AD4A2]" />
+        </Link>
 
-          {/* Weekly Attendance History */}
-          <div
-            onClick={() => navigate('/representative/weekly-attendance')}
-            className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                    <CalendarCheck2 className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                  </div>
-                  <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                    كشف التحضير الأسبوعي
-                  </h3>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-              </div>
-              <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                استعراض جدول الحضور الكامل لجميع أيام الأسبوع (33 حصة أسبوعية) ومراجعة السجلات التاريخية.
+        <Link
+          to="/representative/weekly-attendance"
+          className="group flex items-center justify-between gap-3 rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs transition-colors hover:border-[#176B4B] dark:border-[#293E35] dark:bg-[#17251F] dark:hover:border-[#4BA87A]"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF6F1] text-[#176B4B] dark:bg-[#1D3529] dark:text-[#7AD4A2]">
+              <CalendarCheck2 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                السجل الأسبوعي
               </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-              <span>مصفوفة 33 حصة أسبوعية</span>
-              <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">عرض السجل</span>
+              <p className="mt-0.5 text-[11px] text-[#647C70] dark:text-[#9DB5A8]">
+                مراجعة سجل الحضور الكامل
+              </p>
             </div>
           </div>
+          <ChevronLeft className="h-4 w-4 shrink-0 text-[#87978F] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#176B4B] dark:group-hover:text-[#7AD4A2]" />
+        </Link>
 
-          {/* Students List */}
-          <div
-            onClick={() => navigate('/representative/students')}
-            className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
+        {isMainRep ? (
+          <Link
+            to="/representative/deputy"
+            className="group flex items-center justify-between gap-3 rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs transition-colors hover:border-[#176B4B] dark:border-[#293E35] dark:bg-[#17251F] dark:hover:border-[#4BA87A]"
           >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                    <GraduationCap className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                  </div>
-                  <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                    قائمة طلاب الشعبة
-                  </h3>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-              </div>
-              <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                عرض قائمة الطلاب المقيدين في شعبتك وتعديل بياناتهم وأرقام الهويات الوطنية وأولياء الأمور.
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-              <span>إجمالي {enrollments.length} طالباً</span>
-              <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">إدارة الطلاب</span>
-            </div>
-          </div>
-
-          {/* مؤجل حتى إشعار آخر: بطاقة طلب بطاقة استئذان
-          <div
-            onClick={() => navigate('/representative/card-requests')}
-            className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                    <CreditCard className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                  </div>
-                  <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                    طلب بطاقة استئذان
-                  </h3>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-              </div>
-              <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                رفع طلب بطاقة استئذان إضافية أو بدل تالف/فاقد لإدارة المدرسة ومتابعة حالة الموافقة.
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-              <span>{pendingRequestsCount} طلبات قيد المراجعة</span>
-              <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">تقديم طلب</span>
-            </div>
-          </div>
-          */}
-
-          {/* Print Class Number Sign 
-          <div
-            onClick={() => setIsPrintModalOpen(true)}
-            className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                    <Printer className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                  </div>
-                  <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                    طباعة لافتة الشعبة
-                  </h3>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-              </div>
-              <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                طباعة اللافتة الرسمية للشعبة متضمنة رقم الفصل والباركود المدرسي لتعليقها على باب الفصل.
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-              <span>تنسيق A4 مخصص للطباعة</span>
-              <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">طباعة الآن</span>
-            </div>
-          </div>*/}
-
-          {/* Deputy Representative or Profile */}
-          {isMainRep ? (
-            <div
-              onClick={() => navigate('/representative/deputy')}
-              className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                      <UserCheck className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                    </div>
-                    <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                      إدارة نائب العريف
-                    </h3>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-                </div>
-                <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                  تعيين نائب عريف الشعبة ومنحه صلاحيات الدخول لمساعدتك في رصد الحضور عند غيابك.
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF6F1] text-[#176B4B] dark:bg-[#1D3529] dark:text-[#7AD4A2]">
+                <UserCheck className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                  إدارة نائب العريف
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#647C70] dark:text-[#9DB5A8]">
+                  تعيين وإدارة صلاحية النائب
                 </p>
               </div>
-              <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-                <span>صلاحية العريف الأساسي</span>
-                <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">إدارة النائب</span>
-              </div>
             </div>
-          ) : (
-            <div
-              onClick={() => navigate('/representative/profile')}
-              className="bg-white dark:bg-[#122B23] p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] hover:border-[#0B5D43] dark:hover:border-[#3E9B78] hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#F4F8F6] dark:bg-[#153B2E] text-[#122B23] dark:text-[#F4F8F6] flex items-center justify-center font-bold">
-                      <User className="w-5 h-5 text-[#0B5D43] dark:text-[#3E9B78]" />
-                    </div>
-                    <h3 className="text-sm font-bold text-[#122B23] dark:text-[#F4F8F6] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-colors">
-                      الملف الشخصي وكلمة المرور
-                    </h3>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-[#718A80] group-hover:text-[#0B5D43] dark:group-hover:text-[#3E9B78] transition-transform group-hover:-translate-x-1" />
-                </div>
-                <p className="text-xs text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-                  مراجعة بياناتك المسجلة وتحديث كلمة المرور الخاصة بحسابك لحماية سجلات الحضور.
+            <ChevronLeft className="h-4 w-4 shrink-0 text-[#87978F] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#176B4B] dark:group-hover:text-[#7AD4A2]" />
+          </Link>
+        ) : (
+          <Link
+            to="/representative/profile"
+            className="group flex items-center justify-between gap-3 rounded-2xl border border-[#DCE7E2] bg-white p-4 shadow-xs transition-colors hover:border-[#176B4B] dark:border-[#293E35] dark:bg-[#17251F] dark:hover:border-[#4BA87A]"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF6F1] text-[#176B4B] dark:bg-[#1D3529] dark:text-[#7AD4A2]">
+                <User className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-extrabold text-[#1E3429] dark:text-[#F0F7F3]">
+                  الملف الشخصي
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#647C70] dark:text-[#9DB5A8]">
+                  بيانات الحساب وكلمة المرور
                 </p>
               </div>
-              <div className="mt-4 pt-3 border-t border-[#EEF2F3] dark:border-[#1E4638] flex items-center justify-between text-[11px] text-[#718A80] dark:text-[#A3C7B9]">
-                <span>أمان الحساب</span>
-                <span className="font-bold text-[#0B5D43] dark:text-[#3E9B78]">تعديل الحساب</span>
-              </div>
             </div>
-          )}
-        </div>
-      </div>
+            <ChevronLeft className="h-4 w-4 shrink-0 text-[#87978F] transition-transform group-hover:-translate-x-0.5 group-hover:text-[#176B4B] dark:group-hover:text-[#7AD4A2]" />
+          </Link>
+        )}
+      </section>
 
-      {/* Information & School Policy Card */}
-      <div className="bg-[#E8F5F0] dark:bg-[#1A3B31]/50 p-5 rounded-2xl border border-[#D8E5DF] dark:border-[#1E4638] flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-[#0B5D43] text-white flex items-center justify-center shrink-0 shadow-2xs">
-          <AlertCircle className="w-5 h-5" />
-        </div>
-        <div className="space-y-1 text-xs">
-          <h4 className="font-bold text-[#122B23] dark:text-[#F4F8F6] text-sm">
-            إرشادات تنظيمية لرصد الحضور المدرسي
-          </h4>
-          <p className="text-[#718A80] dark:text-[#A3C7B9] leading-relaxed">
-            وفق لائحة وزارة التعليم وجدول الحصص المدرسي، يتكون اليوم الدراسي من{' '}
-            <strong className="text-[#0B5D43] dark:text-[#3E9B78]">7 حصص</strong> لأيام (الأحد، الاثنين، الثلاثاء)، و{' '}
-            <strong className="text-[#0B5D43] dark:text-[#3E9B78]">6 حصص</strong> ليومي (الأربعاء، الخميس) بإجمالي{' '}
-            <strong className="text-[#0B5D43] dark:text-[#3E9B78]">33 حصة أسبوعية</strong>. يُرجى تحري الدقة عند حفظ الغياب؛ حيث تُعتمد السجلات فورياً لدى الإدارة المدرسية.
-          </p>
-        </div>
+      {/* 5. Quiet Schedule Reference Footnote */}
+      <div className="flex items-start gap-2.5 rounded-xl border border-[#E2ECE6] bg-[#F7FAF8] px-4 py-3 text-xs leading-6 text-[#5E7469] dark:border-[#263B31] dark:bg-[#14201B] dark:text-[#9DB5A8]">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#176B4B] dark:text-[#6DD39A]" />
+        <p>
+          نظام الحصص الأسبوعي:{' '}
+          <strong className="text-[#1E3429] dark:text-[#F0F7F3]">7 حصص</strong> أيام الأحد إلى
+          الثلاثاء، و<strong className="text-[#1E3429] dark:text-[#F0F7F3]">6 حصص</strong> يومي
+          الأربعاء والخميس (33 حصة أسبوعياً). تُعتمد السجلات المحفوظة مباشرة لدى إدارة المدرسة.
+        </p>
       </div>
-    </div>
+    </main>
   );
 }
 
