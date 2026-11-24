@@ -17,7 +17,6 @@ const AdminRepresentativesPage = React.lazy(() => import('../../features/admin/r
 const AdminAcademicYearsPage = React.lazy(() => import('../../features/admin/academic-years/pages/AdminAcademicYearsPage').then(m => ({ default: m.AdminAcademicYearsPage })));
 const AdminCardsPage = React.lazy(() => import('../../features/admin/cards/pages/AdminCardsPage').then(m => ({ default: m.AdminCardsPage })));
 const AdminCardRequestsPage = React.lazy(() => import('../../features/admin/card-requests/pages/AdminCardRequestsPage').then(m => ({ default: m.AdminCardRequestsPage })));
-const AdminSettingsPage = React.lazy(() => import('../../features/admin/settings/pages/AdminSettingsPage').then(m => ({ default: m.AdminSettingsPage })));
 const AdminMonthlyPreparationPage = React.lazy(() => import('../../features/admin/monthly-preparation/pages/AdminMonthlyPreparationPage').then(m => ({ default: m.AdminMonthlyPreparationPage })));
 const AdminWeeklyPreparationPage = React.lazy(() => import('../../features/admin/weekly-preparation/pages/AdminWeeklyPreparationPage').then(m => ({ default: m.AdminWeeklyPreparationPage })));
 const AdminAcademicWeeksPage = React.lazy(() => import('../../features/admin/academic-weeks/pages/AdminAcademicWeeksPage').then(m => ({ default: m.AdminAcademicWeeksPage })));
@@ -153,7 +152,7 @@ export const router = createBrowserRouter([
       { path: 'card-requests', element: <AdminCardRequestsPage /> },
       { path: 'school-settings', element: <AdminSchoolSettingsPage /> },
       { path: 'profile', element: <AdminProfilePage /> },
-      { path: 'settings', element: <AdminSettingsPage /> },
+      { path: 'settings', element: <Navigate to="/admin/school-settings" replace /> },
     ],
   },
 

@@ -23,7 +23,6 @@ import {
   MessageCircle,
   PanelRightClose,
   PanelRightOpen,
-  Settings,
   ShieldCheck,
   Sparkles,
   User,
@@ -95,7 +94,6 @@ const NAV_SECTIONS: NavigationSection[] = [
     items: [
       { to: '/admin/school-settings', label: 'إعدادات المدرسة', icon: ShieldCheck, description: 'بيانات وهوية المدرسة' },
       { to: '/admin/profile', label: 'الملف الشخصي', icon: User, description: 'بيانات المسؤول' },
-      { to: '/admin/settings', label: 'إعدادات النظام', icon: Settings, description: 'تفضيلات النظام' },
     ],
   },
 ];

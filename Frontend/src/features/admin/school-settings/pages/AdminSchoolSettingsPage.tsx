@@ -8,9 +8,6 @@ import { Input } from '../../../../shared/components/ui/Input';
 import { useNotifications } from '../../../notifications';
 import {
   Building2,
-  Copy,
-  Check,
-  ShieldCheck,
   GraduationCap,
   Layers,
   Save,
@@ -20,7 +17,6 @@ export function AdminSchoolSettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useNotifications();
-  const [copied, setCopied] = useState(false);
 
   // Form State
   const [schoolName, setSchoolName] = useState('');
@@ -47,15 +43,6 @@ export function AdminSchoolSettingsPage() {
       setIsActive(school.isActive);
     }
   }, [school]);
-
-  const copySchoolCode = () => {
-    if (school?.schoolCode) {
-      navigator.clipboard.writeText(school.schoolCode);
-      setCopied(true);
-      toast.show('تم نسخ رمز المدرسة (UUID) إلى الحافظة', 'success');
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const updateMutation = useMutation({
     mutationFn: async () => {
@@ -142,46 +129,6 @@ export function AdminSchoolSettingsPage() {
 
       {/* Main Settings Card */}
       <div className="bg-white dark:bg-[#182226] rounded-xl border border-[#DCE3E6] dark:border-[#28373D] shadow-xs p-6 space-y-6">
-        {/* Read-Only Identifiers */}
-        <div className="p-4 rounded-xl bg-[#F8FAFB] dark:bg-[#131D21] border border-[#EEF2F3] dark:border-[#28373D] space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold text-[#5F6B73] dark:text-[#9BAAB1]">
-            <ShieldCheck className="w-4 h-4 text-[#0B5D43]" />
-            <span>معرفات النظام غير القابلة للتعديل (Immutable Identifiers)</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#5F6B73] dark:text-[#9BAAB1] mb-1">
-                الرقم التسلسلي للمدرسة (School ID):
-              </label>
-              <div className="h-10 px-3 bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] text-xs font-mono font-bold rounded-lg border border-[#DCE3E6] dark:border-[#28373D] flex items-center">
-                #{school?.schoolId}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#5F6B73] dark:text-[#9BAAB1] mb-1">
-                رمز المدرسة الفريد (School Code UUID):
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-10 px-3 bg-white dark:bg-[#182226] text-[#17252B] dark:text-[#F0F4F6] text-xs font-mono rounded-lg border border-[#DCE3E6] dark:border-[#28373D] flex items-center overflow-x-auto select-all">
-                  {school?.schoolCode}
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={copySchoolCode}
-                  className="h-10 px-3 shrink-0"
-                  title="نسخ الرمز"
-                >
-                  {copied ? <Check className="w-4 h-4 text-[#25855A]" /> : <Copy className="w-4 h-4" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Editable Fields */}
         <div className="space-y-4">
           <div>

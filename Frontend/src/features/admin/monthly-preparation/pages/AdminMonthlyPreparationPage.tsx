@@ -9,7 +9,7 @@ import { excelExportService } from '../../../reports/services/excelExportService
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
 import { AttendanceTable } from '../../../attendance';
 import { AttendanceClassSelector } from '../../../attendance';
-import { AttendanceWeekSelector } from '../../../attendance';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { CalendarRange, Download, Printer, Layers } from 'lucide-react';
@@ -243,8 +243,7 @@ export function AdminMonthlyPreparationPage() {
           onSelectClass={setSelectedClassId}
         />
 
-        <AttendanceWeekSelector
-          weeks={sortedWeeks}
+        <WeekSelector
           selectedWeekId={effectiveWeekId || null}
           onSelectWeek={setSelectedWeekId}
         />

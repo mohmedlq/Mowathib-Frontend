@@ -24,6 +24,7 @@ import { enrollmentsApi } from '../../enrollments';
 import { representativesApi } from '../../representatives';
 import { reportCalculationService } from '../services/reportCalculationService';
 import { excelExportService } from '../services/excelExportService';
+import { WeekSelector } from '../../../shared/components/ui/weekselector';
 
 import type { MonthlyAttendanceWeekData } from '../services/excelExportService';
 
@@ -569,21 +570,11 @@ function DailyWeekDaySelector({
           الأسبوع الدراسي
         </label>
 
-        <select
-          id="daily-report-week"
-          value={selectedWeekId || activeWeek?.attendanceWeekId}
-          onChange={(event) => onSelectWeek(Number(event.target.value))}
-          className={inputClassName}
-        >
-          {weeks.map((week) => (
-            <option
-              key={week.attendanceWeekId}
-              value={week.attendanceWeekId}
-            >
-              الأسبوع {week.weekNumber} ({formatArabicDateShort(week.startDate)} — {formatArabicDateShort(week.endDate)})
-            </option>
-          ))}
-        </select>
+        <WeekSelector
+          selectedWeekId={selectedWeekId || activeWeek?.attendanceWeekId}
+          onSelectWeek={onSelectWeek}
+          showDateRange
+        />
       </div>
 
       <div>
@@ -2636,25 +2627,11 @@ export function ReportCenterPage() {
                     الأسبوع الدراسي
                   </label>
 
-                  <select
-                    id="weekly-report-week"
-                    value={weeklyWeekId}
-                    onChange={(event) =>
-                      setWeeklyWeekId(
-                        Number(event.target.value),
-                      )
-                    }
-                    className={inputClassName}
-                  >
-                    {weeks.map((week) => (
-                      <option
-                        key={week.attendanceWeekId}
-                        value={week.attendanceWeekId}
-                      >
-                        الأسبوع {week.weekNumber} ({formatArabicDateShort(week.startDate)} — {formatArabicDateShort(week.endDate)})
-                      </option>
-                    ))}
-                  </select>
+                  <WeekSelector
+                    selectedWeekId={weeklyWeekId}
+                    onSelectWeek={setWeeklyWeekId}
+                    showDateRange
+                  />
 
                   {activeWeek && (
                     <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">

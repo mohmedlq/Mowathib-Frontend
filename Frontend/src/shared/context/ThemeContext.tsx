@@ -18,10 +18,11 @@ function getInitialTheme(): Theme {
 
   try {
     const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+    // Explicit user opt-in to day mode (sub-mode)
     if (stored === 'light') {
       return 'light';
     }
-    // Default to dark mode as requested by user
+    // Default to dark mode (primary default)
     return 'dark';
   } catch {
     return 'dark';
@@ -50,20 +51,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
   }, [theme]);
-
-  // Listen to OS preference changes only if user hasn't explicitly set a preference
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent) => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        setThemeState(e.matches ? 'dark' : 'light');
-      }
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);

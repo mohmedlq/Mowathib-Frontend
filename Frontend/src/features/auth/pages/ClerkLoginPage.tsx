@@ -8,7 +8,7 @@ import { Input } from '../../../shared/components/ui/Input';
 import { Button } from '../../../shared/components/ui/Button';
 import { ThemeToggle } from '../../../shared/components/ui/ThemeToggle';
 import { BrandLogo } from '../../../components/common/BrandLogo';
-import { UserCheck, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
+import { UserCheck, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 
 export function ClerkLoginPage() {
   const { loginClerk } = useAuth();
@@ -43,19 +43,31 @@ export function ClerkLoginPage() {
 
   return (
     <div className="min-h-screen bg-[#F5F7F8] dark:bg-[#0F171A] flex flex-col justify-center items-center p-4 selection:bg-[#245B63] selection:text-white transition-colors duration-150 relative">
-      {/* Top Bar with Theme Switcher */}
-      <div className="absolute top-4 left-4 sm:top-6 sm:left-6">
-        <ThemeToggle />
+      {/* Top Bar: Back to Landing Page & Theme Switcher */}
+      <div className="absolute top-4 inset-x-4 sm:top-6 sm:inset-x-6 flex items-center justify-between pointer-events-none">
+        <Link
+          to="/"
+          className="pointer-events-auto inline-flex items-center gap-2 text-xs font-semibold text-[#587268] hover:text-[#176B4B] dark:text-[#9DB5A8] dark:hover:text-[#6DD39A] bg-white/85 dark:bg-[#182226]/85 backdrop-blur-xs px-3.5 py-2 rounded-xl border border-[#DCE7E2] dark:border-[#2C4539] transition-all shadow-2xs hover:shadow-xs hover:border-[#176B4B]/30"
+          title="العودة إلى الصفحة الرئيسية"
+        >
+          <ArrowRight className="w-4 h-4" />
+          <span>الرئيسية</span>
+        </Link>
+        <div className="pointer-events-auto">
+          <ThemeToggle />
+        </div>
       </div>
 
       {/* Brand Wordmark & Mission */}
       <div className="w-full max-w-md">
         <div className="text-center mb-6 flex flex-col items-center">
-          <BrandLogo
-            variant="wordmark"
-            className="h-16 sm:h-20 w-auto mb-2 filter drop-shadow-xs"
-            alt="شعار منصة مواظب - رصد دقيق للحضور والغياب"
-          />
+          <Link to="/" title="العودة إلى الصفحة الرئيسية" className="inline-block transition-transform hover:scale-[1.02]">
+            <BrandLogo
+              variant="wordmark"
+              className="h-16 sm:h-20 w-auto mb-2 filter drop-shadow-xs"
+              alt="شعار منصة مواظب - رصد دقيق للحضور والغياب"
+            />
+          </Link>
           <p className="text-xs text-[#3E544C] dark:text-[#A3C7B9] font-medium">بوابة تسجيل دخول مُسجّل الحضور</p>
         </div>
 
@@ -109,15 +121,31 @@ export function ClerkLoginPage() {
             </div>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-[#EEF2F3] dark:border-[#28373D] text-center">
+          <div className="mt-6 pt-4 border-t border-[#EEF2F3] dark:border-[#28373D] flex flex-col items-center gap-3 text-center">
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 text-xs text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#1F7A8C] dark:hover:text-[#68D8D6] transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs text-[#5F6B73] dark:text-[#9BAAB1] hover:text-[#245B63] dark:hover:text-[#52B4C2] transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5" />
               <span>العودة إلى الصفحة الرئيسية</span>
             </Link>
           </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-center gap-4 text-xs">
+          <Link
+            to="/admin/login"
+            className="text-[#245B63] dark:text-[#388B96] hover:text-[#1D4B52] dark:hover:text-[#52B4C2] transition-colors"
+          >
+            بوابة الإدارة المدرسية
+          </Link>
+          <span className="text-[#DCE3E6] dark:text-[#28373D]">·</span>
+          <Link
+            to="/representative/login"
+            className="text-[#245B63] dark:text-[#388B96] hover:text-[#1D4B52] dark:hover:text-[#52B4C2] transition-colors"
+          >
+            بوابة عرفاء الفصول
+          </Link>
         </div>
       </div>
     </div>

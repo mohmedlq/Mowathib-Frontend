@@ -59,14 +59,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   loading = 'eager',
   ...props
 }) => {
-  // Read current theme safely with fallback
-  let isDark = false;
+  // Read current theme safely with fallback (Dark Mode is default)
+  let isDark = true;
   try {
     const themeContext = useTheme();
     isDark = themeContext.isDark;
   } catch {
     if (typeof document !== 'undefined') {
-      isDark = document.documentElement.classList.contains('dark');
+      isDark = !document.documentElement.classList.contains('light');
     }
   }
 

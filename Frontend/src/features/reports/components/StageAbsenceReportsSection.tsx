@@ -13,6 +13,7 @@ import type { ClassItem, AttendanceWeek } from '../../../shared/types';
 import { representativesApi } from '../../representatives';
 import { enrollmentsApi } from '../../enrollments';
 import { attendanceApi } from '../../attendance';
+import { WeekSelector } from '../../../shared/components/ui/weekselector';
 import { excelExportService } from '../services/excelExportService';
 import { reportCalculationService } from '../services/reportCalculationService';
 import { useNotifications } from '../../notifications';
@@ -368,18 +369,12 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
               <CalendarDays className="w-3.5 h-3.5 text-[#245B63]" />
               <span>أسبوع كشف الغياب الأسبوعي:</span>
             </label>
-            <select
-              value={selectedWeekId}
-              onChange={(e) => setSelectedWeekId(Number(e.target.value))}
+            <WeekSelector
+              selectedWeekId={selectedWeekId}
+              onSelectWeek={setSelectedWeekId}
               disabled={isBusy}
-              className="w-full h-10 px-3 bg-white text-xs font-medium text-[#17252B] rounded-lg border border-[#DCE3E6] focus:border-[#245B63] outline-none cursor-pointer"
-            >
-              {weeks.map((w) => (
-                <option key={w.attendanceWeekId} value={w.attendanceWeekId}>
-                  الأسبوع {w.weekNumber} ({formatArabicDateShort(w.startDate)} - {formatArabicDateShort(w.endDate)})
-                </option>
-              ))}
-            </select>
+              showDateRange
+            />
           </div>
 
           {/* Monthly Selector */}

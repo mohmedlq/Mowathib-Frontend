@@ -29,6 +29,7 @@ import { classesApi } from '../../../classes/api/classesApi';
 import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import { parentNotificationsApi } from '../../../parent-notifications/api/parentNotificationsApi';
 import { attendanceApi } from '../../../attendance/api/attendanceApi';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { useSchoolSettings } from '../../../../shared/services/schoolSettingsService';
 import { useNotifications } from '../../../notifications';
 import { SCHOOL_DAYS } from '../../../../shared/types';
@@ -649,25 +650,15 @@ export function AdminSendNotificationsPage() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Week + Days */}
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-            <div className="relative sm:w-64">
-              <CalendarRange className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71837A]" />
-              <select
-                aria-label="الأسبوع الدراسي"
-                value={activeWeek?.attendanceWeekId ?? 0}
-                onChange={(e) => {
-                  setSelectedWeekId(Number(e.target.value));
-                  setPageNumber(1);
-                }}
-                disabled={weeks.length === 0}
-                className="h-10 w-full appearance-none rounded-xl border border-[#DCE7E2] bg-[#FAFCFA] py-2 pl-3 pr-9 text-xs font-bold text-[#1E3429] outline-none transition focus:border-[#176B4B] dark:border-[#2C4539] dark:bg-[#13201A] dark:text-[#EAF3ED]"
-              >
-                {weeks.map((week) => (
-                  <option key={week.attendanceWeekId} value={week.attendanceWeekId}>
-                    الأسبوع {week.weekNumber} ({formatArabicDate(week.startDate)})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <WeekSelector
+              selectedWeekId={activeWeek?.attendanceWeekId ?? 0}
+              onSelectWeek={(weekId) => {
+                setSelectedWeekId(weekId);
+                setPageNumber(1);
+              }}
+              showDateRange
+              className="sm:w-64"
+            />
 
             <div className="grid grid-cols-5 gap-1 rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
               {SCHOOL_DAYS.map((day) => {

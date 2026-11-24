@@ -1,8 +1,8 @@
 import type { ReportFilterOptions, ReportKind } from '../types/report.types';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
 import { SCHOOL_DAYS } from '../../../shared/types';
-import { formatArabicDateShort } from '../../../shared/utils/date';
 import { Calendar, Filter } from 'lucide-react';
+import { WeekSelector } from '../../../shared/components/ui/weekselector';
 
 export interface ReportFiltersProps {
   filters: ReportFilterOptions;
@@ -96,17 +96,12 @@ export function ReportFilters({ filters, onChange, classes, weeks, isAdmin = tru
         {(filters.periodType === 'daily' || filters.periodType === 'weekly') && (
           <div>
             <label className="block text-xs font-semibold text-[#17252B] mb-1">الأسبوع الدراسي:</label>
-            <select
-              value={filters.weekId}
-              onChange={(e) => onChange({ weekId: Number(e.target.value) })}
-              className="w-full h-10 px-3 bg-white text-xs font-medium rounded-lg border border-[#DCE3E6] focus:border-[#245B63] outline-none cursor-pointer"
-            >
-              {weeks.map((w) => (
-                <option key={w.attendanceWeekId} value={w.attendanceWeekId}>
-                  الأسبوع {w.weekNumber} ({formatArabicDateShort(w.startDate)} - {formatArabicDateShort(w.endDate)})
-                </option>
-              ))}
-            </select>
+            <WeekSelector
+              weeks={weeks}
+              selectedWeekId={filters.weekId}
+              onSelectWeek={(weekId) => onChange({ weekId })}
+              showDateRange
+            />
           </div>
         )}
 

@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import {
   AttendanceTable,
-  AttendanceWeekSelector,
   AttendanceProgressSummary,
   useAttendanceMatrix,
 } from '../../../attendance';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { History, Eye } from 'lucide-react';
 import { currentWeek } from '@/shared/services/schoolSettingsService';
@@ -81,8 +81,7 @@ export function RepresentativeAttendanceHistoryPage() {
         
 
           <div className="w-full sm:w-64">
-            <AttendanceWeekSelector
-              weeks={weeks}
+            <WeekSelector
               selectedWeekId={selectedWeekId}
               onSelectWeek={setSelectedWeekId}
             />

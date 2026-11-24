@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
-  Calendar,
   CheckCircle2,
   Edit3,
   Eye,
@@ -19,9 +18,9 @@ import { useNotifications } from '../../../notifications';
 import {
   AttendanceTable,
   QuickAttendancePanel,
-  AttendanceWeekSelector,
   useAttendanceMatrix,
 } from '../../../attendance';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
@@ -321,16 +320,11 @@ export function AdminAttendancePage() {
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4 shrink-0 text-[#71837A] hidden sm:block" />
-              <div className="min-w-0 flex-1">
-                <AttendanceWeekSelector
-                  weeks={weeks}
-                  selectedWeekId={effectiveWeekId || null}
-                  onSelectWeek={setSelectedWeekId}
-                />
-              </div>
-            </div>
+            <WeekSelector
+              selectedWeekId={effectiveWeekId || null}
+              onSelectWeek={setSelectedWeekId}
+              className="w-full sm:w-auto"
+            />
           </div>
         </div>
 

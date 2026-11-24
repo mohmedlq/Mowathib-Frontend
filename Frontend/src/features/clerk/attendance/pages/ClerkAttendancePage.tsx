@@ -6,10 +6,10 @@ import { classesApi } from '../../../classes/api/classesApi';
 import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import {
   QuickAttendancePanel,
-  AttendanceWeekSelector,
   AttendanceClassSelector,
   useAttendanceMatrix,
 } from '../../../attendance';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
 import { filterClassesForClerk } from '../../../../shared/utils/clerkAccess';
@@ -130,12 +130,11 @@ export function ClerkAttendancePage() {
             />
           </div>
 
-          <div className="w-full sm:w-56">
+          <div className="w-full sm:w-60">
             <label className="block text-xs font-semibold text-[#17252B] dark:text-[#F0F4F6] mb-1.5 select-none">
               الأسبوع الدراسي:
             </label>
-            <AttendanceWeekSelector
-              weeks={weeks}
+            <WeekSelector
               selectedWeekId={effectiveWeekId}
               onSelectWeek={setSelectedWeekId}
             />

@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Calendar,
   Download,
   FileSpreadsheet,
   Layers,
@@ -15,7 +14,8 @@ import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
 import { attendanceApi } from '../../../attendance/api/attendanceApi';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
-import { AttendanceTable, AttendanceWeekSelector } from '../../../attendance';
+import { AttendanceTable } from '../../../attendance';
+import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { LoadingState } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import {
@@ -429,15 +429,11 @@ export function AdminWeeklyPreparationPage() {
             })}
           </div>
 
-          <div className="flex items-center gap-2 lg:w-72">
-            <Calendar className="h-4 w-4 shrink-0 text-[#71837A] hidden sm:block" />
-            <div className="min-w-0 flex-1">
-              <AttendanceWeekSelector
-                weeks={weeks}
-                selectedWeekId={effectiveWeekId || null}
-                onSelectWeek={setSelectedWeekId}
-              />
-            </div>
+          <div className="lg:w-72">
+            <WeekSelector
+              selectedWeekId={effectiveWeekId || null}
+              onSelectWeek={setSelectedWeekId}
+            />
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import type { ClassItem, AttendanceWeek } from '../../../shared/types';
 import { representativesApi } from '../../representatives';
 import { enrollmentsApi } from '../../enrollments';
 import { attendanceApi } from '../../attendance';
+import { WeekSelector } from '../../../shared/components/ui/weekselector';
 import { excelExportService } from '../services/excelExportService';
 import { useNotifications } from '../../notifications';
 import { useSchoolSettings } from '../../../shared/services/schoolSettingsService';
@@ -184,18 +185,12 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
             <label className="text-xs font-semibold text-[#17252B] whitespace-nowrap">
               الأسبوع المستهدف:
             </label>
-            <select
-              value={selectedWeekId}
-              onChange={(e) => setSelectedWeekId(Number(e.target.value))}
+            <WeekSelector
+              selectedWeekId={selectedWeekId}
+              onSelectWeek={setSelectedWeekId}
               disabled={exportingStage !== null}
-              className="h-9 px-3 bg-[#F5F7F8] hover:bg-white text-xs font-medium text-[#17252B] rounded-lg border border-[#DCE3E6] focus:border-[#245B63] outline-none cursor-pointer transition-colors"
-            >
-              {weeks.map((w) => (
-                <option key={w.attendanceWeekId} value={w.attendanceWeekId}>
-                  الأسبوع {w.weekNumber} ({formatArabicDateShort(w.startDate)})
-                </option>
-              ))}
-            </select>
+              showDateRange
+            />
           </div>
         )}
       </div>
