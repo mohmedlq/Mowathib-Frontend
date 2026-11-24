@@ -39,7 +39,11 @@ import { BrandLogo } from '../../components/common/BrandLogo';
 import { MuwathibLoading, Spinner } from '../../shared/components/ui/Spinner';
 import { Dialog, DialogFooter } from '../../shared/components/ui/Dialog';
 import { useSchoolSettings } from '../../shared/services/schoolSettingsService';
-import { schoolDataService } from '../../shared/services/schoolDataService';
+import { classesApi } from '../../features/classes';
+import { representativesApi } from '../../features/representatives';
+import { attendanceApi } from '../../features/attendance';
+import { attendanceWeeksApi } from '../../features/attendance-weeks';
+import { academicYearsApi } from '../../features/academic-years';
 import { resolveDefaultAttendanceWeek } from '../../shared/utils/date';
 import {
   buildRepresentativeReminderMessage,
@@ -180,14 +184,14 @@ function DashboardOverview({
   // 1. Fetch Classes
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
     staleTime: 1000 * 60 * 5,
   });
 
   // 2. Fetch Representatives (to map reps to unprepared classes)
   const { data: representatives = [], isLoading: isRepsLoading } = useQuery({
     queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+    queryFn: () => representativesApi.getRepresentatives(),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -196,7 +200,7 @@ function DashboardOverview({
     queryKey: ['dashboard_week_records', activeWeek?.attendanceWeekId],
     queryFn: () =>
       activeWeek?.attendanceWeekId
-        ? schoolDataService.getAttendanceRecordsByWeek(activeWeek.attendanceWeekId)
+        ? attendanceApi.getAttendanceRecordsByWeek(activeWeek.attendanceWeekId)
         : Promise.resolve([]),
     enabled: Boolean(activeWeek?.attendanceWeekId),
     staleTime: 1000 * 60 * 2,
@@ -317,7 +321,7 @@ function DashboardOverview({
       return;
     }
 
-    const tab = window.open(result.url, '_blank');
+    const tab = window.open(result.url, '_blank', 'noopener,noreferrer');
     if (tab) {
       tab.opener = null;
       toast.show(
@@ -842,14 +846,14 @@ export function AdminLayout() {
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
   });
 
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
   });
@@ -1003,9 +1007,7 @@ export function AdminLayout() {
           )}
         </main>
 
-        <footer className="border-t border-[#E1EAE4] bg-white/75 px-4 py-3 text-center text-[10px] text-[#87978F] dark:border-[#263D30] dark:bg-[#14221A]/75 dark:text-[#829B8C] sm:px-6">
-          منصة مواظب لإدارة البيئة المدرسية · جميع الحقوق محفوظة
-        </footer>
+
       </div>
     </div>
   );

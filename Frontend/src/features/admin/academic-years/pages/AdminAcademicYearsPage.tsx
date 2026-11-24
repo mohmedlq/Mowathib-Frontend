@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import { CalendarRange, Plus, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
@@ -20,18 +21,18 @@ export function AdminAcademicYearsPage() {
 
   const { data: years = [], isLoading } = useQuery({
     queryKey: ['academic_years'],
-    queryFn: () => schoolDataService.getAcademicYears(),
+    queryFn: () => academicYearsApi.getAcademicYears(),
   });
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
   });
 
   // Create year mutation
   const createMutation = useMutation({
     mutationFn: async () => {
-      return await schoolDataService.createAcademicYear({
+      return await academicYearsApi.createAcademicYear({
         yearName,
         startDate,
         endDate,
@@ -48,7 +49,7 @@ export function AdminAcademicYearsPage() {
   // Set active mutation
   const setActiveMutation = useMutation({
     mutationFn: async (id: number) => {
-      await schoolDataService.setActiveAcademicYear(id);
+      await academicYearsApi.setActiveAcademicYear(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['academic_years'] });

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { studentsApi } from '../../../students/api/studentsApi';
 import {
   GraduationCap,
   Search,
@@ -85,14 +87,14 @@ export function AdminStudentsPage() {
   // ---------------------------------------------------------------------------
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
     staleTime: 1000 * 60 * 10,
   });
 
   const { data: pagedData, isLoading } = useQuery({
     queryKey: ['paged_enrollments', selectedClassId, search, pageNumber, pageSize],
     queryFn: () =>
-      schoolDataService.getPagedEnrollments({
+      enrollmentsApi.getPagedEnrollments({
         classId: selectedClassId > 0 ? selectedClassId : undefined,
         search: search.trim() || undefined,
         pageNumber,
@@ -196,7 +198,7 @@ export function AdminStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || concluded || undefined;
 
-      return await schoolDataService.createStudent(
+      return await studentsApi.createStudent(
         {
           firstName: firstName.trim(),
           secondName: secondName.trim(),
@@ -232,7 +234,7 @@ export function AdminStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || concluded || undefined;
 
-      return await schoolDataService.updateStudentDetails(editingStudentId, {
+      return await studentsApi.updateStudentDetails(editingStudentId, {
         firstName: firstName.trim(),
         secondName: secondName.trim(),
         thirdName: thirdName.trim(),
@@ -304,7 +306,7 @@ export function AdminStudentsPage() {
 
   const removeMutation = useMutation({
     mutationFn: async (enrollmentId: number) => {
-      await schoolDataService.removeStudentFromClass(enrollmentId);
+      await enrollmentsApi.removeStudentFromClass(enrollmentId);
     },
     onSuccess: (_, enrollmentId) => {
       // Optimistic cache update: remove the enrollment immediately from the visible list

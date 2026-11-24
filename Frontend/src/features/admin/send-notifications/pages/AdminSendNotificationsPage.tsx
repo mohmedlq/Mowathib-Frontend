@@ -25,7 +25,10 @@ import {
   X,
 } from 'lucide-react';
 
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
+import { parentNotificationsApi } from '../../../parent-notifications/api/parentNotificationsApi';
+import { attendanceApi } from '../../../attendance/api/attendanceApi';
 import { useSchoolSettings } from '../../../../shared/services/schoolSettingsService';
 import { useNotifications } from '../../../notifications';
 import { SCHOOL_DAYS } from '../../../../shared/types';
@@ -232,7 +235,7 @@ export function AdminSendNotificationsPage() {
     refetch: refetchClasses,
   } = useQuery({
     queryKey: CLASSES_QUERY_KEY,
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
     retry: 1,
@@ -245,7 +248,7 @@ export function AdminSendNotificationsPage() {
     refetch: refetchWeeks,
   } = useQuery({
     queryKey: WEEKS_QUERY_KEY,
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
     retry: 1,
@@ -285,7 +288,7 @@ export function AdminSendNotificationsPage() {
     refetch: refetchNotifications,
   } = useQuery({
     queryKey: [NOTIFICATIONS_QUERY_KEY, effectiveDate] as const,
-    queryFn: () => schoolDataService.getParentNotifications({ date: effectiveDate }),
+    queryFn: () => parentNotificationsApi.getParentNotifications({ date: effectiveDate }),
     enabled: isValidDate,
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 10,
@@ -302,7 +305,7 @@ export function AdminSendNotificationsPage() {
   } = useQuery({
     queryKey: [ABSENTEES_QUERY_KEY, effectiveDate] as const,
     queryFn: () =>
-      schoolDataService.getPagedAbsentees({ date: effectiveDate, pageNumber: 1, pageSize: 1 }),
+      attendanceApi.getPagedAbsentees({ date: effectiveDate, pageNumber: 1, pageSize: 1 }),
     enabled: isValidDate,
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 10,
@@ -320,7 +323,7 @@ export function AdminSendNotificationsPage() {
 
   // Generate Mutation
   const generateMutation = useMutation({
-    mutationFn: (targetDate: string) => schoolDataService.generateParentNotifications(targetDate),
+    mutationFn: (targetDate: string) => parentNotificationsApi.generateParentNotifications(targetDate),
     onSuccess: (result, targetDate) => {
       void queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_QUERY_KEY, targetDate] });
       void queryClient.invalidateQueries({ queryKey: [ABSENTEES_QUERY_KEY, targetDate] });
@@ -383,7 +386,7 @@ export function AdminSendNotificationsPage() {
   // Optimistic Status Mutation
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, isSent }: NotificationStatusVariables) =>
-      schoolDataService.updateNotificationStatus(id, isSent),
+      parentNotificationsApi.updateNotificationStatus(id, isSent),
     onMutate: async (variables) => {
       const key = [NOTIFICATIONS_QUERY_KEY, variables.date] as const;
       await queryClient.cancelQueries({ queryKey: key });
@@ -499,7 +502,7 @@ export function AdminSendNotificationsPage() {
       handleSaveCustomMessage(notification.id, messageOverride);
     }
 
-    const whatsappWindow = window.open(whatsapp.url, '_blank');
+    const whatsappWindow = window.open(whatsapp.url, '_blank', 'noopener,noreferrer');
     if (!whatsappWindow) {
       toast.show('تعذر فتح واتساب. تحقق من إعدادات النوافذ المنبثقة.', 'warning');
       return;

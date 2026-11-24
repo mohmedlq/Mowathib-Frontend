@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { classesApi } from '../../../classes/api/classesApi';
+import { representativesApi } from '../../../representatives/api/representativesApi';
+import { attendanceClerksApi } from '../../../attendance-clerks/api/attendanceClerksApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
 import {
   Users2,
   UserCheck,
@@ -240,7 +244,7 @@ export function AdminRepresentativesPage() {
   // Queries
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
     staleTime: 1000 * 60 * 30,
   });
   const activeYearId = activeYear?.academicYearId || 1;
@@ -248,8 +252,8 @@ export function AdminRepresentativesPage() {
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes', schoolCode],
     queryFn: async () => {
-      if (schoolCode) return await schoolDataService.getClassesBySchool(schoolCode);
-      return await schoolDataService.getClasses();
+      if (schoolCode) return await classesApi.getClassesBySchool(schoolCode);
+      return await classesApi.getClasses();
     },
     staleTime: 1000 * 60 * 10,
     gcTime: 1000 * 60 * 30,
@@ -281,7 +285,7 @@ export function AdminRepresentativesPage() {
   } = useQuery({
     queryKey: ['representatives_paged', schoolCode, debouncedRepSearch, repFilterRole, repPage, repPageSize],
     queryFn: () =>
-      schoolDataService.getPagedRepresentatives({
+      representativesApi.getPagedRepresentatives({
         search: debouncedRepSearch || undefined,
         role: repFilterRole !== 'all' ? repFilterRole : undefined,
         schoolCode,
@@ -303,7 +307,7 @@ export function AdminRepresentativesPage() {
   } = useQuery({
     queryKey: ['attendance_clerks_paged', schoolCode, debouncedClerkSearch, clerkFilterStatus, clerkPage, clerkPageSize],
     queryFn: () =>
-      schoolDataService.getAttendanceClerksPaged({
+      attendanceClerksApi.getAttendanceClerksPaged({
         schoolCode,
         search: debouncedClerkSearch || undefined,
         activeOnly: clerkFilterStatus === 'active' ? true : clerkFilterStatus === 'inactive' ? false : undefined,
@@ -324,7 +328,7 @@ export function AdminRepresentativesPage() {
     isLoading: isRepClassEnrollmentsLoading,
   } = useQuery({
     queryKey: ['class_enrollments_for_rep', assignmentClassId, activeYearId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(assignmentClassId, activeYearId),
+    queryFn: () => enrollmentsApi.getEnrollmentsByClass(assignmentClassId, activeYearId),
     enabled: isAssignModalOpen && Boolean(assignmentClassId),
     staleTime: 1000 * 60 * 5,
   });
@@ -335,7 +339,7 @@ export function AdminRepresentativesPage() {
     isLoading: isClerkClassEnrollmentsLoading,
   } = useQuery({
     queryKey: ['class_enrollments_for_clerk', effectiveClerkClassId, activeYearId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(effectiveClerkClassId, activeYearId),
+    queryFn: () => enrollmentsApi.getEnrollmentsByClass(effectiveClerkClassId, activeYearId),
     enabled: isAddClerkModalOpen && Boolean(effectiveClerkClassId),
     staleTime: 1000 * 60 * 5,
   });
@@ -403,7 +407,7 @@ export function AdminRepresentativesPage() {
   // Representative mutations
   const toggleRepStatusMutation = useMutation({
     mutationFn: async ({ repId, isActive }: { repId: number; isActive: boolean }) =>
-      schoolDataService.toggleRepresentativeStatus(repId, isActive),
+      representativesApi.toggleRepresentativeStatus(repId, isActive),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['representatives_paged', schoolCode] });
       toast.show(
@@ -428,7 +432,7 @@ export function AdminRepresentativesPage() {
         ? String(selectedAssignmentClass.className)
         : `شعبة ${assignmentClassId}`;
 
-      const created = await schoolDataService.createRepresentative({
+      const created = await representativesApi.createRepresentative({
         enrollmentId: Number(selectedEnrollmentId),
         username: repUsername.trim(),
         phoneNumber: phoneNumber.trim(),
@@ -473,7 +477,7 @@ export function AdminRepresentativesPage() {
   // Attendance clerk mutations
   const toggleClerkStatusMutation = useMutation({
     mutationFn: async ({ clerkId, isActive }: { clerkId: number; isActive: boolean }) =>
-      schoolDataService.toggleClerkStatus(clerkId, isActive, schoolCode),
+      attendanceClerksApi.toggleClerkStatus(clerkId, isActive, schoolCode),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['attendance_clerks_paged', schoolCode] });
       toast.show(
@@ -498,7 +502,7 @@ export function AdminRepresentativesPage() {
         ? String(selectedClerkClass.className)
         : `شعبة ${effectiveClerkClassId}`;
 
-      const created = await schoolDataService.createAttendanceClerk(
+      const created = await attendanceClerksApi.createAttendanceClerk(
         {
           studentId: Number(newClerkStudentId),
           username: newClerkUsername.trim(),
@@ -554,7 +558,7 @@ export function AdminRepresentativesPage() {
           throw new Error('كلمتا المرور غير متطابقتين');
         }
       }
-      return await schoolDataService.updateAttendanceClerk(
+      return await attendanceClerksApi.updateAttendanceClerk(
         editingClerk.clerkId,
         {
           username: editClerkUsername.trim() || undefined,

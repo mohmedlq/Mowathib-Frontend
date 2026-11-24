@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../../../auth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { cardRequestsApi } from '../../../card-requests/api/cardRequestsApi';
 import { CreditCard, Plus } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
@@ -23,12 +24,12 @@ export function RepresentativeCardRequestsPage() {
 
   const { data: enrollments = [] } = useQuery({
     queryKey: ['enrollments', classId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(classId),
+    queryFn: () => enrollmentsApi.getEnrollmentsByClass(classId),
   });
 
   const { data: requests = [], isLoading } = useQuery({
     queryKey: ['card_requests'],
-    queryFn: () => schoolDataService.getCardRequests(),
+    queryFn: () => cardRequestsApi.getCardRequests(),
   });
 
   const myRequests = requests.filter(
@@ -37,7 +38,7 @@ export function RepresentativeCardRequestsPage() {
 
   const createRequestMutation = useMutation({
     mutationFn: async () => {
-      return await schoolDataService.createCardRequest({
+      return await cardRequestsApi.createCardRequest({
         enrollmentId: selectedEnrollmentId || enrollments[0]?.enrollmentId || 1,
         representativeId: user?.id || 0,
         reason,

@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../auth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { studentsApi } from '../../../students/api/studentsApi';
 import { filterClassesForClerk } from '../../../../shared/utils/clerkAccess';
 import {
   GraduationCap,
@@ -110,8 +111,8 @@ export function ClerkStudentsPage() {
   const { data: rawClasses = [] } = useQuery({
     queryKey: ['clerk_students_classes', schoolCode],
     queryFn: async () => {
-      if (!schoolCode) return await schoolDataService.getClasses();
-      return await schoolDataService.getClassesBySchool(schoolCode);
+      if (!schoolCode) return await classesApi.getClasses();
+      return await classesApi.getClassesBySchool(schoolCode);
     },
     staleTime: 1000 * 60 * 10,
   });
@@ -125,7 +126,7 @@ export function ClerkStudentsPage() {
       if (!schoolCode) {
         return { items: [] as Student[], totalCount: 0, pageNumber: 1, pageSize: 10, totalPages: 1 };
       }
-      return await schoolDataService.getStudentsBySchoolPaged(schoolCode, {
+      return await studentsApi.getStudentsBySchoolPaged(schoolCode, {
         pageNumber,
         pageSize,
         search: search.trim() || undefined,
@@ -150,7 +151,7 @@ export function ClerkStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || (concluded || undefined);
 
-      return await schoolDataService.createStudentWithEnrollment(
+      return await studentsApi.createStudentWithEnrollment(
         {
           firstName: firstName.trim(),
           secondName: secondName.trim(),
@@ -184,7 +185,7 @@ export function ClerkStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || (concluded || undefined);
 
-      return await schoolDataService.updateStudentDetails(editingStudent.studentId, {
+      return await studentsApi.updateStudentDetails(editingStudent.studentId, {
         firstName: firstName.trim(),
         secondName: secondName.trim(),
         thirdName: thirdName.trim(),

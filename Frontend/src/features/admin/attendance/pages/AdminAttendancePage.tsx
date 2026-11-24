@@ -11,7 +11,9 @@ import {
   UserX,
 } from 'lucide-react';
 
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { useNotifications } from '../../../notifications';
 import {
@@ -102,17 +104,17 @@ export function AdminAttendancePage() {
   // Reference Queries
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
   });
 
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
 
   // Derived Class & Week

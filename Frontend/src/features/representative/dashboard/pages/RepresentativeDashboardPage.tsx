@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import { useAttendanceMatrix } from '../../../attendance';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { resolveDefaultAttendanceWeek } from '../../../../shared/utils/date';
@@ -56,7 +56,7 @@ export function RepresentativeDashboardPage() {
 
   const { data: weeks = [], isLoading: isLoadingWeeks } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
   });
 

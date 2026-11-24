@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { attendanceClerksApi } from '../../../attendance-clerks/api/attendanceClerksApi';
 import { useNotifications } from '../../../notifications';
 import {
   User,
@@ -54,7 +54,7 @@ export function ClerkProfilePage() {
 
     setIsSubmitting(true);
     try {
-      const updated = await schoolDataService.updateAttendanceClerk(
+      const updated = await attendanceClerksApi.updateAttendanceClerk(
         user.id,
         {
           username: trimmedUsername,

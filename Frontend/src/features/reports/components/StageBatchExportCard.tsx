@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { FileSpreadsheet, Download, Layers } from 'lucide-react';
 import { Spinner } from '../../../shared/components/ui/Spinner';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { representativesApi } from '../../representatives';
+import { enrollmentsApi } from '../../enrollments';
+import { attendanceApi } from '../../attendance';
 import { excelExportService } from '../services/excelExportService';
 import { useNotifications } from '../../notifications';
 import { useSchoolSettings } from '../../../shared/services/schoolSettingsService';
@@ -95,8 +97,8 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
     try {
       // 1. Fetch representatives and all enrollments in bulk
       const [reps, allEnrolls] = await Promise.all([
-        schoolDataService.getRepresentatives(true).catch(() => []),
-        schoolDataService.getAllEnrollments().catch(() => []),
+        representativesApi.getRepresentatives(true).catch(() => []),
+        enrollmentsApi.getAllEnrollments().catch(() => []),
       ]);
 
       const enrollsByClass = new Map<number, typeof allEnrolls>();
@@ -111,11 +113,11 @@ export function StageBatchExportCard({ classes, weeks }: StageBatchExportCardPro
         stageClasses.map(async (classItem) => {
           let enrollments = enrollsByClass.get(classItem.classId);
           if (!enrollments || enrollments.length === 0) {
-            enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+            enrollments = await enrollmentsApi.getEnrollmentsByClass(classItem.classId).catch(() => []);
           }
 
           const records = selectedWeek
-            ? await schoolDataService
+            ? await attendanceApi
                 .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
                 .catch(() => [])
             : [];

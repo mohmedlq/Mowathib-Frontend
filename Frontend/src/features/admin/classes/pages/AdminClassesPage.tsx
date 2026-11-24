@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { representativesApi } from '../../../representatives/api/representativesApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2,
@@ -41,25 +44,25 @@ export function AdminClassesPage() {
   // 1. Fetch Classes
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   // 2. Fetch Representatives
   const { data: reps = [] } = useQuery({
     queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+    queryFn: () => representativesApi.getRepresentatives(),
   });
 
   // 3. Fetch All Enrollments (to count students per class)
   const { data: allEnrollments = [] } = useQuery({
     queryKey: ['all_enrollments'],
-    queryFn: () => schoolDataService.getAllEnrollments(),
+    queryFn: () => enrollmentsApi.getAllEnrollments(),
   });
 
   // 4. Fetch Active Academic Year
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
 
   const academicYearId = activeYear?.academicYearId || 1;
@@ -136,7 +139,7 @@ export function AdminClassesPage() {
       const duplicate = classes.some((c) => getClassNum(c) === num);
       if (duplicate) throw new Error(`الشعبة رقم ${num} مسجلة مسبقاً`);
 
-      return await schoolDataService.createClass({
+      return await classesApi.createClass({
         className: `شعبة ${num}`,
         classNumber: num,
         academicYearId,
@@ -161,7 +164,7 @@ export function AdminClassesPage() {
       const num = Number(formClassNumber);
       if (!num || isNaN(num)) throw new Error('يرجى إدخال رقم شعبة صحيح');
 
-      return await schoolDataService.updateClass(editingClass.classId, {
+      return await classesApi.updateClass(editingClass.classId, {
         className: `شعبة ${num}`,
         classNumber: num,
         academicYearId: editingClass.academicYearId || academicYearId,
@@ -182,7 +185,7 @@ export function AdminClassesPage() {
   // Delete Mutation
   const deleteMutation = useMutation({
     mutationFn: async (classId: number) => {
-      return await schoolDataService.deleteClass(classId);
+      return await classesApi.deleteClass(classId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['classes'] });

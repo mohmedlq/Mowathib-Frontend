@@ -10,7 +10,9 @@ import {
 } from 'lucide-react';
 import { Spinner } from '../../../shared/components/ui/Spinner';
 import type { ClassItem, AttendanceWeek } from '../../../shared/types';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { representativesApi } from '../../representatives';
+import { enrollmentsApi } from '../../enrollments';
+import { attendanceApi } from '../../attendance';
 import { excelExportService } from '../services/excelExportService';
 import { reportCalculationService } from '../services/reportCalculationService';
 import { useNotifications } from '../../notifications';
@@ -130,14 +132,14 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
       }
 
       const dayName = getArabicDayName(dayNumber);
-      const reps = await schoolDataService.getRepresentatives(true).catch(() => []);
+      const reps = await representativesApi.getRepresentatives(true).catch(() => []);
 
       const classesData = await Promise.all(
         stageClasses.map(async (classItem) => {
           const [enrollments, records] = await Promise.all([
-            schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []),
+            enrollmentsApi.getEnrollmentsByClass(classItem.classId).catch(() => []),
             matchingWeek
-              ? schoolDataService
+              ? attendanceApi
                   .getAttendanceRecords(classItem.classId, matchingWeek.attendanceWeekId)
                   .catch(() => [])
               : Promise.resolve([]),
@@ -191,8 +193,8 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
         : '';
 
       const [reps, allEnrolls] = await Promise.all([
-        schoolDataService.getRepresentatives(true).catch(() => []),
-        schoolDataService.getAllEnrollments().catch(() => []),
+        representativesApi.getRepresentatives(true).catch(() => []),
+        enrollmentsApi.getAllEnrollments().catch(() => []),
       ]);
 
       const enrollsByClass = new Map<number, typeof allEnrolls>();
@@ -206,11 +208,11 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
         stageClasses.map(async (classItem) => {
           let enrollments = enrollsByClass.get(classItem.classId);
           if (!enrollments || enrollments.length === 0) {
-            enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+            enrollments = await enrollmentsApi.getEnrollmentsByClass(classItem.classId).catch(() => []);
           }
 
           const records = selectedWeek
-            ? await schoolDataService
+            ? await attendanceApi
                 .getAttendanceRecords(classItem.classId, selectedWeek.attendanceWeekId)
                 .catch(() => [])
             : [];
@@ -257,7 +259,7 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
     setExportingKey(key);
 
     try {
-      const reps = await schoolDataService.getRepresentatives(true).catch(() => []);
+      const reps = await representativesApi.getRepresentatives(true).catch(() => []);
 
       const overlappingWeeks = weeks.filter((w) => {
         return (
@@ -271,11 +273,11 @@ export function StageAbsenceReportsSection({ classes, weeks }: StageAbsenceRepor
 
       const classesData = await Promise.all(
         stageClasses.map(async (classItem) => {
-          const enrollments = await schoolDataService.getEnrollmentsByClass(classItem.classId).catch(() => []);
+          const enrollments = await enrollmentsApi.getEnrollmentsByClass(classItem.classId).catch(() => []);
 
           const weekRecordsArrays = await Promise.all(
             weeksToQuery.map((w) =>
-              schoolDataService.getAttendanceRecords(classItem.classId, w.attendanceWeekId).catch(() => [])
+              attendanceApi.getAttendanceRecords(classItem.classId, w.attendanceWeekId).catch(() => [])
             )
           );
           const allMonthRecords = weekRecordsArrays.flat();

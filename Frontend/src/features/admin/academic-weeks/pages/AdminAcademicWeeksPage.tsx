@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import { CalendarRange, Plus, Pencil, Trash2, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Dialog, DialogFooter } from '../../../../shared/components/ui/Dialog';
@@ -27,7 +28,7 @@ export function AdminAcademicWeeksPage() {
   // 1. Fetch Academic Years
   const { data: years = [] } = useQuery({
     queryKey: ['academic_years'],
-    queryFn: () => schoolDataService.getAcademicYears(),
+    queryFn: () => academicYearsApi.getAcademicYears(),
   });
 
   const activeYear = years.find((y) => y.isActive) || years[0];
@@ -36,7 +37,7 @@ export function AdminAcademicWeeksPage() {
   // 2. Fetch Weeks
   const { data: weeks = [], isLoading } = useQuery({
     queryKey: ['weeks', academicYearId],
-    queryFn: () => schoolDataService.getAttendanceWeeks(academicYearId),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(academicYearId),
   });
 
   const sortedWeeks = [...weeks].sort((a, b) => a.weekNumber - b.weekNumber);
@@ -64,7 +65,7 @@ export function AdminAcademicWeeksPage() {
       if (!startDate || !endDate) {
         throw new Error('يرجى تحديد تاريخي البداية والنهاية');
       }
-      return await schoolDataService.createAttendanceWeek({
+      return await attendanceWeeksApi.createAttendanceWeek({
         weekNumber: Number(weekNumber),
         startDate,
         endDate,
@@ -88,7 +89,7 @@ export function AdminAcademicWeeksPage() {
       if (!editingWeek || !startDate || !endDate) {
         throw new Error('يرجى ملء جميع الحقول المطلوبة');
       }
-      return await schoolDataService.updateAttendanceWeek(editingWeek.attendanceWeekId, {
+      return await attendanceWeeksApi.updateAttendanceWeek(editingWeek.attendanceWeekId, {
         weekNumber: Number(weekNumber),
         startDate,
         endDate,
@@ -109,7 +110,7 @@ export function AdminAcademicWeeksPage() {
   // Delete Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return await schoolDataService.deleteAttendanceWeek(id);
+      return await attendanceWeeksApi.deleteAttendanceWeek(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['weeks'] });

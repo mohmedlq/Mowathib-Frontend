@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import {
   QuickAttendancePanel,
   AttendanceWeekSelector,
@@ -40,8 +41,8 @@ export function ClerkAttendancePage() {
   const { data: rawClasses = [], isLoading: isLoadingClasses } = useQuery({
     queryKey: ['clerk_attendance_classes', schoolCode],
     queryFn: async () => {
-      if (!schoolCode) return await schoolDataService.getClasses();
-      return await schoolDataService.getClassesBySchool(schoolCode);
+      if (!schoolCode) return await classesApi.getClasses();
+      return await classesApi.getClassesBySchool(schoolCode);
     },
     staleTime: 1000 * 60 * 10,
   });
@@ -68,7 +69,7 @@ export function ClerkAttendancePage() {
   // Fetch attendance weeks
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
   });
 

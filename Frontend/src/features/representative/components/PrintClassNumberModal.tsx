@@ -1,7 +1,8 @@
 import { useAuth } from '../../auth';
 import { useSchoolSettings } from '../../../shared/services/schoolSettingsService';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { classesApi } from '../../classes/api/classesApi';
+import { representativesApi } from '../../representatives/api/representativesApi';
 import { Dialog, DialogFooter } from '../../../shared/components/ui/Dialog';
 import { Button } from '../../../shared/components/ui/Button';
 import { Printer } from 'lucide-react';
@@ -20,14 +21,14 @@ export function PrintClassNumberModal({ isOpen, onClose }: PrintClassNumberModal
   // Fetch Class Details
   const { data: classItem } = useQuery({
     queryKey: ['class_details', classId],
-    queryFn: () => schoolDataService.getClassById(classId),
+    queryFn: () => classesApi.getClassById(classId),
     enabled: classId > 0 && isOpen,
   });
 
   // Fetch Representatives to get Main and Deputy names
   const { data: reps = [] } = useQuery({
     queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+    queryFn: () => representativesApi.getRepresentatives(),
     enabled: isOpen,
   });
 

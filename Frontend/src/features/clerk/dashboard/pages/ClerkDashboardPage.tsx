@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../../features/auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { studentsApi } from '../../../students/api/studentsApi';
 import { filterClassesForClerk } from '../../../../shared/utils/clerkAccess';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
@@ -25,8 +26,8 @@ export function ClerkDashboardPage() {
   const { data: rawClasses = [], isLoading: isLoadingClasses } = useQuery({
     queryKey: ['clerk_school_classes', schoolCode],
     queryFn: async () => {
-      if (!schoolCode) return await schoolDataService.getClasses();
-      return await schoolDataService.getClassesBySchool(schoolCode);
+      if (!schoolCode) return await classesApi.getClasses();
+      return await classesApi.getClassesBySchool(schoolCode);
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -37,8 +38,8 @@ export function ClerkDashboardPage() {
   const { data: totalStudents = 0, isLoading: isLoadingCount } = useQuery({
     queryKey: ['clerk_school_students_count', schoolCode, user?.access],
     queryFn: async () => {
-      if (!schoolCode) return await schoolDataService.getStudentsCount();
-      const paged = await schoolDataService.getStudentsBySchoolPaged(schoolCode, {
+      if (!schoolCode) return await studentsApi.getStudentsCount();
+      const paged = await studentsApi.getStudentsBySchoolPaged(schoolCode, {
         pageNumber: 1,
         pageSize: 1,
         access: user?.access,

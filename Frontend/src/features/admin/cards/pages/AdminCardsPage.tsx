@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { representativesApi } from '../../../representatives/api/representativesApi';
 import { useSchoolSettings } from '../../../../shared/services/schoolSettingsService';
 import { CreditCard, Printer, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../../shared/components/ui/Button';
@@ -13,12 +14,12 @@ export function AdminCardsPage() {
 
   const { data: classes = [] } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   const { data: reps = [] } = useQuery({
     queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+    queryFn: () => representativesApi.getRepresentatives(),
   });
 
   const selectedClass = classes.find((c) => c.classId === selectedClassId);

@@ -8,7 +8,11 @@ import {
   Printer,
 } from 'lucide-react';
 
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { attendanceApi } from '../../../attendance/api/attendanceApi';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
 import { AttendanceTable, AttendanceWeekSelector } from '../../../attendance';
@@ -63,17 +67,17 @@ export function AdminWeeklyPreparationPage() {
   // Reference Queries
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
   });
 
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
 
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
@@ -110,16 +114,16 @@ export function AdminWeeklyPreparationPage() {
     queryKey: ['enrollments', previewClassId],
     queryFn: () =>
       previewClassId > 0
-        ? schoolDataService.getEnrollmentsByClass(previewClassId)
-        : schoolDataService.getAllEnrollments(),
+        ? enrollmentsApi.getEnrollmentsByClass(previewClassId)
+        : enrollmentsApi.getAllEnrollments(),
   });
 
   const { data: rawRecords = [], isLoading: isRecordsLoading } = useQuery({
     queryKey: ['attendance_records', previewClassId, selectedWeek?.attendanceWeekId],
     queryFn: () =>
       previewClassId > 0
-        ? schoolDataService.getAttendanceRecords(previewClassId, selectedWeek!.attendanceWeekId)
-        : schoolDataService.getAttendanceRecordsByWeek(selectedWeek!.attendanceWeekId),
+        ? attendanceApi.getAttendanceRecords(previewClassId, selectedWeek!.attendanceWeekId)
+        : attendanceApi.getAttendanceRecordsByWeek(selectedWeek!.attendanceWeekId),
     enabled: Boolean(selectedWeek?.attendanceWeekId),
   });
 
@@ -150,7 +154,7 @@ export function AdminWeeklyPreparationPage() {
 
     let enrollsMap = cachedEnrollsMap;
     if (!enrollsMap) {
-      const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+      const allEnrolls = await enrollmentsApi.getAllEnrollments().catch(() => []);
       enrollsMap = new Map<number, ClassEnrollment[]>();
       allEnrolls.forEach((item) => {
         const list = enrollsMap!.get(item.classId) || [];
@@ -161,7 +165,7 @@ export function AdminWeeklyPreparationPage() {
 
     let weekRecordsByClass: Map<number, typeof rawRecords> | null = null;
     try {
-      const allWeekRecs = await schoolDataService.getAttendanceRecordsByWeek(weekId);
+      const allWeekRecs = await attendanceApi.getAttendanceRecordsByWeek(weekId);
       if (allWeekRecs?.length) {
         weekRecordsByClass = new Map();
         allWeekRecs.forEach((r) => {
@@ -186,7 +190,7 @@ export function AdminWeeklyPreparationPage() {
       for (const cls of classList) {
         let enrolls = enrollsMap.get(cls.classId);
         if (!enrolls?.length) {
-          enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
+          enrolls = await enrollmentsApi.getEnrollmentsByClass(cls.classId).catch(() => []);
         }
         const recs = weekRecordsByClass.get(cls.classId) || [];
         results.push({
@@ -206,9 +210,9 @@ export function AdminWeeklyPreparationPage() {
         chunk.map(async (cls) => {
           let enrolls = enrollsMap!.get(cls.classId);
           if (!enrolls?.length) {
-            enrolls = await schoolDataService.getEnrollmentsByClass(cls.classId).catch(() => []);
+            enrolls = await enrollmentsApi.getEnrollmentsByClass(cls.classId).catch(() => []);
           }
-          const recs = await schoolDataService
+          const recs = await attendanceApi
             .getAttendanceRecords(cls.classId, weekId)
             .catch(() => []);
           return {
@@ -276,7 +280,7 @@ export function AdminWeeklyPreparationPage() {
       setIsExportingAll(true);
       toast.show('جاري تجهيز المصنف المجمع للمراحل الثلاث...', 'info');
 
-      const allEnrolls = await schoolDataService.getAllEnrollments().catch(() => []);
+      const allEnrolls = await enrollmentsApi.getAllEnrollments().catch(() => []);
       const enrollsMap = new Map<number, ClassEnrollment[]>();
       allEnrolls.forEach((item) => {
         const list = enrollsMap.get(item.classId) || [];

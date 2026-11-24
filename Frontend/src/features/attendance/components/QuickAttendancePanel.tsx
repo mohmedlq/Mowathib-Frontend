@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { academicYearsApi } from '../../academic-years/api/academicYearsApi';
 import type {
   ClassEnrollment,
   AttendanceRecord,
@@ -110,7 +110,7 @@ export function QuickAttendancePanel({
 
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
   const academicYearName = activeYear?.yearName || '1448-1449هـ';
 

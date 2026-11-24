@@ -17,7 +17,11 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { attendanceApi } from '../../attendance';
+import { classesApi } from '../../classes';
+import { attendanceWeeksApi } from '../../attendance-weeks';
+import { enrollmentsApi } from '../../enrollments';
+import { representativesApi } from '../../representatives';
 import { reportCalculationService } from '../services/reportCalculationService';
 import { excelExportService } from '../services/excelExportService';
 
@@ -378,7 +382,7 @@ async function fetchDailyRecords(
 
   try {
     dateRecords =
-      await schoolDataService.getAttendanceRecordsByDate(
+      await attendanceApi.getAttendanceRecordsByDate(
         date,
         classId,
       );
@@ -396,13 +400,13 @@ async function fetchDailyRecords(
   }
 
   if (classId) {
-    return schoolDataService.getAttendanceRecords(
+    return attendanceApi.getAttendanceRecords(
       classId,
       matchingWeek.attendanceWeekId,
     );
   }
 
-  return schoolDataService.getAttendanceRecordsByWeek(
+  return attendanceApi.getAttendanceRecordsByWeek(
     matchingWeek.attendanceWeekId,
   );
 }
@@ -779,7 +783,7 @@ export function ReportCenterPage() {
     refetch: refetchClasses,
   } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
     retry: 1,
     staleTime: 1000 * 60 * 30,
   });
@@ -792,7 +796,7 @@ export function ReportCenterPage() {
     refetch: refetchWeeks,
   } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     retry: 1,
     staleTime: 1000 * 60 * 30,
   });
@@ -805,7 +809,7 @@ export function ReportCenterPage() {
     refetch: refetchEnrollments,
   } = useQuery({
     queryKey: ['all_enrollments'],
-    queryFn: () => schoolDataService.getAllEnrollments(),
+    queryFn: () => enrollmentsApi.getAllEnrollments(),
     retry: 1,
     staleTime: 1000 * 60 * 15,
   });
@@ -1195,13 +1199,13 @@ export function ReportCenterPage() {
           previewConfig.scope === 'class' &&
           previewConfig.classId
         ) {
-          return schoolDataService.getAttendanceRecords(
+          return attendanceApi.getAttendanceRecords(
             previewConfig.classId,
             previewConfig.weekId,
           );
         }
 
-        return schoolDataService.getAttendanceRecordsByWeek(
+        return attendanceApi.getAttendanceRecordsByWeek(
           previewConfig.weekId,
         );
       }
@@ -1231,13 +1235,13 @@ export function ReportCenterPage() {
               previewConfig.scope === 'class' &&
               previewConfig.classId
             ) {
-              return schoolDataService.getAttendanceRecords(
+              return attendanceApi.getAttendanceRecords(
                 previewConfig.classId,
                 week.attendanceWeekId,
               );
             }
 
-            return schoolDataService.getAttendanceRecordsByWeek(
+            return attendanceApi.getAttendanceRecordsByWeek(
               week.attendanceWeekId,
             );
           }),
@@ -1585,11 +1589,11 @@ export function ReportCenterPage() {
       const freshEnrollments =
         allEnrollments.length > 0
           ? allEnrollments
-          : await schoolDataService.getAllEnrollments();
+          : await enrollmentsApi.getAllEnrollments();
 
       const reps =
         type === 'weekly'
-          ? await schoolDataService.getRepresentatives(true)
+          ? await representativesApi.getRepresentatives(true)
           : [];
 
       const exportEnrollToClass =
@@ -1882,7 +1886,7 @@ export function ReportCenterPage() {
           `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
 
         const weekRecords =
-          await schoolDataService.getAttendanceRecordsByWeek(
+          await attendanceApi.getAttendanceRecordsByWeek(
             targetWeek.attendanceWeekId,
           );
 
@@ -2041,7 +2045,7 @@ export function ReportCenterPage() {
 
         const weekRecordsList = await Promise.all(
           overlappingWeeks.map((item) =>
-            schoolDataService.getAttendanceRecordsByWeek(
+            attendanceApi.getAttendanceRecordsByWeek(
               item.week.attendanceWeekId,
             ),
           ),

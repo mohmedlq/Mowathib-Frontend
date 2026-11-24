@@ -1,6 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { classesApi } from '../../../classes/api/classesApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { attendanceApi } from '../../../attendance/api/attendanceApi';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
 import { AttendanceTable } from '../../../attendance';
@@ -21,19 +25,19 @@ export function AdminMonthlyPreparationPage() {
   // 1. Fetch Classes
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   // 2. Fetch Weeks
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
   });
 
   // 2b. Fetch Active Academic Year
   const { data: activeYear } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
 
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
@@ -63,7 +67,7 @@ export function AdminMonthlyPreparationPage() {
   // 4. Fetch Enrollments for Selected Class
   const { data: enrollments = [], isLoading: isEnrollmentsLoading } = useQuery({
     queryKey: ['enrollments', effectiveClassId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(effectiveClassId),
+    queryFn: () => enrollmentsApi.getEnrollmentsByClass(effectiveClassId),
     enabled: effectiveClassId > 0,
   });
 
@@ -76,31 +80,31 @@ export function AdminMonthlyPreparationPage() {
 
   const { data: recordsW1 = [], isLoading: isRec1Loading } = useQuery({
     queryKey: ['attendance_records', effectiveClassId, week1Id],
-    queryFn: () => schoolDataService.getAttendanceRecords(effectiveClassId, week1Id!),
+    queryFn: () => attendanceApi.getAttendanceRecords(effectiveClassId, week1Id!),
     enabled: !!week1Id && effectiveClassId > 0,
   });
 
   const { data: recordsW2 = [], isLoading: isRec2Loading } = useQuery({
     queryKey: ['attendance_records', effectiveClassId, week2Id],
-    queryFn: () => schoolDataService.getAttendanceRecords(effectiveClassId, week2Id!),
+    queryFn: () => attendanceApi.getAttendanceRecords(effectiveClassId, week2Id!),
     enabled: !!week2Id && effectiveClassId > 0,
   });
 
   const { data: recordsW3 = [], isLoading: isRec3Loading } = useQuery({
     queryKey: ['attendance_records', effectiveClassId, week3Id],
-    queryFn: () => schoolDataService.getAttendanceRecords(effectiveClassId, week3Id!),
+    queryFn: () => attendanceApi.getAttendanceRecords(effectiveClassId, week3Id!),
     enabled: !!week3Id && effectiveClassId > 0,
   });
 
   const { data: recordsW4 = [], isLoading: isRec4Loading } = useQuery({
     queryKey: ['attendance_records', effectiveClassId, week4Id],
-    queryFn: () => schoolDataService.getAttendanceRecords(effectiveClassId, week4Id!),
+    queryFn: () => attendanceApi.getAttendanceRecords(effectiveClassId, week4Id!),
     enabled: !!week4Id && effectiveClassId > 0,
   });
 
   const { data: recordsW5 = [], isLoading: isRec5Loading } = useQuery({
     queryKey: ['attendance_records', effectiveClassId, week5Id],
-    queryFn: () => schoolDataService.getAttendanceRecords(effectiveClassId, week5Id!),
+    queryFn: () => attendanceApi.getAttendanceRecords(effectiveClassId, week5Id!),
     enabled: !!week5Id && effectiveClassId > 0,
   });
 

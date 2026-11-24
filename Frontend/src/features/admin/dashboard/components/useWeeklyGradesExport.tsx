@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { enrollmentsApi } from '../../../../features/enrollments/api/enrollmentsApi';
+import { attendanceApi } from '../../../../features/attendance/api/attendanceApi';
 import { excelExportService } from '../../../reports/services/excelExportService';
 import { buildWeeklyAttendanceRows } from '../../../attendance/utils/matrixBuilder';
 import { useNotifications } from '../../../notifications';
@@ -77,7 +78,7 @@ export function useWeeklyGradesExport() {
       setIsExporting(true);
       toast.show('جاري تجهيز مصنف Excel للمراحل...', 'info');
 
-      const allEnrolls = await schoolDataService.getAllEnrollments();
+      const allEnrolls = await enrollmentsApi.getAllEnrollments();
       const enrollsMap = new Map<number, typeof allEnrolls>();
       for (const e of allEnrolls) {
         const list = enrollsMap.get(e.classId) ?? [];
@@ -92,7 +93,7 @@ export function useWeeklyGradesExport() {
 
       let weekRecordsByClass: Map<number, AttendanceRecord[]> | null = null;
       try {
-        const allWeekRecs = await schoolDataService.getAttendanceRecordsByWeek(
+        const allWeekRecs = await attendanceApi.getAttendanceRecordsByWeek(
           activeWeek.attendanceWeekId
         );
         if (allWeekRecs?.length) {
@@ -119,10 +120,10 @@ export function useWeeklyGradesExport() {
             const [enrollments, records] = await Promise.all([
               cachedEnrolls?.length
                 ? Promise.resolve(cachedEnrolls)
-                : schoolDataService.getEnrollmentsByClass(cls.classId, activeYear.academicYearId),
+                : enrollmentsApi.getEnrollmentsByClass(cls.classId, activeYear.academicYearId),
               weekRecordsByClass?.has(cls.classId)
                 ? Promise.resolve(weekRecordsByClass.get(cls.classId)!)
-                : schoolDataService.getAttendanceRecords(cls.classId, activeWeek.attendanceWeekId),
+                : attendanceApi.getAttendanceRecords(cls.classId, activeWeek.attendanceWeekId),
             ]);
 
             return {

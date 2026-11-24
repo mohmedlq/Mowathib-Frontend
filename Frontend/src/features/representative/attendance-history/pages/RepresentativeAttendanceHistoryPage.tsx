@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../../auth';
 import { useQuery } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
 import {
   AttendanceTable,
   AttendanceWeekSelector,
@@ -21,7 +21,7 @@ export function RepresentativeAttendanceHistoryPage() {
 
   const { data: weeks = [] } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
   });
 
   const {

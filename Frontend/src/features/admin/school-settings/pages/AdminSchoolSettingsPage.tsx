@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { schoolsApi } from '../../../schools/api/schoolsApi';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Input } from '../../../../shared/components/ui/Input';
@@ -31,13 +31,13 @@ export function AdminSchoolSettingsPage() {
     queryKey: ['admin_school_details', user?.schoolCode, user?.id],
     queryFn: async () => {
       if (user?.schoolCode) {
-        return await schoolDataService.getSchoolByCode(user.schoolCode);
+        return await schoolsApi.getSchoolByCode(user.schoolCode);
       }
       if (user?.id) {
-        return await schoolDataService.getSchoolForAdmin(user.id);
+        return await schoolsApi.getSchoolForAdmin(user.id);
       }
-      const defaultCode = await schoolDataService.getDefaultSchoolCode();
-      return await schoolDataService.getSchoolByCode(defaultCode);
+      const defaultCode = await schoolsApi.getDefaultSchoolCode();
+      return await schoolsApi.getSchoolByCode(defaultCode);
     },
   });
 
@@ -62,7 +62,7 @@ export function AdminSchoolSettingsPage() {
       if (!school?.schoolCode) throw new Error('رمز المدرسة غير متوفر');
       if (!schoolName.trim()) throw new Error('اسم المدرسة مطلوب');
 
-      return await schoolDataService.updateSchool(school.schoolCode, {
+      return await schoolsApi.updateSchool(school.schoolCode, {
         name: schoolName.trim(),
         isActive,
       });

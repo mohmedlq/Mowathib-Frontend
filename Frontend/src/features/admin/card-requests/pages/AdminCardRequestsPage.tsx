@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { cardRequestsApi } from '../../../card-requests/api/cardRequestsApi';
 import { FileQuestion, CheckCircle2, XCircle } from 'lucide-react';
 import { CardRequestBadge } from '../../../../shared/components/ui/Badge';
 import { MuwathibTableLoading } from '../../../../shared/components/ui/Spinner';
@@ -14,12 +14,12 @@ export function AdminCardRequestsPage() {
 
   const { data: requests = [], isLoading } = useQuery({
     queryKey: ['card_requests'],
-    queryFn: () => schoolDataService.getCardRequests(),
+    queryFn: () => cardRequestsApi.getCardRequests(),
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ requestId, status }: { requestId: number; status: CardRequestStatus }) => {
-      await schoolDataService.updateCardRequestStatus(requestId, status);
+      await cardRequestsApi.updateCardRequestStatus(requestId, status);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['card_requests'] });

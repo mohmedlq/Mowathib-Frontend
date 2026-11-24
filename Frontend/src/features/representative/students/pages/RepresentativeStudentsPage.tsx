@@ -2,7 +2,8 @@
 import { useState } from 'react';
 import { useAuth } from '../../../auth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
+import { studentsApi } from '../../../students/api/studentsApi';
 import {
   GraduationCap,
   Search,
@@ -104,7 +105,7 @@ export function RepresentativeStudentsPage() {
   const { data: pagedData, isLoading } = useQuery({
     queryKey: ['enrollments_paged', classId, search, pageNumber, pageSize],
     queryFn: () =>
-      schoolDataService.getPagedEnrollments({
+      enrollmentsApi.getPagedEnrollments({
         classId,
         search: search.trim() || undefined,
         pageNumber,
@@ -123,7 +124,7 @@ export function RepresentativeStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || (concluded || undefined);
 
-      return await schoolDataService.createStudent(
+      return await studentsApi.createStudent(
         {
           firstName: firstName.trim(),
           secondName: secondName.trim(),
@@ -162,7 +163,7 @@ export function RepresentativeStudentsPage() {
       studentId: number;
       student: StudentFormData;
     }) => {
-      return await schoolDataService.updateStudentDetails(data.studentId, data.student);
+      return await studentsApi.updateStudentDetails(data.studentId, data.student);
     },
 
     onSuccess: () => {
@@ -185,7 +186,7 @@ export function RepresentativeStudentsPage() {
   // إنهاء قيد الطالب من الشعبة
   const removeMutation = useMutation({
     mutationFn: async (enrollmentId: number) => {
-      await schoolDataService.removeStudentFromClass(enrollmentId);
+      await enrollmentsApi.removeStudentFromClass(enrollmentId);
     },
 
     onSuccess: () => {

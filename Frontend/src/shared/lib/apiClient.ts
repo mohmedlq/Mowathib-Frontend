@@ -18,12 +18,8 @@ export class ApiError extends Error {
     this.data = data;
   }
 }
-const Base_Urls = {
-  Local: 'http://localhost:10000/api',
-  Somee: 'https://mowathib-api.somee.com/api',
-};
-const BASE_URL = Base_Urls.Local;
 
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: BASE_URL,
   headers: {

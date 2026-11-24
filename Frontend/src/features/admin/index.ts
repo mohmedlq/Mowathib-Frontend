@@ -11,3 +11,4 @@ export { AdminMonthlyPreparationPage } from './monthly-preparation/pages/AdminMo
 export { AdminWeeklyPreparationPage } from './weekly-preparation/pages/AdminWeeklyPreparationPage';
 export { AdminAcademicWeeksPage } from './academic-weeks/pages/AdminAcademicWeeksPage';
 export { AdminSendNotificationsPage } from './send-notifications/pages/AdminSendNotificationsPage';
+export * from './api/adminApi';

@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { AuthUser } from '../../../shared/types';
 import type { AuthContextType, LoginCredentials } from '../types/auth.types';
 import { authApi } from '../api/authApi';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { attendanceClerksApi } from '../../attendance-clerks';
+import { academicYearsApi } from '../../academic-years';
 import { SplashScreen } from '../../../components/common/SplashScreen';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -28,11 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem('mowathib_token');
+    try {
+      if (user) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('mowathib_token');
+      }
+    } catch (err) {
+      console.error('Failed to sync auth user to localStorage:', err);
     }
   }, [user]);
 
@@ -135,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (user.role === 'Representative' || user.role === 'Deputy') {
         await authApi.changeRepresentativePassword(user.id, newPassword);
       } else if (user.role === 'AttendanceClerk') {
-        await schoolDataService.updateAttendanceClerk(user.id, { password: newPassword }, user.schoolCode);
+        await attendanceClerksApi.updateAttendanceClerk(user.id, { password: newPassword }, user.schoolCode);
       }
       setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : null));
     } finally {
@@ -152,19 +157,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fullName: fullName ? fullName.trim() : prev.fullName,
         adminName: fullName ? fullName.trim() : prev.adminName,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to update credentials in localStorage:', err);
+      }
       return updated;
     });
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem('mowathib_token');
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('mowathib_token');
+    } catch (err) {
+      console.error('Failed to clear credentials on logout:', err);
+    }
     window.location.href = '/';
   };
   const activeAcademicYear=async():Promise<string>=>{
-    return(await schoolDataService.getActiveAcademicYear()).yearName;
+    return(await academicYearsApi.getActiveAcademicYear()).yearName;
   }
   return (
     <AuthContext.Provider

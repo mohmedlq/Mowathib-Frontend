@@ -7,7 +7,8 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { representativesApi } from '../../../representatives/api/representativesApi';
+import { enrollmentsApi } from '../../../enrollments/api/enrollmentsApi';
 
 import {
   UserCheck,
@@ -93,7 +94,7 @@ export function RepresentativeDeputyPage() {
     isLoading: isLoadingReps,
   } = useQuery({
     queryKey: ['representatives'],
-    queryFn: () => schoolDataService.getRepresentatives(),
+    queryFn: () => representativesApi.getRepresentatives(),
     enabled: classId > 0,
   });
 
@@ -102,7 +103,7 @@ export function RepresentativeDeputyPage() {
     isLoading: isLoadingEnrollments,
   } = useQuery({
     queryKey: ['enrollments', classId],
-    queryFn: () => schoolDataService.getEnrollmentsByClass(classId),
+    queryFn: () => enrollmentsApi.getEnrollmentsByClass(classId),
     enabled: classId > 0,
   });
 
@@ -166,7 +167,7 @@ export function RepresentativeDeputyPage() {
 
   const deactivateMutation = useMutation({
     mutationFn: (id: number) =>
-      schoolDataService.deactivateRepresentative(id),
+      representativesApi.deactivateRepresentative(id),
 
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -183,9 +184,9 @@ export function RepresentativeDeputyPage() {
   const createMutation = useMutation({
     mutationFn: (
       data: Parameters<
-        typeof schoolDataService.createRepresentative
+        typeof representativesApi.createRepresentative
       >[0]
-    ) => schoolDataService.createRepresentative(data),
+    ) => representativesApi.createRepresentative(data),
 
     onSuccess: () => {
       queryClient.invalidateQueries({

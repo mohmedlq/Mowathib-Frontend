@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { studentsApi } from '../../../students/api/studentsApi';
+import { classesApi } from '../../../classes/api/classesApi';
+import { academicYearsApi } from '../../../academic-years/api/academicYearsApi';
+import { attendanceWeeksApi } from '../../../attendance-weeks/api/attendanceWeeksApi';
+import { attendanceApi } from '../../../attendance/api/attendanceApi';
 import {
-  formatArabicDateShort,
   resolveDefaultAttendanceWeek,
   getRiyadhDateOnly,
   calculateDateForDay,
@@ -27,22 +30,22 @@ export function AdminDashboardPage() {
 
   const { data: studentsCount = 0, isLoading: isStudentsLoading } = useQuery({
     queryKey: ['students_count'],
-    queryFn: () => schoolDataService.getStudentsCount(),
+    queryFn: () => studentsApi.getStudentsCount(),
   });
 
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ['classes'],
-    queryFn: () => schoolDataService.getClasses(),
+    queryFn: () => classesApi.getClasses(),
   });
 
   const { data: activeYear, isLoading: isActiveYearLoading } = useQuery({
     queryKey: ['active_academic_year'],
-    queryFn: () => schoolDataService.getActiveAcademicYear(),
+    queryFn: () => academicYearsApi.getActiveAcademicYear(),
   });
 
   const { data: weeks = [], isLoading: isWeeksLoading } = useQuery({
     queryKey: ['weeks'],
-    queryFn: () => schoolDataService.getAttendanceWeeks(),
+    queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
   });
 
@@ -68,7 +71,7 @@ export function AdminDashboardPage() {
   const { data: todayAbsenteesData, isLoading: isTodayAbsentsLoading } = useQuery({
     queryKey: ['dashboard_today_absentees', todayStr],
     queryFn: () =>
-      schoolDataService.getPagedAbsentees({
+      attendanceApi.getPagedAbsentees({
         date: todayStr,
         pageNumber: 1,
         pageSize: 1,

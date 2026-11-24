@@ -8,4 +8,6 @@ export { AttendanceWeekSelector } from './components/AttendanceWeekSelector';
 export { AttendanceClassSelector } from './components/AttendanceClassSelector';
 export { useAttendanceMatrix } from './hooks/useAttendanceMatrix';
 export type { StudentWeeklyAttendance, AttendanceFilterState } from './types/attendance.types';
+export * from './api/attendanceApi';
+export * from './api/attendanceKeys';
 

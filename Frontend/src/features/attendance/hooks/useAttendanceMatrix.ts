@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { schoolDataService } from '../../../shared/services/schoolDataService';
+import { attendanceApi } from '../api/attendanceApi';
+import { enrollmentsApi } from '../../enrollments/api/enrollmentsApi';
 import type { StudentWeeklyAttendance } from '../types/attendance.types';
 import type { AttendanceStatus, AttendanceRecord, BackendAttendanceStatus } from '../../../shared/types';
 import { SCHOOL_DAYS } from '../../../shared/types';
@@ -15,7 +16,7 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
   // Fetch enrollments (parallel query)
   const enrollmentsQuery = useQuery({
     queryKey: ['enrollments', classId],
-    queryFn: () => (classId > 0 ? schoolDataService.getEnrollmentsByClass(classId) : schoolDataService.getAllEnrollments()),
+    queryFn: () => (classId > 0 ? enrollmentsApi.getEnrollmentsByClass(classId) : enrollmentsApi.getAllEnrollments()),
     enabled: classId >= 0,
     staleTime: 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 30,
@@ -25,7 +26,7 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
   // Fetch records (parallel query, only when week is identified)
   const recordsQuery = useQuery({
     queryKey: ['attendance_records', classId, attendanceWeekId],
-    queryFn: () => (classId > 0 ? schoolDataService.getAttendanceRecords(classId, attendanceWeekId!) : schoolDataService.getAttendanceRecordsByWeek(attendanceWeekId!)),
+    queryFn: () => (classId > 0 ? attendanceApi.getAttendanceRecords(classId, attendanceWeekId!) : attendanceApi.getAttendanceRecordsByWeek(attendanceWeekId!)),
     enabled: classId >= 0 && isWeekReady,
     staleTime: 1000 * 60 * 2, // 2 minutes
     gcTime: 1000 * 60 * 15,
@@ -106,7 +107,7 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
       if (dayNumber < 1 || dayNumber > 5) {
         throw new Error(`رقم اليوم ${dayNumber} غير صالح (يجب أن يكون بين 1 و 5).`);
       }
-      return await schoolDataService.saveBulkAttendance({
+      return await attendanceApi.saveBulkAttendance({
         attendanceWeekId: attendanceWeekId!,
         dayNumber,
         records: changes,

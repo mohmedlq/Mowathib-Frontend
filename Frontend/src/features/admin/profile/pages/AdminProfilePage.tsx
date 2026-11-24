@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../auth';
-import { schoolDataService } from '../../../../shared/services/schoolDataService';
+import { adminApi } from '../../../admin/api/adminApi';
 import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { Button } from '../../../../shared/components/ui/Button';
 import { Input } from '../../../../shared/components/ui/Input';
@@ -31,7 +31,7 @@ export function AdminProfilePage() {
     queryKey: ['admin_profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      return await schoolDataService.getAdminProfile(user.id);
+      return await adminApi.getAdminProfile(user.id);
     },
   });
 
@@ -61,7 +61,7 @@ export function AdminProfilePage() {
         }
       }
 
-      return await schoolDataService.updateAdminProfile(user.id, {
+      return await adminApi.updateAdminProfile(user.id, {
         adminName: adminName.trim(),
         username: username.trim(),
         currentPassword: currentPassword.trim() || undefined,
