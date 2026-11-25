@@ -144,25 +144,87 @@ export function AdminSchoolSettingsPage() {
             </p>
           </div>
 
-          <div className="p-4 rounded-xl border border-[#EEF2F3] dark:border-[#28373D] flex items-center justify-between">
-            <div>
-              <div className="text-xs font-bold text-[#17252B] dark:text-[#F0F4F6]">
-                حالة تفعيل المدرسة في النظام
-              </div>
-              <div className="text-[11px] text-[#5F6B73] dark:text-[#9BAAB1] mt-0.5">
-                عند إلغاء التفعيل، يتم تعليق عمليات رصد الحضور مؤقتاً
-              </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isActive}
-                onChange={(e) => setIsActive(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0B5D43]"></div>
-            </label>
-          </div>
+           <div
+  className={`flex items-center justify-between gap-4 rounded-2xl border p-4 transition-colors duration-200 sm:p-5 ${
+    isActive
+      ? 'border-[#CFE5D8] bg-[#F6FAF7] dark:border-[#28513D] dark:bg-[#182A21]'
+      : 'border-[#E5E9EB] bg-[#FAFBFB] dark:border-[#354047] dark:bg-[#1A2429]'
+  }`}
+>
+  <div className="min-w-0 flex-1">
+    <div className="flex flex-wrap items-center gap-2">
+      <span
+        id="school-status-label"
+        className="text-sm font-extrabold text-[#17252B] dark:text-[#F0F4F6]"
+      >
+        حالة تفعيل المدرسة
+      </span>
+
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${
+          isActive
+            ? 'bg-[#E1F2E8] text-[#176B4B] dark:bg-[#214533] dark:text-[#9BD5B7]'
+            : 'bg-[#ECEFF1] text-[#687780] dark:bg-[#303B41] dark:text-[#B2BEC4]'
+        }`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            isActive ? 'bg-[#259B61]' : 'bg-[#8B969D]'
+          }`}
+        />
+        {isActive ? 'مفعّلة' : 'متوقفة'}
+      </span>
+    </div>
+
+    <p
+      id="school-status-description"
+      className="mt-1.5 max-w-md text-xs leading-6 text-[#718087] dark:text-[#A3B0B7]"
+    >
+      {isActive
+        ? 'المدرسة مفعّلة ويمكن متابعة عمليات رصد الحضور.'
+        : 'المدرسة متوقفة مؤقتاً، وعمليات رصد الحضور معلّقة.'}
+    </p>
+  </div>
+
+  <label
+    htmlFor="school-active-toggle"
+    className="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center"
+  >
+    <input
+      id="school-active-toggle"
+      type="checkbox"
+      role="switch"
+      checked={isActive}
+      onChange={(e) => setIsActive(e.target.checked)}
+      aria-labelledby="school-status-label"
+      aria-describedby="school-status-description"
+      className="peer sr-only"
+    />
+
+    <span
+      aria-hidden="true"
+      className={`
+        absolute inset-0 rounded-full transition-all duration-300
+        ${
+          isActive
+            ? 'bg-[#176B4B] dark:bg-[#23845B]'
+            : 'bg-[#D7DEE1] dark:bg-[#46535B]'
+        }
+        peer-focus-visible:ring-4 peer-focus-visible:ring-[#176B4B]/20
+        peer-focus-visible:outline-none
+      `}
+    />
+
+    <span
+      aria-hidden="true"
+      className={`
+        absolute right-1 h-5 w-5 rounded-full bg-white shadow-sm
+        transition-transform duration-300 ease-out
+        ${isActive ? '-translate-x-5' : 'translate-x-0'}
+      `}
+    />
+  </label>
+</div>
         </div>
 
         {/* Action Button */}

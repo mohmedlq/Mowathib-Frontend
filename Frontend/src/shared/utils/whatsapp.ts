@@ -75,9 +75,11 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
  * Supports placeholder variables: {studentName}, {absentDate}, {schoolName}, {schoolGreeting}, {parentName}
  * Also supports Arabic placeholder equivalents: {اسم_الطالب}, {تاريخ_الغياب}, {اسم_المدرسة}, {تحية_المدرسة}, {اسم_ولي_الأمر}
  */
-export const DEFAULT_ABSENCE_TEMPLATE =
-  `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب ({اسم_الطالب})، نود إشعاركم {تحية_المدرسة} بغياب ابنكم اليوم الموافق {absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب  .\nشاكرين ومقدرين حسن تعاونكم.`;
+export const DEFAULT_ABSENCE_TEMPLATE = `ولي أمر الطالب {studentName}،
 
+نفيدكم بتسجيل غياب ابنكم في {schoolName} بتاريخ {absentDate}.
+
+نأمل موافاتنا بعذر غياب الطالب.`;
 /**
  * Renders a notification message from a template and parameters.
  */
@@ -90,14 +92,32 @@ export function renderNotificationMessage(
     parentName?: string;
   }
 ): string {
-  const tpl = template || DEFAULT_ABSENCE_TEMPLATE;
-  const schoolGreeting = params.schoolName ? `من إدارة ${params.schoolName}` : 'من إدارة المدرسة';
-  return tpl
-    .replace(/\{studentName\}|\{اسم_الطالب\}/g, params.studentName)
-    .replace(/\{parentName\}|\{اسم_ولي_الأمر\}/g, params.parentName || 'ولي الأمر')
-    .replace(/\{absentDate\}|\{تاريخ_الغياب\}/g, params.absentDate)
-    .replace(/\{schoolName\}|\{اسم_المدرسة\}/g, params.schoolName || 'المدرسة')
-    .replace(/\{schoolGreeting\}|\{تحية_المدرسة\}/g, schoolGreeting);
+  const tpl = template?.trim() || DEFAULT_ABSENCE_TEMPLATE;
+
+  const studentName = params.studentName?.trim() || 'الطالب';
+  const schoolName = params.schoolName?.trim() || 'المدرسة';
+
+  const replacements: Record<string, string> = {
+    studentName,
+    اسم_الطالب: studentName,
+
+    parentName: params.parentName?.trim() || 'ولي الأمر',
+    اسم_ولي_الأمر: params.parentName?.trim() || 'ولي الأمر',
+
+    absentDate: params.absentDate,
+    تاريخ_الغياب: params.absentDate,
+
+    schoolName,
+    اسم_المدرسة: schoolName,
+
+    schoolGreeting: `إدارة ${schoolName}`,
+    تحية_المدرسة: `إدارة ${schoolName}`,
+  };
+
+  return tpl.replace(
+    /\{([^{}]+)\}/g,
+    (placeholder, key: string) => replacements[key] ?? placeholder
+  );
 }
 
 /**

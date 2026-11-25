@@ -33,7 +33,79 @@ export function normalizeDateOnly(dateStr?: string | null): string {
   if (!dateStr) return '';
   return dateStr.split('T')[0].trim();
 }
+/**
+ * Formats a Gregorian date as an Arabic Hijri date
+ * using the official Umm Al-Qura calendar.
+ */
+export function formatHijriDate(dateStr: string): string {
+  if (!dateStr) return '';
 
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr.trim());
+
+  if (!match) return dateStr;
+
+  const [, year, month, day] = match;
+
+  const date = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day), 12)
+  );
+
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day)
+  ) {
+    return dateStr;
+  }
+
+  const formatted = new Intl.DateTimeFormat(
+    'ar-SA-u-ca-islamic-umalqura',
+    {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Riyadh',
+    }
+  ).format(date);
+
+  return `${formatted.replace(/\s*هـ\s*$/, '')} هـ`;
+}
+
+/**
+ * Calculates the Gregorian date for a school day
+ * and returns its Hijri Umm Al-Qura representation.
+ *
+ * dayNumber:
+ * 1 = Sunday
+ * 2 = Monday
+ * 3 = Tuesday
+ * 4 = Wednesday
+ * 5 = Thursday
+ */
+export function calculateHijriDateForDay(
+  startDateStr: string,
+  dayNumber: number
+): string {
+  if (!startDateStr || dayNumber < 1) return '';
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(startDateStr.trim());
+
+  if (!match) return '';
+
+  const [, year, month, day] = match;
+
+  const target = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day) + dayNumber - 1, 12)
+  );
+
+  const gregorianDate = [
+    target.getUTCFullYear(),
+    String(target.getUTCMonth() + 1).padStart(2, '0'),
+    String(target.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+
+  return formatHijriDate(gregorianDate);
+}
 /**
  * Resolves the active attendance week based on current date in Asia/Riyadh timezone.
  * Centralized, deterministic policy:

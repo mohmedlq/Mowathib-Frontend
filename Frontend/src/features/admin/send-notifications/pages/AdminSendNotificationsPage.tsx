@@ -1,9 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   AlertTriangle,
@@ -23,6 +19,7 @@ import {
   Search,
   Send,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { classesApi } from '../../../classes/api/classesApi';
@@ -33,20 +30,19 @@ import { WeekSelector } from '../../../../shared/components/ui/weekselector';
 import { useSchoolSettings } from '../../../../shared/services/schoolSettingsService';
 import { useNotifications } from '../../../notifications';
 import { SCHOOL_DAYS } from '../../../../shared/types';
-import type { ParentNotification } from '../../../../shared/types';
+import type { ClassItem, ParentNotification } from '../../../../shared/types';
 import {
   calculateDateForDay,
-  formatArabicDate,
+  formatHijriDate,
   getArabicDayName,
-  resolveDefaultAttendanceWeek,
   getRiyadhDateOnly,
+  resolveDefaultAttendanceWeek,
 } from '../../../../shared/utils/date';
 import {
-  isValidSaudiPhone,
-  formatPhoneDisplay,
   createWhatsAppAbsenceUrl,
-  buildAbsenceNotificationMessage,
   DEFAULT_ABSENCE_TEMPLATE,
+  formatPhoneDisplay,
+  isValidSaudiPhone,
   renderNotificationMessage,
 } from '../../../../shared/utils/whatsapp';
 import { Button } from '../../../../shared/components/ui/Button';
@@ -55,26 +51,37 @@ import { MuwathibLoading } from '../../../../shared/components/ui/Spinner';
 import { PaginationControls } from '../../../../shared/components/ui/PaginationControls';
 
 // =============================================================================
-// Configuration & Utilities
+// Configuration
 // =============================================================================
 
-const NOTIFICATIONS_QUERY_KEY = 'parent_notifications';
-const ABSENTEES_QUERY_KEY = 'paged_absentees_count';
-const AUTO_GENERATION_QUERY_KEY = 'parent_notifications_auto_generation';
+const QUERY_KEYS = {
+  classes: ['classes'] as const,
+  weeks: ['weeks'] as const,
+  notifications: 'parent_notifications',
+  absentees: 'paged_absentees_count',
+  autoGeneration: 'parent_notifications_auto_generation',
+};
 
-const CLASSES_QUERY_KEY = ['classes'] as const;
-const WEEKS_QUERY_KEY = ['weeks'] as const;
+const STORAGE_KEYS = {
+  template: 'mowathib_absence_template',
+  customMessages: 'mowathib_custom_messages',
+};
 
-const TEMPLATE_STORAGE_KEY = 'mowathib_absence_template';
-const CUSTOM_MESSAGES_STORAGE_KEY = 'mowathib_custom_messages';
 const DEFAULT_PAGE_SIZE = 15;
 
 type StatusFilter = 'all' | 'sent' | 'pending';
+type StatusUpdateSource = 'whatsapp' | 'manual';
 
 interface NotificationStatusVariables {
   id: number;
   isSent: boolean;
   date: string;
+  source: StatusUpdateSource;
+}
+
+interface NotificationStatusContext {
+  queryKey: readonly [string, string];
+  previousNotifications?: ParentNotification[];
 }
 
 const TEMPLATE_VARIABLES = [
@@ -85,15 +92,19 @@ const TEMPLATE_VARIABLES = [
   { tag: '{تحية_المدرسة}', label: 'تحية المدرسة' },
 ] as const;
 
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
 function getInitialDay(): number {
   const today = getRiyadhDateOnly();
-  const weekday = new Date(`${today}T12:00:00`).getDay();
-  return weekday >= 0 && weekday <= 4 ? weekday + 1 : 1;
+  const dayOfWeek = new Date(`${today}T12:00:00Z`).getUTCDay();
+  return dayOfWeek >= 0 && dayOfWeek <= 4 ? dayOfWeek + 1 : 1;
 }
 
 function readStoredTemplate(): string {
   try {
-    return localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_ABSENCE_TEMPLATE;
+    return localStorage.getItem(STORAGE_KEYS.template) || DEFAULT_ABSENCE_TEMPLATE;
   } catch {
     return DEFAULT_ABSENCE_TEMPLATE;
   }
@@ -101,74 +112,120 @@ function readStoredTemplate(): string {
 
 function readStoredCustomMessages(): Record<number, string> {
   try {
-    const saved = localStorage.getItem(CUSTOM_MESSAGES_STORAGE_KEY);
-    if (!saved) return {};
-    const parsed: unknown = JSON.parse(saved);
+    const stored = localStorage.getItem(STORAGE_KEYS.customMessages);
+    if (!stored) return {};
+
+    const parsed: unknown = JSON.parse(stored);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
     return parsed as Record<number, string>;
   } catch {
     return {};
   }
 }
 
-function persistCustomMessages(messages: Record<number, string>): void {
+function saveCustomMessages(messages: Record<number, string>): void {
   try {
-    localStorage.setItem(CUSTOM_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
+    localStorage.setItem(STORAGE_KEYS.customMessages, JSON.stringify(messages));
   } catch (error) {
-    console.error('Failed to save custom messages:', error);
+    console.error('Failed to save custom notification messages:', error);
   }
 }
 
-function persistTemplate(template: string): void {
+function saveTemplate(template: string): void {
   try {
-    localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
+    localStorage.setItem(STORAGE_KEYS.template, template);
   } catch (error) {
-    console.error('Failed to save template:', error);
+    console.error('Failed to save notification template:', error);
   }
 }
 
-function getClassNumber(item: any): number | null {
-  const raw = String(item?.classNumber ?? item?.className ?? '');
-  const match = raw.match(/\d+/);
+function getClassNumber(classItem: Pick<ClassItem, 'classNumber' | 'className'>): number | null {
+  const value = String(classItem.classNumber ?? classItem.className ?? '');
+  const match = value.match(/\d+/);
   return match ? Number(match[0]) : null;
 }
 
-function getClassLabel(item: any): string {
-  if (!item) return 'غير محدد';
-  const number = getClassNumber(item);
-  return number ? `شعبة ${number}` : item.className || `الشعبة ${item.classId}`;
+function getClassLabel(classItem: ClassItem): string {
+  const classNumber = getClassNumber(classItem);
+  return classNumber!= 0? `شعبة ${classNumber}`:`الشعبة ${classItem.classId}`;
 }
 
 function matchesSearch(notification: ParentNotification, search: string): boolean {
   if (!search) return true;
-  const normalized = search.toLocaleLowerCase('ar');
-  const values = [
+
+  const normalizedSearch = search.toLocaleLowerCase('ar');
+  const searchableValues = [
     notification.studentName,
     notification.parentName,
     notification.nationalId || '',
     notification.phoneNumber || '',
     notification.className || '',
   ];
-  return values.some((value) =>
-    String(value ?? '').toLocaleLowerCase('ar').includes(normalized)
+
+  return searchableValues.some((value) =>
+    String(value ?? '').toLocaleLowerCase('ar').includes(normalizedSearch)
   );
 }
 
+/**
+ * Converts unambiguous ISO Gregorian dates in saved/custom text to Hijri.
+ * This also upgrades custom messages saved by older versions of the page.
+ */
+function convertGregorianDatesToHijri(message: string): string {
+  return message
+    // ISO: 2026-11-25 or 2026-11-25T00:00:00
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)?\b/g, (value) =>
+      formatHijriDate(value.slice(0, 10))
+    )
+    // Year first: 2026/11/25
+    .replace(/\b((?:19|20)\d{2})\/(\d{1,2})\/(\d{1,2})\b/g, (_value, year, month, day) =>
+      formatHijriDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    )
+    // Day first: 25/11/2026 or 25-11-2026
+    .replace(/\b(\d{1,2})[/-](\d{1,2})[/-]((?:19|20)\d{2})\b/g, (_value, day, month, year) =>
+      formatHijriDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    );
+}
+
+function buildMessage(
+  template: string,
+  notification: Pick<ParentNotification, 'studentName' | 'parentName' | 'absentDate'>,
+  schoolName?: string
+): string {
+  const message = renderNotificationMessage(template, {
+    studentName: notification.studentName,
+    parentName: notification.parentName,
+    absentDate: formatHijriDate(notification.absentDate),
+    schoolName: schoolName || 'المدرسة',
+  });
+
+  return convertGregorianDatesToHijri(message);
+}
+
+function getNotificationQueryKey(date: string) {
+  return [QUERY_KEYS.notifications, date] as const;
+}
+
+function getAbsenteesQueryKey(date: string) {
+  return [QUERY_KEYS.absentees, date] as const;
+}
+
 // =============================================================================
-// Small UI Helpers
+// Small UI Components
 // =============================================================================
 
 function StatusBadge({ isSent }: { isSent: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
         isSent
           ? 'bg-[#E8F6EE] text-[#176B4B] dark:bg-[#193B2A] dark:text-[#6DD39A]'
           : 'bg-[#FFF4E2] text-[#98651E] dark:bg-[#45351F] dark:text-[#F1C16F]'
       }`}
     >
       {isSent ? <Check className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-      {isSent ? 'موثّق' : 'بانتظار الإرسال'}
+      {isSent ? 'مرسل' : 'بانتظار الإرسال'}
     </span>
   );
 }
@@ -181,8 +238,8 @@ function EmptyState({
 }: {
   title: string;
   description: string;
-  icon?: React.ElementType;
-  action?: React.ReactNode;
+  icon?: LucideIcon;
+  action?: ReactNode;
 }) {
   return (
     <div className="px-5 py-12 text-center">
@@ -207,7 +264,7 @@ export function AdminSendNotificationsPage() {
   const { toast } = useNotifications();
   const queryClient = useQueryClient();
 
-  // State
+  // Page filters and pagination
   const [selectedDayNumber, setSelectedDayNumber] = useState(getInitialDay);
   const [selectedWeekId, setSelectedWeekId] = useState(0);
   const [selectedClassId, setSelectedClassId] = useState(0);
@@ -216,7 +273,7 @@ export function AdminSendNotificationsPage() {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  // Message & Template Modals
+  // Message editor and templates
   const [previewNotification, setPreviewNotification] = useState<ParentNotification | null>(null);
   const [editedMessageText, setEditedMessageText] = useState('');
   const [globalTemplate, setGlobalTemplate] = useState(readStoredTemplate);
@@ -226,16 +283,19 @@ export function AdminSendNotificationsPage() {
     readStoredCustomMessages
   );
 
-  const autoGenerationAttempts = useRef<Set<string>>(new Set());
+  const autoGenerationAttempts = useRef(new Set<string>());
 
-  // Reference Queries
+  // ---------------------------------------------------------------------------
+  // Reference data
+  // ---------------------------------------------------------------------------
+
   const {
     data: classes = [],
     isLoading: isLoadingClasses,
     isError: isClassesError,
     refetch: refetchClasses,
   } = useQuery({
-    queryKey: CLASSES_QUERY_KEY,
+    queryKey: QUERY_KEYS.classes,
     queryFn: () => classesApi.getClasses(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
@@ -248,39 +308,61 @@ export function AdminSendNotificationsPage() {
     isError: isWeeksError,
     refetch: refetchWeeks,
   } = useQuery({
-    queryKey: WEEKS_QUERY_KEY,
+    queryKey: QUERY_KEYS.weeks,
     queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
     retry: 1,
   });
 
-  // Week & Date
-  const defaultWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks) || weeks[0], [weeks]);
+  const defaultWeek = useMemo(
+    () => resolveDefaultAttendanceWeek(weeks) || weeks[0],
+    [weeks]
+  );
+
   const activeWeek = useMemo(
-    () => weeks.find((w) => w.attendanceWeekId === selectedWeekId) || defaultWeek,
+    () => weeks.find((week) => week.attendanceWeekId === selectedWeekId) || defaultWeek,
     [weeks, selectedWeekId, defaultWeek]
   );
 
   useEffect(() => {
     if (!defaultWeek) return;
-    if (!weeks.some((w) => w.attendanceWeekId === selectedWeekId)) {
+
+    const selectedWeekExists = weeks.some(
+      (week) => week.attendanceWeekId === selectedWeekId
+    );
+
+    if (!selectedWeekExists) {
       setSelectedWeekId(defaultWeek.attendanceWeekId);
     }
   }, [weeks, selectedWeekId, defaultWeek]);
 
+  // ---------------------------------------------------------------------------
+  // Selected date
+  // ---------------------------------------------------------------------------
+
   const effectiveDate = useMemo(
-    () => (activeWeek?.startDate ? calculateDateForDay(activeWeek.startDate, selectedDayNumber) : ''),
+    () =>
+      activeWeek?.startDate
+        ? calculateDateForDay(activeWeek.startDate, selectedDayNumber)
+        : '',
     [activeWeek, selectedDayNumber]
   );
 
   const today = getRiyadhDateOnly();
   const dayName = getArabicDayName(selectedDayNumber);
-  const formattedDate = effectiveDate ? formatArabicDate(effectiveDate) : '';
-  const weekday = effectiveDate ? new Date(`${effectiveDate}T12:00:00`).getDay() : -1;
-  const isValidDate = Boolean(effectiveDate) && weekday >= 0 && weekday <= 4 && effectiveDate <= today;
+  const formattedHijriDate = effectiveDate ? formatHijriDate(effectiveDate) : '';
+  const weekday = effectiveDate
+    ? new Date(`${effectiveDate}T12:00:00Z`).getUTCDay()
+    : -1;
 
-  // Data Queries
+  const isValidDate =
+    Boolean(effectiveDate) && weekday >= 0 && weekday <= 4 && effectiveDate <= today;
+
+  // ---------------------------------------------------------------------------
+  // Date-based data
+  // ---------------------------------------------------------------------------
+
   const {
     data: notifications = [],
     isLoading: isLoadingNotifications,
@@ -288,7 +370,7 @@ export function AdminSendNotificationsPage() {
     isError: isNotificationsError,
     refetch: refetchNotifications,
   } = useQuery({
-    queryKey: [NOTIFICATIONS_QUERY_KEY, effectiveDate] as const,
+    queryKey: getNotificationQueryKey(effectiveDate),
     queryFn: () => parentNotificationsApi.getParentNotifications({ date: effectiveDate }),
     enabled: isValidDate,
     staleTime: 1000 * 30,
@@ -304,9 +386,13 @@ export function AdminSendNotificationsPage() {
     isError: isAbsenteesError,
     refetch: refetchAbsentees,
   } = useQuery({
-    queryKey: [ABSENTEES_QUERY_KEY, effectiveDate] as const,
+    queryKey: getAbsenteesQueryKey(effectiveDate),
     queryFn: () =>
-      attendanceApi.getPagedAbsentees({ date: effectiveDate, pageNumber: 1, pageSize: 1 }),
+      attendanceApi.getPagedAbsentees({
+        date: effectiveDate,
+        pageNumber: 1,
+        pageSize: 1,
+      }),
     enabled: isValidDate,
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 10,
@@ -314,42 +400,62 @@ export function AdminSendNotificationsPage() {
     refetchOnWindowFocus: false,
   });
 
-  // Stats
+  // ---------------------------------------------------------------------------
+  // Notification statistics
+  // ---------------------------------------------------------------------------
+
   const totalAbsentOnDate = absenteesPaged?.totalCount ?? notifications.length;
   const totalNotifications = notifications.length;
-  const sentCount = useMemo(() => notifications.filter((i) => i.isSent).length, [notifications]);
+  const sentCount = useMemo(
+    () => notifications.filter((notification) => notification.isSent).length,
+    [notifications]
+  );
   const pendingCount = totalNotifications - sentCount;
   const missingNotificationsCount = Math.max(totalAbsentOnDate - totalNotifications, 0);
-  const sentPercent = totalNotifications > 0 ? Math.round((sentCount / totalNotifications) * 100) : 0;
+  const sentPercent = totalNotifications
+    ? Math.round((sentCount / totalNotifications) * 100)
+    : 0;
 
-  // Generate Mutation
+  // ---------------------------------------------------------------------------
+  // Mutations
+  // ---------------------------------------------------------------------------
+
   const generateMutation = useMutation({
-    mutationFn: (targetDate: string) => parentNotificationsApi.generateParentNotifications(targetDate),
-    onSuccess: (result, targetDate) => {
-      void queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_QUERY_KEY, targetDate] });
-      void queryClient.invalidateQueries({ queryKey: [ABSENTEES_QUERY_KEY, targetDate] });
+    mutationFn: (date: string) =>
+      parentNotificationsApi.generateParentNotifications(date),
+    onSuccess: (result, date) => {
+      void queryClient.invalidateQueries({ queryKey: getNotificationQueryKey(date) });
+      void queryClient.invalidateQueries({ queryKey: getAbsenteesQueryKey(date) });
 
       if (result.generatedCount > 0) {
+        const skippedMessage = result.skippedCount
+          ? ` (تم تجاوز ${result.skippedCount})`
+          : '';
+
         toast.show(
-          `تم تجهيز ${result.generatedCount} إشعار${result.skippedCount > 0 ? ` (تم تجاوز ${result.skippedCount})` : ''}.`,
+          `تم تجهيز ${result.generatedCount} إشعار${skippedMessage}.`,
           'success'
         );
       }
     },
-    onError: (error: any) => {
-      console.error('Automatic notification generation failed:', error);
-      toast.show(error?.message || 'تعذر تجهيز إشعارات أولياء الأمور.', 'danger');
+    onError: (error: Error) => {
+      console.error('Notification generation failed:', error);
+      toast.show(error.message || 'تعذر تجهيز إشعارات أولياء الأمور.', 'danger');
     },
   });
 
-  // Automatic Generation Guard
+  // Generate any missing notifications once for the selected date.
   useEffect(() => {
     if (!effectiveDate || !isValidDate) return;
-    if (
+
+    const isQueryBusy =
       isLoadingNotifications ||
       isLoadingAbsentees ||
       isFetchingNotifications ||
-      isFetchingAbsentees ||
+      isFetchingAbsentees;
+
+    if (
+      isQueryBusy ||
       isNotificationsError ||
       isAbsenteesError ||
       generateMutation.isPending
@@ -358,15 +464,25 @@ export function AdminSendNotificationsPage() {
     }
 
     const expectedCount = absenteesPaged?.totalCount ?? notifications.length;
-    if (expectedCount <= 0 || notifications.length >= expectedCount) return;
+    const hasMissingNotifications =
+      expectedCount > 0 && notifications.length < expectedCount;
 
-    const generationKey = [AUTO_GENERATION_QUERY_KEY, effectiveDate] as const;
-    if (autoGenerationAttempts.current.has(effectiveDate) || queryClient.getQueryData(generationKey)) {
-      return;
-    }
+    if (!hasMissingNotifications) return;
+
+    const generationKey = [QUERY_KEYS.autoGeneration, effectiveDate] as const;
+    const alreadyAttempted =
+      autoGenerationAttempts.current.has(effectiveDate) ||
+      queryClient.getQueryData(generationKey);
+
+    if (alreadyAttempted) return;
 
     autoGenerationAttempts.current.add(effectiveDate);
-    queryClient.setQueryData(generationKey, { attempted: true, date: effectiveDate, attemptedAt: Date.now() });
+    queryClient.setQueryData(generationKey, {
+      attempted: true,
+      date: effectiveDate,
+      attemptedAt: Date.now(),
+    });
+
     generateMutation.mutate(effectiveDate);
   }, [
     effectiveDate,
@@ -377,201 +493,297 @@ export function AdminSendNotificationsPage() {
     isFetchingAbsentees,
     isNotificationsError,
     isAbsenteesError,
-    notifications.length,
-    absenteesPaged?.totalCount,
     generateMutation.isPending,
     generateMutation.mutate,
+    absenteesPaged?.totalCount,
+    notifications.length,
     queryClient,
   ]);
 
-  // Optimistic Status Mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, isSent }: NotificationStatusVariables) =>
+  const updateStatusMutation = useMutation<
+    unknown,
+    Error,
+    NotificationStatusVariables,
+    NotificationStatusContext
+  >({
+    mutationFn: ({ id, isSent }) =>
       parentNotificationsApi.updateNotificationStatus(id, isSent),
-    onMutate: async (variables) => {
-      const key = [NOTIFICATIONS_QUERY_KEY, variables.date] as const;
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<ParentNotification[]>(key);
 
-      queryClient.setQueryData<ParentNotification[]>(
-        key,
-        (old) =>
-          old?.map((item) =>
-            item.id === variables.id ? { ...item, isSent: variables.isSent } : item
-          ) ?? []
+    // Optimistic update: the UI changes immediately when the user clicks.
+    onMutate: (variables) => {
+      const queryKey = getNotificationQueryKey(variables.date);
+      void queryClient.cancelQueries({ queryKey });
+
+      const previousNotifications = queryClient.getQueryData<ParentNotification[]>(queryKey);
+
+      queryClient.setQueryData<ParentNotification[]>(queryKey, (current) =>
+        current?.map((notification) =>
+          notification.id === variables.id
+            ? { ...notification, isSent: variables.isSent }
+            : notification
+        ) ?? []
       );
-      return { key, previous };
+
+      return { queryKey, previousNotifications };
     },
-    onSuccess: (_data, variables) => {
-      toast.show(variables.isSent ? 'تم توثيق الإرسال.' : 'تم إلغاء التوثيق.', 'success');
+
+    onSuccess: (_result, variables) => {
+      if (variables.source === 'whatsapp' && variables.isSent) {
+        toast.show('تم تسجيل الإشعار كمرسل.', 'success');
+        return;
+      }
+
+      toast.show(
+        variables.isSent ? 'تم توثيق الإشعار.' : 'تم إلغاء توثيق الإشعار.',
+        'success'
+      );
     },
-    onError: (error: any, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(context.key, context.previous);
-      toast.show(error?.message || 'فشل حفظ حالة الإرسال.', 'danger');
+
+    onError: (error, _variables, context) => {
+      if (context?.previousNotifications) {
+        queryClient.setQueryData(context.queryKey, context.previousNotifications);
+      }
+
+      toast.show(error.message || 'تعذر حفظ حالة الإشعار.', 'danger');
     },
-    onSettled: (_data, _error, variables) => {
-      void queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_QUERY_KEY, variables.date] });
+
+    onSettled: (_result, _error, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: getNotificationQueryKey(variables.date),
+      });
     },
   });
 
-  // Handlers
-  const handleRefresh = async () => {
-    if (!effectiveDate || !isValidDate || isFetchingNotifications || isFetchingAbsentees || generateMutation.isPending) {
-      return;
-    }
-    autoGenerationAttempts.current.delete(effectiveDate);
-    queryClient.removeQueries({ queryKey: [AUTO_GENERATION_QUERY_KEY, effectiveDate], exact: true });
-    await Promise.all([refetchNotifications(), refetchAbsentees()]);
-  };
+  // ---------------------------------------------------------------------------
+  // Message helpers and actions
+  // ---------------------------------------------------------------------------
 
   const getNotificationMessage = (notification: ParentNotification): string => {
-    if (customMessages[notification.id] !== undefined) return customMessages[notification.id];
-    return buildAbsenceNotificationMessage(
-      notification.studentName,
-      notification.absentDate,
-      schoolName,
-      globalTemplate,
-      notification.parentName
-    );
+    const template =
+      customMessages[notification.id] !== undefined
+        ? customMessages[notification.id]
+        : globalTemplate;
+
+    return buildMessage(template, notification, schoolName);
   };
 
-  const handleOpenPreview = (notification: ParentNotification) => {
+  const saveCustomMessage = (notificationId: number, message: string): void => {
+    const updatedMessages = {
+      ...customMessages,
+      [notificationId]: message,
+    };
+
+    setCustomMessages(updatedMessages);
+    saveCustomMessages(updatedMessages);
+  };
+
+  const openMessageEditor = (notification: ParentNotification): void => {
     setPreviewNotification(notification);
     setEditedMessageText(getNotificationMessage(notification));
   };
 
-  const handleSaveCustomMessage = (id: number, message: string) => {
-    const next = { ...customMessages, [id]: message };
-    setCustomMessages(next);
-    persistCustomMessages(next);
-  };
+  const resetCustomMessage = (notification: ParentNotification): void => {
+    const defaultMessage = buildMessage(globalTemplate, notification, schoolName);
+    const updatedMessages = { ...customMessages };
 
-  const handleResetCustomMessage = (notification: ParentNotification) => {
-    const defaultMessage = buildAbsenceNotificationMessage(
-      notification.studentName,
-      notification.absentDate,
-      schoolName,
-      globalTemplate,
-      notification.parentName
-    );
+    delete updatedMessages[notification.id];
+    setCustomMessages(updatedMessages);
+    saveCustomMessages(updatedMessages);
     setEditedMessageText(defaultMessage);
-    const next = { ...customMessages };
-    delete next[notification.id];
-    setCustomMessages(next);
-    persistCustomMessages(next);
+
     toast.show('تم استعادة الرسالة الافتراضية.', 'info');
   };
 
-  const handleSaveGlobalTemplate = () => {
-    if (!draftTemplate.trim()) {
-      toast.show('لا يمكن حفظ قالب فارغ.', 'danger');
+  const markNotificationAsSent = (notification: ParentNotification): void => {
+    if (notification.isSent) return;
+
+    updateStatusMutation.mutate({
+      id: notification.id,
+      isSent: true,
+      date: effectiveDate,
+      source: 'whatsapp',
+    });
+  };
+
+  /**
+   * Opens WhatsApp and marks the notification as sent immediately on click.
+   * The status represents an initiated send attempt, not confirmed delivery.
+   */
+  const sendWhatsAppNotification = (
+    notification: ParentNotification,
+    messageOverride?: string
+  ): void => {
+    if (!isValidSaudiPhone(notification.phoneNumber)) {
+      toast.show(
+        `رقم الهاتف ${notification.phoneNumber || ''} غير صالح لواتساب.`,
+        'danger'
+      );
       return;
     }
-    setGlobalTemplate(draftTemplate);
-    persistTemplate(draftTemplate);
-    setIsTemplateModalOpen(false);
-    toast.show('تم حفظ قالب الرسائل.', 'success');
-  };
 
-  const handleResetGlobalTemplate = () => {
-    setDraftTemplate(DEFAULT_ABSENCE_TEMPLATE);
-    setGlobalTemplate(DEFAULT_ABSENCE_TEMPLATE);
-    try {
-      localStorage.removeItem(TEMPLATE_STORAGE_KEY);
-    } catch (error) {
-      console.error(error);
-    }
-    toast.show('تم استعادة القالب الافتراضي.', 'info');
-  };
+    const message = convertGregorianDatesToHijri(
+      messageOverride ?? getNotificationMessage(notification)
+    );
+    const hijriAbsentDate = formatHijriDate(notification.absentDate);
 
-  const handleOpenWhatsApp = (notification: ParentNotification, messageOverride?: string) => {
-    const message = messageOverride ?? getNotificationMessage(notification);
     const whatsapp = createWhatsAppAbsenceUrl(
       notification.studentName,
-      notification.absentDate,
+      hijriAbsentDate,
       notification.phoneNumber,
       schoolName,
       message
     );
 
     if (!whatsapp.isValid || !whatsapp.url) {
-      toast.show(`رقم الهاتف ${notification.phoneNumber} غير صالح لواتساب.`, 'danger');
+      toast.show('تعذر إنشاء رابط واتساب لهذا الرقم.', 'danger');
       return;
     }
 
     if (messageOverride !== undefined) {
-      handleSaveCustomMessage(notification.id, messageOverride);
+      saveCustomMessage(notification.id, message);
+      setPreviewNotification(null);
     }
 
-    const whatsappWindow = window.open(whatsapp.url, '_blank', 'noopener,noreferrer');
-    if (!whatsappWindow) {
-      toast.show('تعذر فتح واتساب. تحقق من إعدادات النوافذ المنبثقة.', 'warning');
-      return;
-    }
+    // Register the send attempt immediately. WhatsApp delivery is not checked.
+    markNotificationAsSent(notification);
 
-    whatsappWindow.opener = null;
-    setPreviewNotification(null);
-    toast.show('تم فتح واتساب — بعد الإرسال اضغط "توثيق".', 'info');
+    // Keep window.open in the click handler to avoid browser popup blockers.
+    const whatsappWindow = window.open(whatsapp.url, '_blank');
+
+    if (whatsappWindow) {
+      whatsappWindow.opener = null;
+    } else {
+      toast.show(
+        'تم تسجيل الإشعار كمرسل، لكن تعذر فتح واتساب. تحقق من إعدادات النوافذ المنبثقة.',
+        'warning'
+      );
+    }
   };
 
-  const handleToggleSentStatus = (notification: ParentNotification) => {
+  const toggleNotificationStatus = (notification: ParentNotification): void => {
     if (updateStatusMutation.isPending) return;
+
     updateStatusMutation.mutate({
       id: notification.id,
       isSent: !notification.isSent,
       date: effectiveDate,
+      source: 'manual',
     });
   };
 
-  // Filtering & Pagination
+  const refreshData = async (): Promise<void> => {
+    if (
+      !effectiveDate ||
+      !isValidDate ||
+      isFetchingNotifications ||
+      isFetchingAbsentees ||
+      generateMutation.isPending
+    ) {
+      return;
+    }
+
+    autoGenerationAttempts.current.delete(effectiveDate);
+    queryClient.removeQueries({
+      queryKey: [QUERY_KEYS.autoGeneration, effectiveDate],
+      exact: true,
+    });
+
+    await Promise.all([refetchNotifications(), refetchAbsentees()]);
+  };
+
+  const saveGlobalTemplate = (): void => {
+    if (!draftTemplate.trim()) {
+      toast.show('لا يمكن حفظ قالب فارغ.', 'danger');
+      return;
+    }
+
+    setGlobalTemplate(draftTemplate);
+    saveTemplate(draftTemplate);
+    setIsTemplateModalOpen(false);
+    toast.show('تم حفظ قالب الرسائل.', 'success');
+  };
+
+  const resetGlobalTemplate = (): void => {
+    setDraftTemplate(DEFAULT_ABSENCE_TEMPLATE);
+    setGlobalTemplate(DEFAULT_ABSENCE_TEMPLATE);
+
+    try {
+      localStorage.removeItem(STORAGE_KEYS.template);
+    } catch (error) {
+      console.error('Failed to reset notification template:', error);
+    }
+
+    toast.show('تم استعادة القالب الافتراضي.', 'info');
+  };
+
+  // ---------------------------------------------------------------------------
+  // Filtering and pagination
+  // ---------------------------------------------------------------------------
+
   const selectedClass = useMemo(
-    () => classes.find((item) => item.classId === selectedClassId),
+    () => classes.find((classItem) => classItem.classId === selectedClassId),
     [classes, selectedClassId]
   );
 
   const filteredNotifications = useMemo(() => {
     return notifications
-      .filter((item) => {
-        if (statusFilter === 'sent' && !item.isSent) return false;
-        if (statusFilter === 'pending' && item.isSent) return false;
+      .filter((notification) => {
+        if (statusFilter === 'sent' && !notification.isSent) return false;
+        if (statusFilter === 'pending' && notification.isSent) return false;
 
         if (selectedClass) {
-          const selectedNumber = getClassNumber(selectedClass);
-          const match = String(item.className || '').match(/\d+/);
-          const actualNumber = match ? Number(match[0]) : null;
-          if (selectedNumber !== null && actualNumber !== null && selectedNumber !== actualNumber) {
+          const selectedClassNumber = getClassNumber(selectedClass);
+          const notificationClassMatch = String(notification.className || '').match(/\d+/);
+          const notificationClassNumber = notificationClassMatch
+            ? Number(notificationClassMatch[0])
+            : null;
+
+          if (
+            selectedClassNumber !== null &&
+            notificationClassNumber !== null &&
+            selectedClassNumber !== notificationClassNumber
+          ) {
             return false;
           }
-          if ((selectedNumber === null || actualNumber === null) && item.className !== selectedClass.className) {
+
+          if (
+            (selectedClassNumber === null || notificationClassNumber === null) &&
+            notification.className !== selectedClass.className
+          ) {
             return false;
           }
         }
 
-        return matchesSearch(item, searchQuery.trim());
+        return matchesSearch(notification, searchQuery.trim());
       })
-      .sort((a, b) => Number(a.isSent) - Number(b.isSent));
+      .sort((first, second) => Number(first.isSent) - Number(second.isSent));
   }, [notifications, statusFilter, selectedClass, searchQuery]);
 
   const totalCount = filteredNotifications.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   useEffect(() => {
-    if (pageNumber > totalPages) setPageNumber(totalPages);
+    if (pageNumber > totalPages) {
+      setPageNumber(totalPages);
+    }
   }, [pageNumber, totalPages]);
 
   const paginatedNotifications = useMemo(() => {
-    const start = (pageNumber - 1) * pageSize;
-    return filteredNotifications.slice(start, start + pageSize);
+    const startIndex = (pageNumber - 1) * pageSize;
+    return filteredNotifications.slice(startIndex, startIndex + pageSize);
   }, [filteredNotifications, pageNumber, pageSize]);
 
-  const resetFilters = () => {
+  const resetFilters = (): void => {
     setStatusFilter('all');
     setSelectedClassId(0);
     setSearchQuery('');
     setPageNumber(1);
   };
 
-  // Loading & Error Flags
+  // ---------------------------------------------------------------------------
+  // Loading and error states
+  // ---------------------------------------------------------------------------
+
   const isBaseLoading = isLoadingClasses || isLoadingWeeks;
   const isBaseError = isClassesError || isWeeksError;
   const isLoadingDateData = isLoadingNotifications || isLoadingAbsentees;
@@ -607,16 +819,22 @@ export function AdminSendNotificationsPage() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
     <main dir="rtl" className="min-w-0 space-y-4 pb-8 text-[#20362B] dark:text-[#EAF3ED]">
-      {/* 1. Compact Header */}
+      {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black tracking-tight text-[#142B22] dark:text-[#F0F7F3]">
             إشعارات أولياء الأمور
           </h1>
           <p className="mt-0.5 text-xs text-[#647C70] dark:text-[#9DB5A8]">
-            {effectiveDate ? `${dayName}، ${formattedDate}` : 'اختر الأسبوع واليوم لعرض الغياب'}
+            {effectiveDate
+              ? `${dayName}، ${formattedHijriDate}`
+              : 'اختر الأسبوع واليوم لعرض الغياب'}
           </p>
         </div>
 
@@ -635,7 +853,7 @@ export function AdminSendNotificationsPage() {
 
           <button
             type="button"
-            onClick={() => void handleRefresh()}
+            onClick={() => void refreshData()}
             disabled={!isValidDate || isRefreshing || generateMutation.isPending}
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#DCE7E2] bg-white px-3 text-xs font-bold text-[#294337] transition hover:bg-[#F3F7F4] disabled:opacity-40 dark:border-[#293E35] dark:bg-[#17251F] dark:text-[#E2F0E7] dark:hover:bg-[#1F332A]"
           >
@@ -645,11 +863,10 @@ export function AdminSendNotificationsPage() {
         </div>
       </header>
 
-      {/* 2. Unified Date Selector & Progress Bar */}
+      {/* Week, day and progress */}
       <section className="rounded-2xl border border-[#DCE7E2] bg-white p-3.5 shadow-xs dark:border-[#293E35] dark:bg-[#17251F] sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          {/* Week + Days */}
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-center">
             <WeekSelector
               selectedWeekId={activeWeek?.attendanceWeekId ?? 0}
               onSelectWeek={(weekId) => {
@@ -662,18 +879,19 @@ export function AdminSendNotificationsPage() {
 
             <div className="grid grid-cols-5 gap-1 rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
               {SCHOOL_DAYS.map((day) => {
-                const selected = selectedDayNumber === day.dayNumber;
+                const isSelected = selectedDayNumber === day.dayNumber;
+
                 return (
                   <button
                     key={day.dayNumber}
                     type="button"
-                    aria-pressed={selected}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       setSelectedDayNumber(day.dayNumber);
                       setPageNumber(1);
                     }}
                     className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
-                      selected
+                      isSelected
                         ? 'bg-[#176B4B] text-white shadow-2xs dark:bg-[#23845B]'
                         : 'text-[#587268] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
                     }`}
@@ -685,13 +903,12 @@ export function AdminSendNotificationsPage() {
             </div>
           </div>
 
-          {/* Inline Progress Summary (replaces 3 duplicate stat cards) */}
           {isValidDate && !isLoadingDateData && totalNotifications > 0 && (
-            <div className="flex items-center gap-3 border-t border-[#EDF2EF] pt-3 lg:border-t-0 lg:pt-0 dark:border-[#263B31]">
+            <div className="flex items-center gap-3 border-t border-[#EDF2EF] pt-3 dark:border-[#263B31] lg:border-t-0 lg:pt-0">
               <div className="min-w-[130px] flex-1 lg:w-40">
                 <div className="flex items-center justify-between text-[11px] font-bold">
                   <span className="text-[#587268] dark:text-[#9DB5A8]">
-                    تم توثيق {sentCount} من {totalNotifications}
+                    تم تسجيل {sentCount} من {totalNotifications} كمرسل
                   </span>
                   <span className="tabular-nums text-[#176B4B] dark:text-[#6DD39A]">
                     {sentPercent}%
@@ -708,54 +925,56 @@ export function AdminSendNotificationsPage() {
           )}
         </div>
 
-        {/* Conditional Alerts ONLY when action/attention is needed */}
         {effectiveDate > today && (
           <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#FFF4E2] px-3 py-2 text-xs font-semibold text-[#98651E] dark:bg-[#3A2D19] dark:text-[#F1C16F]">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            التاريخ المحدد مستقبلي — اختر يوم اليوم أو يوماً سابقاً.
+            التاريخ المحدد مستقبلي — اختر اليوم أو يوماً سابقاً.
           </div>
         )}
 
         {isValidDate && generateMutation.isPending && (
           <div className="mt-3 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-            <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
-            جاري تجهيز إشعارات أولياء الأمور تلقائياً لهذا اليوم...
+            <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            جاري تجهيز إشعارات أولياء الأمور لهذا اليوم...
           </div>
         )}
 
-        {isValidDate && !isLoadingDateData && !generateMutation.isPending && missingNotificationsCount > 0 && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#FFF4E2] px-3 py-2 text-xs font-semibold text-[#98651E] dark:bg-[#3A2D19] dark:text-[#F1C16F]">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            يوجد {missingNotificationsCount} طالب غائب لم يُنشأ لهم إشعار (غالباً لعدم اكتمال بيانات ولي الأمر).
-          </div>
-        )}
+        {isValidDate &&
+          !isLoadingDateData &&
+          !generateMutation.isPending &&
+          missingNotificationsCount > 0 && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#FFF4E2] px-3 py-2 text-xs font-semibold text-[#98651E] dark:bg-[#3A2D19] dark:text-[#F1C16F]">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              يوجد {missingNotificationsCount} طالب غائب لم يُنشأ له إشعار، غالباً لعدم اكتمال بيانات ولي الأمر.
+            </div>
+          )}
       </section>
 
-      {/* 3. Main Notifications Workspace */}
+      {/* Notification workspace */}
       <section className="overflow-hidden rounded-2xl border border-[#DCE7E2] bg-white shadow-xs dark:border-[#293E35] dark:bg-[#17251F]">
-        {/* Integrated Filter Bar */}
-        <div className="flex flex-col gap-3 border-b border-[#E9EFEC] p-3.5 dark:border-[#263B31] lg:flex-row lg:items-center lg:justify-between sm:p-4">
-          {/* Status Tabs */}
+        {/* Filters */}
+        <div className="flex flex-col gap-3 border-b border-[#E9EFEC] p-3.5 dark:border-[#263B31] sm:p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="inline-grid grid-cols-3 gap-1 rounded-xl bg-[#F2F6F4] p-1 dark:bg-[#111D18]">
             {(
               [
                 { value: 'pending', label: 'بانتظار الإرسال', count: pendingCount },
-                { value: 'sent', label: 'موثّق', count: sentCount },
+                { value: 'sent', label: 'مرسل', count: sentCount },
                 { value: 'all', label: 'الكل', count: totalNotifications },
               ] as const
             ).map((tab) => {
-              const selected = statusFilter === tab.value;
+              const isSelected = statusFilter === tab.value;
+
               return (
                 <button
                   key={tab.value}
                   type="button"
-                  aria-pressed={selected}
+                  aria-pressed={isSelected}
                   onClick={() => {
                     setStatusFilter(tab.value);
                     setPageNumber(1);
                   }}
                   className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    selected
+                    isSelected
                       ? 'bg-white text-[#176B4B] shadow-2xs dark:bg-[#1F352B] dark:text-[#9BD5B7]'
                       : 'text-[#647C70] hover:text-[#1E3429] dark:text-[#9DB5A8] dark:hover:text-white'
                   }`}
@@ -769,36 +988,35 @@ export function AdminSendNotificationsPage() {
             })}
           </div>
 
-          {/* Class + Search */}
-          <div className="flex flex-1 flex-col gap-2 sm:flex-row lg:max-w-lg">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row lg:max-w-lg">
             <div className="relative sm:w-44">
               <Building2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#71837A]" />
               <select
                 aria-label="تصفية حسب الشعبة"
                 value={selectedClassId}
-                onChange={(e) => {
-                  setSelectedClassId(Number(e.target.value));
+                onChange={(event) => {
+                  setSelectedClassId(Number(event.target.value));
                   setPageNumber(1);
                 }}
                 className="h-9 w-full appearance-none rounded-xl border border-[#DCE7E2] bg-[#FAFCFA] py-1.5 pl-3 pr-8 text-xs font-semibold text-[#1E3429] outline-none focus:border-[#176B4B] dark:border-[#2C4539] dark:bg-[#13201A] dark:text-[#EAF3ED]"
               >
                 <option value={0}>جميع الشعب</option>
-                {classes.map((item) => (
-                  <option key={item.classId} value={item.classId}>
-                    {getClassLabel(item)}
+                {classes.map((classItem) => (
+                  <option key={classItem.classId} value={classItem.classId}>
+                    {getClassLabel(classItem)}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="relative flex-1">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#71837A]" />
               <input
                 type="search"
                 aria-label="بحث عن طالب أو ولي أمر"
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
                   setPageNumber(1);
                 }}
                 placeholder="ابحث بالاسم أو الجوال..."
@@ -821,7 +1039,7 @@ export function AdminSendNotificationsPage() {
           </div>
         </div>
 
-        {/* Content States */}
+        {/* Content states */}
         {!isValidDate ? (
           <EmptyState
             title="اختر يوماً دراسياً صالحاً"
@@ -840,7 +1058,7 @@ export function AdminSendNotificationsPage() {
             action={
               <button
                 type="button"
-                onClick={() => void handleRefresh()}
+                onClick={() => void refreshData()}
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#176B4B] px-4 text-xs font-bold text-white hover:bg-[#10583C]"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -853,7 +1071,7 @@ export function AdminSendNotificationsPage() {
             title={totalAbsentOnDate > 0 ? 'جاري تجهيز الإشعارات' : 'لا يوجد غياب في هذا اليوم'}
             description={
               totalAbsentOnDate > 0
-                ? 'اضغط "تحديث" إذا لم تظهر الإشعارات خلال لحظات.'
+                ? 'اضغط تحديث إذا لم تظهر الإشعارات خلال لحظات.'
                 : 'لم تُسجّل أي حالات غياب لهذا التاريخ.'
             }
             icon={CheckCheck}
@@ -875,16 +1093,16 @@ export function AdminSendNotificationsPage() {
           />
         ) : (
           <>
-            {/* Mobile List */}
+            {/* Mobile cards */}
             <div className="divide-y divide-[#EDF2EF] dark:divide-[#263B31] md:hidden">
               {paginatedNotifications.map((notification) => {
                 const validPhone = isValidSaudiPhone(notification.phoneNumber);
-                const savingThis =
+                const isUpdatingThisNotification =
                   updateStatusMutation.isPending &&
                   updateStatusMutation.variables?.id === notification.id;
 
                 return (
-                  <article key={notification.id} className="p-3.5 space-y-3">
+                  <article key={notification.id} className="space-y-3 p-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -892,7 +1110,10 @@ export function AdminSendNotificationsPage() {
                             {notification.studentName}
                           </h3>
                           {customMessages[notification.id] !== undefined && (
-                            <span className="h-2 w-2 rounded-full bg-amber-500" title="رسالة مخصصة" />
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                              title="رسالة مخصصة"
+                            />
                           )}
                         </div>
                         <p className="mt-0.5 text-xs text-[#647C70] dark:text-[#9DB5A8]">
@@ -902,8 +1123,11 @@ export function AdminSendNotificationsPage() {
                       <StatusBadge isSent={notification.isSent} />
                     </div>
 
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono font-semibold text-[#31463A] dark:text-[#D8E8DE]" dir="ltr">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span
+                        className="font-mono font-semibold text-[#31463A] dark:text-[#D8E8DE]"
+                        dir="ltr"
+                      >
                         {formatPhoneDisplay(notification.phoneNumber)}
                       </span>
                       {!validPhone && (
@@ -917,38 +1141,38 @@ export function AdminSendNotificationsPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        disabled={!validPhone}
-                        onClick={() => handleOpenWhatsApp(notification)}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#1FA855] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#168B45] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-[#24362E] dark:disabled:text-[#6B8276]"
+                        disabled={!validPhone || isUpdatingThisNotification}
+                        onClick={() => sendWhatsAppNotification(notification)}
+                        className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#1FA855] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#168B45] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-[#24362E] dark:disabled:text-[#6B8276]"
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
-                        واتساب
+                        إرسال واتساب
                         <ExternalLink className="h-3 w-3" />
                       </button>
 
                       <button
                         type="button"
-                        disabled={updateStatusMutation.isPending}
-                        onClick={() => handleToggleSentStatus(notification)}
-                        className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${
+                        disabled={isUpdatingThisNotification}
+                        onClick={() => toggleNotificationStatus(notification)}
+                        className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${
                           notification.isSent
                             ? 'border-[#BDE7CE] bg-[#EDF8F2] text-[#176B4B] dark:border-[#28573D] dark:bg-[#1B3628] dark:text-[#6DD39A]'
                             : 'border-[#DCE7E2] bg-white text-[#294337] hover:bg-[#F3F7F4] dark:border-[#2C4539] dark:bg-[#1B2E26] dark:text-[#E2F0E7]'
                         }`}
                       >
-                        {savingThis ? (
+                        {isUpdatingThisNotification ? (
                           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <CheckCheck className="h-3.5 w-3.5" />
                         )}
-                        {notification.isSent ? 'موثّق' : 'توثيق'}
+                        {notification.isSent ? 'إلغاء التوثيق' : 'توثيق يدوياً'}
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => handleOpenPreview(notification)}
+                        onClick={() => openMessageEditor(notification)}
                         aria-label="تعديل الرسالة"
-                        className="rounded-xl border border-[#DCE7E2] p-2 text-[#587268] hover:bg-[#F3F7F4] dark:border-[#2C4539] dark:text-[#9DB5A8] dark:hover:bg-[#1F332A]"
+                        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[#DCE7E2] px-3 text-[#587268] hover:bg-[#F3F7F4] dark:border-[#2C4539] dark:text-[#9DB5A8] dark:hover:bg-[#1F332A]"
                       >
                         <Edit3 className="h-4 w-4" />
                       </button>
@@ -958,7 +1182,7 @@ export function AdminSendNotificationsPage() {
               })}
             </div>
 
-            {/* Desktop Table */}
+            {/* Desktop table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[780px] text-right text-xs">
                 <thead className="bg-[#F7FAF8] text-[11px] font-bold text-[#647C70] dark:bg-[#14201B] dark:text-[#9DB5A8]">
@@ -974,7 +1198,7 @@ export function AdminSendNotificationsPage() {
                 <tbody className="divide-y divide-[#EDF2EF] dark:divide-[#263B31]">
                   {paginatedNotifications.map((notification) => {
                     const validPhone = isValidSaudiPhone(notification.phoneNumber);
-                    const savingThis =
+                    const isUpdatingThisNotification =
                       updateStatusMutation.isPending &&
                       updateStatusMutation.variables?.id === notification.id;
 
@@ -1009,7 +1233,10 @@ export function AdminSendNotificationsPage() {
 
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-[11px] text-[#465E53] dark:text-[#B8CEC2]" dir="ltr">
+                            <span
+                              className="font-mono text-[11px] text-[#465E53] dark:text-[#B8CEC2]"
+                              dir="ltr"
+                            >
                               {formatPhoneDisplay(notification.phoneNumber)}
                             </span>
                             {!validPhone && (
@@ -1029,35 +1256,35 @@ export function AdminSendNotificationsPage() {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
-                              disabled={!validPhone}
-                              onClick={() => handleOpenWhatsApp(notification)}
+                              disabled={!validPhone || isUpdatingThisNotification}
+                              onClick={() => sendWhatsAppNotification(notification)}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-[#1FA855] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#168B45] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-[#24362E] dark:disabled:text-[#6B8276]"
                             >
                               <MessageSquare className="h-3.5 w-3.5" />
-                              واتساب
+                              إرسال واتساب
                             </button>
 
                             <button
                               type="button"
-                              disabled={updateStatusMutation.isPending}
-                              onClick={() => handleToggleSentStatus(notification)}
+                              disabled={isUpdatingThisNotification}
+                              onClick={() => toggleNotificationStatus(notification)}
                               className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-50 ${
                                 notification.isSent
                                   ? 'border-[#BDE7CE] bg-[#EDF8F2] text-[#176B4B] hover:bg-[#D9F1E3] dark:border-[#28573D] dark:bg-[#1B3628] dark:text-[#6DD39A]'
                                   : 'border-[#DCE7E2] bg-white text-[#294337] hover:bg-[#F3F7F4] dark:border-[#2C4539] dark:bg-[#1B2E26] dark:text-[#E2F0E7]'
                               }`}
                             >
-                              {savingThis ? (
+                              {isUpdatingThisNotification ? (
                                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                               ) : (
                                 <CheckCheck className="h-3.5 w-3.5" />
                               )}
-                              {notification.isSent ? 'موثّق' : 'توثيق'}
+                              {notification.isSent ? 'إلغاء التوثيق' : 'توثيق يدوياً'}
                             </button>
 
                             <button
                               type="button"
-                              onClick={() => handleOpenPreview(notification)}
+                              onClick={() => openMessageEditor(notification)}
                               title="تعديل الرسالة"
                               aria-label="تعديل الرسالة"
                               className="rounded-lg p-1.5 text-[#647C70] transition hover:bg-[#F0F7F2] hover:text-[#176B4B] dark:text-[#9DB5A8] dark:hover:bg-[#1F332A]"
@@ -1081,8 +1308,8 @@ export function AdminSendNotificationsPage() {
                 totalCount={totalCount}
                 pageSize={pageSize}
                 onPageChange={setPageNumber}
-                onPageSizeChange={(newSize) => {
-                  setPageSize(newSize);
+                onPageSizeChange={(newPageSize) => {
+                  setPageSize(newPageSize);
                   setPageNumber(1);
                 }}
                 isLoading={isLoadingDateData}
@@ -1093,7 +1320,7 @@ export function AdminSendNotificationsPage() {
         )}
       </section>
 
-      {/* 4. Individual Message Editor Modal */}
+      {/* Individual message editor */}
       {previewNotification && (
         <Dialog
           isOpen={Boolean(previewNotification)}
@@ -1106,7 +1333,10 @@ export function AdminSendNotificationsPage() {
               <span className="font-bold text-[#1E3429] dark:text-[#F0F7F3]">
                 {previewNotification.parentName}
               </span>
-              <span className="font-mono font-semibold text-[#587268] dark:text-[#9DB5A8]" dir="ltr">
+              <span
+                className="font-mono font-semibold text-[#587268] dark:text-[#9DB5A8]"
+                dir="ltr"
+              >
                 {formatPhoneDisplay(previewNotification.phoneNumber)}
               </span>
             </div>
@@ -1125,7 +1355,9 @@ export function AdminSendNotificationsPage() {
                     <button
                       key={snippet.label}
                       type="button"
-                      onClick={() => setEditedMessageText((v) => `${v}${snippet.text}`)}
+                      onClick={() =>
+                        setEditedMessageText((current) => `${current}${snippet.text}`)
+                      }
                       className="rounded-lg border border-[#DCE7E2] bg-[#FAFCFA] px-2 py-1 text-[11px] font-semibold text-[#294337] hover:bg-[#EFF5F1] dark:border-[#2C4539] dark:bg-[#1B2E26] dark:text-[#D8E8DE]"
                     >
                       {snippet.label}
@@ -1136,7 +1368,7 @@ export function AdminSendNotificationsPage() {
 
               <textarea
                 value={editedMessageText}
-                onChange={(e) => setEditedMessageText(e.target.value)}
+                onChange={(event) => setEditedMessageText(event.target.value)}
                 rows={7}
                 className="w-full resize-y rounded-xl border border-[#DCE7E2] bg-white p-3.5 text-sm leading-7 text-[#1E3429] outline-none focus:border-[#176B4B] dark:border-[#2C4539] dark:bg-[#13201A] dark:text-[#EAF3ED]"
                 placeholder="اكتب الرسالة..."
@@ -1149,6 +1381,10 @@ export function AdminSendNotificationsPage() {
                 رقم ولي الأمر غير صالح — صحّح الرقم قبل فتح واتساب.
               </div>
             )}
+
+            <p className="text-[11px] leading-5 text-[#71837A] dark:text-[#9DB5A8]">
+              سيتم تحويل أي تاريخ ميلادي بصيغة YYYY-MM-DD في نص الرسالة إلى التاريخ الهجري عند فتح واتساب.
+            </p>
           </div>
 
           <DialogFooter className="mt-5 flex-wrap gap-2">
@@ -1157,7 +1393,7 @@ export function AdminSendNotificationsPage() {
               variant="outline"
               size="sm"
               icon={<RotateCcw className="h-3.5 w-3.5" />}
-              onClick={() => handleResetCustomMessage(previewNotification)}
+              onClick={() => resetCustomMessage(previewNotification)}
             >
               استعادة الافتراضي
             </Button>
@@ -1167,7 +1403,11 @@ export function AdminSendNotificationsPage() {
               size="sm"
               icon={<Save className="h-3.5 w-3.5" />}
               onClick={() => {
-                handleSaveCustomMessage(previewNotification.id, editedMessageText);
+                saveCustomMessage(
+                  previewNotification.id,
+                  convertGregorianDatesToHijri(editedMessageText)
+                );
+                setEditedMessageText(convertGregorianDatesToHijri(editedMessageText));
                 toast.show('تم حفظ الرسالة المخصصة.', 'success');
               }}
             >
@@ -1178,17 +1418,23 @@ export function AdminSendNotificationsPage() {
               variant="primary"
               size="sm"
               icon={<Send className="h-4 w-4" />}
-              disabled={!isValidSaudiPhone(previewNotification.phoneNumber)}
-              onClick={() => handleOpenWhatsApp(previewNotification, editedMessageText)}
+              disabled={
+                !isValidSaudiPhone(previewNotification.phoneNumber) ||
+                (updateStatusMutation.isPending &&
+                  updateStatusMutation.variables?.id === previewNotification.id)
+              }
+              onClick={() =>
+                sendWhatsAppNotification(previewNotification, editedMessageText)
+              }
               className="bg-[#1FA855] text-white hover:bg-[#168B45]"
             >
-              فتح واتساب
+              إرسال عبر واتساب
             </Button>
           </DialogFooter>
         </Dialog>
       )}
 
-      {/* 5. Global Template Modal */}
+      {/* Global template editor */}
       {isTemplateModalOpen && (
         <Dialog
           isOpen={isTemplateModalOpen}
@@ -1207,7 +1453,7 @@ export function AdminSendNotificationsPage() {
                     key={tag}
                     type="button"
                     title={label}
-                    onClick={() => setDraftTemplate((v) => `${v}${tag}`)}
+                    onClick={() => setDraftTemplate((current) => `${current}${tag}`)}
                     className="rounded-lg border border-[#CFE2D8] bg-[#EDF8F2] px-2.5 py-1 font-mono text-[11px] font-bold text-[#176B4B] hover:bg-[#DCEDE2] dark:border-[#28573D] dark:bg-[#1B3628] dark:text-[#9BD5B7]"
                   >
                     + {tag}
@@ -1226,7 +1472,7 @@ export function AdminSendNotificationsPage() {
               <textarea
                 id="global-notification-template"
                 value={draftTemplate}
-                onChange={(e) => setDraftTemplate(e.target.value)}
+                onChange={(event) => setDraftTemplate(event.target.value)}
                 rows={6}
                 className="w-full resize-y rounded-xl border border-[#DCE7E2] bg-white p-3.5 text-sm leading-7 text-[#1E3429] outline-none focus:border-[#176B4B] dark:border-[#2C4539] dark:bg-[#13201A] dark:text-[#EAF3ED]"
               />
@@ -1238,12 +1484,14 @@ export function AdminSendNotificationsPage() {
               </p>
               <div className="rounded-xl border border-[#CFE2D8] bg-[#F4FAF7] p-3.5 text-xs leading-7 text-[#1E3429] dark:border-[#28573D] dark:bg-[#14261E] dark:text-[#E2F0E7]">
                 <p className="whitespace-pre-wrap">
-                  {renderNotificationMessage(draftTemplate, {
-                    studentName: 'سلطان عبد العزيز الخالدي',
-                    parentName: 'عبد العزيز الخالدي',
-                    absentDate: effectiveDate,
-                    schoolName: schoolName || 'اسم المدرسة',
-                  })}
+                  {convertGregorianDatesToHijri(
+                    renderNotificationMessage(draftTemplate, {
+                      studentName: 'سلطان عبد العزيز الخالدي',
+                      parentName: 'عبد العزيز الخالدي',
+                      absentDate: effectiveDate ? formatHijriDate(effectiveDate) : '',
+                      schoolName: schoolName || 'اسم المدرسة',
+                    })
+                  )}
                 </p>
               </div>
             </div>
@@ -1255,7 +1503,7 @@ export function AdminSendNotificationsPage() {
               variant="outline"
               size="sm"
               icon={<RotateCcw className="h-3.5 w-3.5" />}
-              onClick={handleResetGlobalTemplate}
+              onClick={resetGlobalTemplate}
             >
               استعادة الافتراضي
             </Button>
@@ -1272,7 +1520,7 @@ export function AdminSendNotificationsPage() {
               variant="primary"
               size="sm"
               icon={<Save className="h-4 w-4" />}
-              onClick={handleSaveGlobalTemplate}
+              onClick={saveGlobalTemplate}
               className="bg-[#176B4B] text-white hover:bg-[#10583C]"
             >
               حفظ القالب
