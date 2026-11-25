@@ -76,7 +76,7 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
  * Also supports Arabic placeholder equivalents: {اسم_الطالب}, {تاريخ_الغياب}, {اسم_المدرسة}, {تحية_المدرسة}, {اسم_ولي_الأمر}
  */
 export const DEFAULT_ABSENCE_TEMPLATE =
-  `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب ({اسم_الطالب})، نود إشعاركم {تحية_المدرسة} بغياب ابنكم اليوم الموافق {absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب عبر المنصة.\nشاكرين ومقدرين حسن تعاونكم.`;
+  `السلام عليكم ورحمة الله وبركاته،\nالمكرم ولي أمر الطالب ({اسم_الطالب})، نود إشعاركم {تحية_المدرسة} بغياب ابنكم اليوم الموافق {absentDate}.\nنرجو منكم التواصل مع المدرسة أو تقديم عذر الغياب  .\nشاكرين ومقدرين حسن تعاونكم.`;
 
 /**
  * Renders a notification message from a template and parameters.
@@ -163,9 +163,10 @@ export function buildRepresentativeReminderMessage(
   const schoolGreeting = schoolName ? `إدارة ${schoolName}` : 'إدارة المدرسة';
   return (
     `السلام عليكم ورحمة الله وبركاته،\n` +
-    `الأخ العريف ${repName}، تحية طيبة من ${schoolGreeting}.\n` +
+    `الطالب العريف ${repName}، تحية طيبة من ${schoolGreeting}.\n` +
     `نود تذكيركم بضرورة تسجيل حضور ورصد غياب (${className}) ليوم ${dayName} عبر منصة مواظب في أقرب وقت.\n` +
     `شاكرين ومقدرين جهودكم وتعاونكم حرصاً على سلامة وانضباط الطلاب.`
+    +'رابط المنصة https://mowathib.mohmedisa630.workers.dev/representative/dashboard'
   );
 }
 

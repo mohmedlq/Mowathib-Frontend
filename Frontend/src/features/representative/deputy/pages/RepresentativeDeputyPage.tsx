@@ -534,7 +534,8 @@ export function RepresentativeDeputyPage() {
       `الصفة: نائب العريف\n` +
       `اسم المستخدم: ${pendingCredential.username}\n` +
       `كلمة المرور المؤقتة: ${pendingCredential.password}\n\n` +
-      `يرجى تغيير كلمة المرور عند أول تسجيل دخول.`;
+      `يرجى تغيير كلمة المرور عند أول تسجيل دخول.`+
+      'رابط المنصة https://mowathib.mohmedisa630.workers.dev/representative/login';
 
     void copyToClipboard(message, 'all');
   };
