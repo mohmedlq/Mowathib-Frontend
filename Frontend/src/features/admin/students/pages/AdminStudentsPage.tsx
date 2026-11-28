@@ -749,13 +749,12 @@ export function AdminStudentsPage() {
           </div>
 
           <Input
-            label="رقم الهوية الوطنية (10 أرقام) *"
+            label="رقم الهوية الوطنية (اختياري - 10 أرقام)"
             placeholder="مثال: 1023456789"
             value={nationalId}
             onChange={(event) => setNationalId(event.target.value)}
             dir="ltr"
             className="text-left font-mono"
-            required
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -828,7 +827,7 @@ export function AdminStudentsPage() {
               createMutation.isPending ||
               !firstName.trim() ||
               !lastName.trim() ||
-              nationalId.trim().length < 10 ||
+              (nationalId.trim().length > 0 && nationalId.trim().length < 10) ||
               !targetClassId
             }
             className="bg-[#245B63] hover:bg-[#1D4B52] dark:bg-[#28747B] dark:hover:bg-[#21646B] text-white"
@@ -895,12 +894,11 @@ export function AdminStudentsPage() {
           </div>
 
           <Input
-            label="رقم الهوية الوطنية (10 أرقام) *"
+            label="رقم الهوية الوطنية (اختياري - 10 أرقام)"
             value={nationalId}
             onChange={(event) => setNationalId(event.target.value)}
             dir="ltr"
             className="text-left font-mono"
-            required
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -947,7 +945,7 @@ export function AdminStudentsPage() {
               editMutation.isPending ||
               !firstName.trim() ||
               !lastName.trim() ||
-              nationalId.trim().length < 10
+              (nationalId.trim().length > 0 && nationalId.trim().length < 10)
             }
             className="bg-[#245B63] hover:bg-[#1D4B52] dark:bg-[#28747B] dark:hover:bg-[#21646B] text-white"
           >

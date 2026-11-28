@@ -1,11 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { academicYearsApi } from '../../academic-years/api/academicYearsApi';
 import type {
   ClassEnrollment,
   AttendanceRecord,
   AttendanceStatus,
-  BackendAttendanceStatus,
 } from '../../../shared/types';
 import { SCHOOL_DAYS } from '../../../shared/types';
 import { Button } from '../../../shared/components/ui/Button';
@@ -77,6 +76,7 @@ const UNSELECTED_BTN_CLASS =
 
 export interface QuickAttendancePanelProps {
   classNameTitle: number | string;
+  attendanceWeekId?: number;
   weekNumber: number;
   selectedDay: number;
   onSelectDay: (day: number) => void;
@@ -84,17 +84,14 @@ export interface QuickAttendancePanelProps {
   records: AttendanceRecord[];
   onSaveSlot: (
     dayNumber: number,
-    changesOrPeriod: any,
-    maybeChanges?: any
+    changes: Array<{ enrollmentId: number; status: AttendanceStatus }>
   ) => Promise<void>;
   isSaving?: boolean;
-  // Optional backward compatibility
-  selectedPeriod?: number;
-  onSelectPeriod?: (period: number) => void;
 }
 
 export function QuickAttendancePanel({
   classNameTitle,
+  attendanceWeekId,
   weekNumber,
   selectedDay,
   onSelectDay,
@@ -118,16 +115,25 @@ export function QuickAttendancePanel({
   const [localStatuses, setLocalStatuses] = useState<Record<number, AttendanceStatus>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Map of saved backend records for the selected day
+  // Reset unsaved drafts when switching weeks
+  useEffect(() => {
+    setLocalStatuses({});
+    setHasUnsavedChanges(false);
+  }, [attendanceWeekId, weekNumber]);
+
+  // Map of saved backend records for the selected week and day
   const serverSlotStatuses = useMemo(() => {
     const map: Record<number, AttendanceStatus> = {};
     records.forEach((r) => {
-      if (r.dayNumber === selectedDay) {
+      if (
+        (attendanceWeekId === undefined || r.attendanceWeekId === attendanceWeekId) &&
+        r.dayNumber === selectedDay
+      ) {
         map[r.enrollmentId] = r.status as AttendanceStatus;
       }
     });
     return map;
-  }, [records, selectedDay]);
+  }, [records, attendanceWeekId, selectedDay]);
 
   // Effective statuses: saved records merged with local uncommitted edits
   const effectiveStatuses = useMemo(() => {
@@ -200,21 +206,32 @@ export function QuickAttendancePanel({
 
   // Save changes to backend
   const handleSave = async () => {
-    const changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }> = [];
+    const changes: Array<{ enrollmentId: number; status: AttendanceStatus }> = [];
 
     enrollments.forEach((e) => {
       const st = effectiveStatuses[e.enrollmentId];
-      if (st && st !== 'Unmarked') {
+      const hadServerRecord = serverSlotStatuses[e.enrollmentId] !== undefined;
+      if (st && (st !== 'Unmarked' || hadServerRecord)) {
         changes.push({
           enrollmentId: e.enrollmentId,
-          status: st as BackendAttendanceStatus,
+          status: st,
         });
       }
     });
 
-    await onSaveSlot(selectedDay, changes);
-    setHasUnsavedChanges(false);
-    setLocalStatuses({});
+    if (changes.length === 0) {
+      setHasUnsavedChanges(false);
+      setLocalStatuses({});
+      return;
+    }
+
+    try {
+      await onSaveSlot(selectedDay, changes);
+      setHasUnsavedChanges(false);
+      setLocalStatuses({});
+    } catch {
+      // Preserve unsaved changes on failure; error notification is handled by the mutation
+    }
   };
 
   // Filtered student list
@@ -224,7 +241,7 @@ export function QuickAttendancePanel({
     return enrollments.filter(
       (e) =>
         e.studentName?.toLowerCase().includes(q) ||
-        e.student?.nationalId.includes(q)
+    (e.student?.nationalId??"").includes(q)
     );
   }, [enrollments, searchQuery]);
 

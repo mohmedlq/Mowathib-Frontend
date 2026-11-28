@@ -52,7 +52,7 @@ export interface AttendanceClerk {
   clerkId: number;
   studentId: number;
   studentName: string;
-  nationalId: string;
+  nationalId: string | null;
   classId?: number;
   classNumber?: number;
   className?: string;
@@ -78,7 +78,6 @@ export interface ClassItem {
   academicYearId: number;
   totalCards: number;
 }
-
 export interface Student {
   studentId: number;
   firstName: string;
@@ -86,13 +85,17 @@ export interface Student {
   thirdName: string;
   lastName: string;
   fullName: string;
-  nationalId: string;
+
+  nationalId: string | null;
+
   parentId?: string | null;
   parent?: Parent | null;
   parentName?: string | null;
   parentPhoneNumber?: string | null;
+
   schoolCode?: string | null;
   schoolName?: string | null;
+
   enrollmentId?: number | null;
   classId?: number | null;
   classNumber?: number | null;
@@ -100,9 +103,9 @@ export interface Student {
 }
 
 export interface Parent {
-  id: string; // Guid
+  id: string;
   fullName: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   studentsCount?: number;
 }
 
@@ -259,7 +262,7 @@ export interface AbsenteeNotification {
   enrollmentId: number;
   studentId: number;
   studentName: string;
-  nationalId: string;
+  nationalId: string | null;
   classId: number;
   className: string;
   attendanceDate: string;

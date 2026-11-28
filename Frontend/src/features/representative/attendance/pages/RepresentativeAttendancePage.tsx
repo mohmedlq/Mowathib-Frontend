@@ -244,6 +244,7 @@ export function RepresentativeAttendancePage() {
       ) : (
         <QuickAttendancePanel
           classNameTitle={className}
+          attendanceWeekId={effectiveWeekId}
           weekNumber={selectedWeek?.weekNumber ?? 1}
           selectedDay={selectedDay}
           onSelectDay={handleSelectDay}

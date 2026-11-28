@@ -1,6 +1,38 @@
+
 import { apiClient } from '../../../shared/lib/apiClient';
-import type { Student, ClassEnrollment, PagedResult } from '../../../shared/types';
+import type {
+  Student,
+  ClassEnrollment,
+  PagedResult,
+} from '../../../shared/types';
 import { schoolsApi } from '../../schools/api/schoolsApi';
+
+// Convert empty or whitespace-only values into null.
+const normalizeNullableText = (
+  value?: string | null
+): string | null => {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+};
+
+// Resolve parent name from explicit input or student's name.
+const resolveParentName = (
+  secondName: string,
+  thirdName: string,
+  lastName: string,
+  parentName?: string | null
+): string | undefined => {
+  const explicitName = parentName?.trim();
+
+  if (explicitName) {
+    return explicitName;
+  }
+
+  const fallbackName =
+    `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
+
+  return fallbackName || undefined;
+};
 
 export const studentsApi = {
   async getAllStudents(search?: string): Promise<Student[]> {
@@ -10,8 +42,7 @@ export const studentsApi = {
   async getStudentsCount(): Promise<number> {
     try {
       const res = await apiClient.get<number>('/Students/count');
-      if (typeof res === 'number') return res;
-      return 0;
+      return typeof res === 'number' ? res : 0;
     } catch {
       return 0;
     }
@@ -22,17 +53,24 @@ export const studentsApi = {
     secondName: string;
     thirdName: string;
     lastName: string;
-    nationalId: string;
-    parentName?: string;
-    parentPhoneNumber?: string;
-    schoolCode?: string;
+    nationalId: string | null;
+    parentName?: string | null;
+    parentPhoneNumber?: string | null;
   }): Promise<Student> {
-    const concludedParent = `${studentData.secondName.trim()} ${studentData.thirdName.trim()} ${studentData.lastName.trim()}`.trim();
-    const finalParentName = studentData.parentName?.trim() || (concludedParent || undefined);
+    const finalParentName = resolveParentName(
+      studentData.secondName,
+      studentData.thirdName,
+      studentData.lastName,
+      studentData.parentName
+    );
+
     return await apiClient.post<Student>('/Students', {
       ...studentData,
+      nationalId: normalizeNullableText(studentData.nationalId),
       parentName: finalParentName,
-      parentPhoneNumber: studentData.parentPhoneNumber?.trim() || undefined,
+      parentPhoneNumber: normalizeNullableText(
+        studentData.parentPhoneNumber
+      ),
     });
   },
 
@@ -42,30 +80,48 @@ export const studentsApi = {
       secondName: string;
       thirdName: string;
       lastName: string;
-      nationalId: string;
-      parentName?: string;
-      parentPhoneNumber?: string;
+      nationalId: string | null;
+      parentName?: string | null;
+      parentPhoneNumber?: string | null;
     },
     classId: number,
     academicYearId: number = 1
   ): Promise<ClassEnrollment> {
-    const concludedParent = `${studentData.secondName.trim()} ${studentData.thirdName.trim()} ${studentData.lastName.trim()}`.trim();
-    const finalParentName = studentData.parentName?.trim() || (concludedParent || undefined);
+    const finalParentName = resolveParentName(
+      studentData.secondName,
+      studentData.thirdName,
+      studentData.lastName,
+      studentData.parentName
+    );
 
-    // Create Student record and enrollment atomically in 1 backend transaction
-    const student = await apiClient.post<any>('/Students/create-with-enrollment', {
-      ...studentData,
-      parentName: finalParentName,
-      parentPhoneNumber: studentData.parentPhoneNumber?.trim() || undefined,
-      classId,
-      academicYearId,
-    });
+    const normalizedPhone = normalizeNullableText(
+      studentData.parentPhoneNumber
+    );
+
+    // Create Student and Enrollment through one backend operation.
+    const student = await apiClient.post<Student>(
+      '/Students/create-with-enrollment',
+      {
+        ...studentData,
+        nationalId: normalizeNullableText(studentData.nationalId),
+        parentName: finalParentName,
+        parentPhoneNumber: normalizedPhone,
+        classId,
+        academicYearId,
+      }
+    );
+
+    const finalParentPhone =
+      student.parentPhoneNumber ?? normalizedPhone;
+
+    const finalResolvedParentName =
+      student.parentName ?? finalParentName ?? null;
 
     return {
       enrollmentId: student.enrollmentId || student.studentId,
       studentId: student.studentId,
       classId: student.classId ?? classId,
-      academicYearId: student.academicYearId ?? academicYearId,
+      academicYearId: academicYearId,
       isRepresentative: false,
       startDate: new Date().toISOString().split('T')[0],
       isActive: true,
@@ -73,12 +129,12 @@ export const studentsApi = {
       nationalId: student.nationalId,
       classNumber: student.classNumber,
       className: student.className ?? `شعبة ${classId}`,
-      parentName: student.parentName || finalParentName,
-      parentPhoneNumber: student.parentPhoneNumber || studentData.parentPhoneNumber,
+      parentName: finalResolvedParentName,
+      parentPhoneNumber: finalParentPhone,
       student: {
         ...student,
-        parentName: student.parentName || finalParentName,
-        parentPhoneNumber: student.parentPhoneNumber || studentData.parentPhoneNumber,
+        parentName: finalResolvedParentName,
+        parentPhoneNumber: finalParentPhone,
       },
     } as ClassEnrollment;
   },
@@ -90,10 +146,13 @@ export const studentsApi = {
       secondName: string;
       thirdName: string;
       lastName: string;
-      nationalId: string;
+      nationalId: string | null;
     }
   ): Promise<void> {
-    await apiClient.put(`/Students/${studentId}`, studentData);
+    await apiClient.put(`/Students/${studentId}`, {
+      ...studentData,
+      nationalId: normalizeNullableText(studentData.nationalId),
+    });
   },
 
   async getStudentsBySchoolPaged(
@@ -106,8 +165,14 @@ export const studentsApi = {
       access?: string;
     }
   ): Promise<PagedResult<Student>> {
-    const code = schoolCode || (await schoolsApi.getDefaultSchoolCode());
-    return await apiClient.get<PagedResult<Student>>(`/Students/by-school/${code}`, params);
+    const code = schoolCode || (
+      await schoolsApi.getDefaultSchoolCode()
+    );
+
+    return await apiClient.get<PagedResult<Student>>(
+      `/Students/by-school/${code}`,
+      params
+    );
   },
 
   async createStudentWithEnrollment(
@@ -116,27 +181,32 @@ export const studentsApi = {
       secondName: string;
       thirdName: string;
       lastName: string;
-      nationalId: string;
+      nationalId: string | null;
       classId: number;
-      parentId?: string;
-      parentName?: string;
-      parentPhoneNumber?: string;
+      parentId?: string | null;
+      parentName?: string | null;
+      parentPhoneNumber?: string | null;
       academicYearId?: number;
-      schoolCode?: string;
-    },
-    schoolCode?: string
+    }
   ): Promise<Student> {
-    const concludedParent = `${data.secondName.trim()} ${data.thirdName.trim()} ${data.lastName.trim()}`.trim();
-    const finalParentName = data.parentName?.trim() || (concludedParent || undefined);
-    const headers = schoolCode ? { 'X-School-Code': schoolCode } : undefined;
-    return await apiClient.post<Student>('/Students/create-with-enrollment', {
-      ...data,
-      parentName: finalParentName,
-      parentPhoneNumber: data.parentPhoneNumber?.trim() || undefined,
-    }, {
-      headers,
-      params: schoolCode ? { schoolCode } : undefined,
-    });
+    const finalParentName = resolveParentName(
+      data.secondName,
+      data.thirdName,
+      data.lastName,
+      data.parentName
+    );
+
+    return await apiClient.post<Student>(
+      '/Students/create-with-enrollment',
+      {
+        ...data,
+        nationalId: normalizeNullableText(data.nationalId),
+        parentName: finalParentName,
+        parentPhoneNumber: normalizeNullableText(
+          data.parentPhoneNumber
+        ),
+      }
+    );
   },
 
   async updateStudentDetails(
@@ -146,17 +216,28 @@ export const studentsApi = {
       secondName: string;
       thirdName: string;
       lastName: string;
-      nationalId: string;
-      parentName?: string;
-      parentPhoneNumber?: string;
+      nationalId: string | null;
+      parentName?: string | null;
+      parentPhoneNumber?: string | null;
     }
   ): Promise<Student> {
-    const concludedParent = `${data.secondName.trim()} ${data.thirdName.trim()} ${data.lastName.trim()}`.trim();
-    const finalParentName = data.parentName?.trim() || (concludedParent || undefined);
-    return await apiClient.put<Student>(`/Students/${studentId}/details`, {
-      ...data,
-      parentName: finalParentName,
-      parentPhoneNumber: data.parentPhoneNumber?.trim() || undefined,
-    });
+    const finalParentName = resolveParentName(
+      data.secondName,
+      data.thirdName,
+      data.lastName,
+      data.parentName
+    );
+
+    return await apiClient.put<Student>(
+      `/Students/${studentId}/details`,
+      {
+        ...data,
+        nationalId: normalizeNullableText(data.nationalId),
+        parentName: finalParentName,
+        parentPhoneNumber: normalizeNullableText(
+          data.parentPhoneNumber
+        ),
+      }
+    );
   },
 };

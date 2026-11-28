@@ -1,6 +1,9 @@
-
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
 import {
   FileSpreadsheet,
@@ -65,9 +68,7 @@ import { BrandLogo } from '../../../components/common/BrandLogo';
 // -----------------------------------------------------------------------------
 
 export type ReportType = 'daily' | 'weekly' | 'monthly';
-
 export type ExportScope = 'all' | 'grade' | 'class';
-
 export type DailyKind = 'attendance' | 'absence';
 
 export interface AcademicGrade {
@@ -90,7 +91,56 @@ interface PreviewConfig {
 }
 
 // -----------------------------------------------------------------------------
-// Shared styles
+// Query Cache Durations
+// -----------------------------------------------------------------------------
+
+const CACHE_TIME = {
+  classes: 10 * 60 * 1000,
+  weeks: 10 * 60 * 1000,
+  enrollments: 5 * 60 * 1000,
+  attendance: 30 * 1000,
+};
+
+// These are the exact query keys used by AdminWeeklyPreparationPage.
+// Keeping the keys identical allows both pages to share one React Query cache.
+const getEnrollmentQueryKey = (classId: number) => [
+  'enrollments',
+  classId,
+] as const;
+
+const getAttendanceQueryKey = (
+  classId: number,
+  weekId: number,
+) => [
+  'attendance_records',
+  classId,
+  weekId,
+] as const;
+
+/**
+ * Reads weekly attendance from the shared React Query cache.
+ * A network request is made only when the matching cache entry is missing
+ * or stale according to CACHE_TIME.attendance.
+ */
+async function fetchWeeklyRecordsFromCache(
+  queryClient: QueryClient,
+  weekId: number,
+  classId = 0,
+): Promise<AttendanceRecord[]> {
+  if (!weekId) return [];
+
+  return queryClient.fetchQuery({
+    queryKey: getAttendanceQueryKey(classId, weekId),
+    queryFn: () =>
+      classId > 0
+        ? attendanceApi.getAttendanceRecords(classId, weekId)
+        : attendanceApi.getAttendanceRecordsByWeek(weekId),
+    staleTime: CACHE_TIME.attendance,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Shared Styles
 // -----------------------------------------------------------------------------
 
 const inputClassName =
@@ -132,7 +182,102 @@ function getClassLabel(classItem?: ClassItem): string {
       : `شعبة ${classItem.classId}`;
 }
 
-/** Dynamically groups classes into grades. */
+// -----------------------------------------------------------------------------
+// Alphabetical Sorting
+// -----------------------------------------------------------------------------
+
+const arabicCollator = new Intl.Collator('ar-SA', {
+  sensitivity: 'base',
+  numeric: true,
+});
+
+function getEnrollmentStudentName(
+  enrollment: ClassEnrollment,
+): string {
+  const item = enrollment as unknown as Record<string, unknown>;
+
+  const student =
+    item.student && typeof item.student === 'object'
+      ? item.student as Record<string, unknown>
+      : undefined;
+
+  const candidates: unknown[] = [
+    item.studentName,
+    item.studentFullName,
+    item.fullName,
+    item.name,
+
+    student?.studentName,
+    student?.fullName,
+    student?.fullNameAr,
+    student?.arabicName,
+    student?.name,
+
+    [
+      item.studentFirstName,
+      item.studentMiddleName,
+      item.studentLastName,
+    ]
+      .filter(
+        (part): part is string =>
+          typeof part === 'string' && Boolean(part.trim()),
+      )
+      .join(' '),
+
+    [
+      student?.firstName,
+      student?.middleName,
+      student?.lastName,
+    ]
+      .filter(
+        (part): part is string =>
+          typeof part === 'string' && Boolean(part.trim()),
+      )
+      .join(' '),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      typeof candidate === 'string' &&
+      candidate.trim().length > 0
+    ) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
+function sortEnrollmentsAlphabetically(
+  enrollments: ClassEnrollment[],
+): ClassEnrollment[] {
+  return enrollments
+    .map((enrollment) => ({
+      enrollment,
+      name: getEnrollmentStudentName(enrollment),
+    }))
+    .sort((a, b) => {
+      if (!a.name && !b.name) {
+        return a.enrollment.enrollmentId -
+          b.enrollment.enrollmentId;
+      }
+
+      if (!a.name) return 1;
+      if (!b.name) return -1;
+
+      return (
+        arabicCollator.compare(a.name, b.name) ||
+        a.enrollment.enrollmentId -
+          b.enrollment.enrollmentId
+      );
+    })
+    .map((item) => item.enrollment);
+}
+
+// -----------------------------------------------------------------------------
+// Grade Helpers
+// -----------------------------------------------------------------------------
+
 export function extractGradesFromClasses(
   classes: ClassItem[],
 ): AcademicGrade[] {
@@ -196,7 +341,10 @@ export function extractGradesFromClasses(
     .sort((a, b) => a.gradeId - b.gradeId);
 }
 
-/** Sunday=1 through Thursday=5. */
+// -----------------------------------------------------------------------------
+// Date Helpers
+// -----------------------------------------------------------------------------
+
 function getDayInfoFromDate(dateStr: string) {
   if (!dateStr) {
     return {
@@ -323,6 +471,10 @@ function toDateKey(value: string | Date): string {
   return dateKey;
 }
 
+// -----------------------------------------------------------------------------
+// Enrollment / Attendance Helpers
+// -----------------------------------------------------------------------------
+
 function buildEnrollmentClassMap(
   enrollments: ClassEnrollment[],
 ): Map<number, number> {
@@ -372,50 +524,11 @@ function groupRecordsByClass(
 // Attendance Helpers
 // -----------------------------------------------------------------------------
 
-async function fetchDailyRecords(
-  date: string,
-  classId: number | undefined,
-  matchingWeek: {
-    attendanceWeekId: number;
-  } | undefined,
-): Promise<AttendanceRecord[]> {
-  let dateRecords: AttendanceRecord[] | null = null;
-
-  try {
-    dateRecords =
-      await attendanceApi.getAttendanceRecordsByDate(
-        date,
-        classId,
-      );
-  } catch (error) {
-    // Week records are a supported fallback for daily reports.
-    if (!matchingWeek) throw error;
-  }
-
-  if (dateRecords && dateRecords.length > 0) {
-    return dateRecords;
-  }
-
-  if (!matchingWeek) {
-    return [];
-  }
-
-  if (classId) {
-    return attendanceApi.getAttendanceRecords(
-      classId,
-      matchingWeek.attendanceWeekId,
-    );
-  }
-
-  return attendanceApi.getAttendanceRecordsByWeek(
-    matchingWeek.attendanceWeekId,
-  );
-}
-
 function buildWeeklyAttendanceRows(
   enrollments: ClassEnrollment[],
   records: AttendanceRecord[],
 ): StudentWeeklyAttendance[] {
+  // Enrollment arrays are already sorted when loaded or selected.
   const recordBySlot = new Map<string, AttendanceRecord>();
 
   records.forEach((record) => {
@@ -534,7 +647,6 @@ function ReportTab({
   );
 }
 
-/** Week and School Day selector for Daily Reports (no calendar popup). */
 function DailyWeekDaySelector({
   weeks,
   selectedWeekId,
@@ -571,7 +683,9 @@ function DailyWeekDaySelector({
         </label>
 
         <WeekSelector
-          selectedWeekId={selectedWeekId || activeWeek?.attendanceWeekId}
+          selectedWeekId={
+            selectedWeekId || activeWeek?.attendanceWeekId
+          }
           onSelectWeek={onSelectWeek}
           showDateRange
         />
@@ -585,9 +699,14 @@ function DailyWeekDaySelector({
         <div className="grid grid-cols-5 gap-1.5">
           {SCHOOL_DAYS.map((day) => {
             const dayDateStr = activeWeek
-              ? calculateDateForDay(activeWeek.startDate, day.dayNumber)
+              ? calculateDateForDay(
+                  activeWeek.startDate,
+                  day.dayNumber,
+                )
               : '';
-            const isSelected = selectedDayNumber === day.dayNumber;
+
+            const isSelected =
+              selectedDayNumber === day.dayNumber;
 
             return (
               <button
@@ -601,6 +720,7 @@ function DailyWeekDaySelector({
                 }`}
               >
                 <span>{day.nameAr}</span>
+
                 {dayDateStr && (
                   <span
                     className={`text-[10px] font-mono font-normal mt-0.5 ${
@@ -630,7 +750,11 @@ function DailyWeekDaySelector({
                 : 'text-amber-600 dark:text-amber-400'
             }`}
           >
-            {dailyDate > today ? 'تاريخ مستقبلي (لا توجد بيانات بعد)' : isValid ? 'التاريخ معتمد للتقرير' : 'التاريخ خارج نطاق الدوام'}
+            {dailyDate > today
+              ? 'تاريخ مستقبلي (لا توجد بيانات بعد)'
+              : isValid
+                ? 'التاريخ معتمد للتقرير'
+                : 'التاريخ خارج نطاق الدوام'}
           </span>
         </div>
       </div>
@@ -691,6 +815,7 @@ function ReportError({
 export function ReportCenterPage() {
   const { schoolName } = useSchoolSettings();
   const { toast } = useNotifications();
+  const queryClient = useQueryClient();
 
   // ---------------------------------------------------------------------------
   // Configuration State
@@ -723,7 +848,6 @@ export function ReportCenterPage() {
   const [dailyKind, setDailyKind] =
     useState<DailyKind>('attendance');
 
-
   const [weeklyScope, setWeeklyScope] =
     useState<ExportScope>('all');
 
@@ -735,7 +859,6 @@ export function ReportCenterPage() {
 
   const [weeklyWeekId, setWeeklyWeekId] =
     useState(0);
-
 
   const [monthlyScope, setMonthlyScope] =
     useState<ExportScope>('all');
@@ -749,7 +872,6 @@ export function ReportCenterPage() {
   const [monthlyMonth, setMonthlyMonth] =
     useState(() => getRiyadhDateOnly().slice(0, 7));
 
-
   const [isExporting, setIsExporting] =
     useState(false);
 
@@ -762,6 +884,19 @@ export function ReportCenterPage() {
   const [previewConfig, setPreviewConfig] =
     useState<PreviewConfig | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // Preview Control
+  // ---------------------------------------------------------------------------
+
+  const closePreview = () => {
+    setShowPreview(false);
+    setPreviewConfig(null);
+  };
+
+  const handleReportTypeChange = (type: ReportType) => {
+    closePreview();
+    setActiveReportType(type);
+  };
 
   // ---------------------------------------------------------------------------
   // Base Queries
@@ -776,9 +911,8 @@ export function ReportCenterPage() {
     queryKey: ['classes'],
     queryFn: () => classesApi.getClasses(),
     retry: 1,
-    staleTime: 1000 * 60 * 30,
+    staleTime: CACHE_TIME.classes,
   });
-
 
   const {
     data: weeks = [],
@@ -789,37 +923,24 @@ export function ReportCenterPage() {
     queryKey: ['weeks'],
     queryFn: () => attendanceWeeksApi.getAttendanceWeeks(),
     retry: 1,
-    staleTime: 1000 * 60 * 30,
+    staleTime: CACHE_TIME.weeks,
   });
 
-
-  const {
-    data: allEnrollments = [],
-    isLoading: isLoadingEnrollments,
-    isError: isEnrollmentsError,
-    refetch: refetchEnrollments,
-  } = useQuery({
-    queryKey: ['all_enrollments'],
-    queryFn: () => enrollmentsApi.getAllEnrollments(),
-    retry: 1,
-    staleTime: 1000 * 60 * 15,
-  });
-
+  // ---------------------------------------------------------------------------
+  // Derived Base Data
+  // ---------------------------------------------------------------------------
 
   const grades = useMemo(
     () => extractGradesFromClasses(classes),
     [classes],
   );
 
-
   const dailyDayInfo = useMemo(
     () => getDayInfoFromDate(dailyDate),
     [dailyDate],
   );
 
-
   const today = getRiyadhDateOnly();
-
 
   // ---------------------------------------------------------------------------
   // Default Selections
@@ -849,10 +970,12 @@ export function ReportCenterPage() {
         ))
     ) {
       setDailyWeekId(defaultWeek.attendanceWeekId);
+
       const computed = calculateDateForDay(
         defaultWeek.startDate,
         dailyDayNumber,
       );
+
       if (computed) {
         setDailyDate(computed);
       }
@@ -871,12 +994,12 @@ export function ReportCenterPage() {
         targetWeek.startDate,
         dailyDayNumber,
       );
+
       if (targetDate && targetDate !== dailyDate) {
         setDailyDate(targetDate);
       }
     }
   }, [weeks, dailyWeekId, dailyDayNumber]);
-
 
   useEffect(() => {
     if (grades.length === 0) return;
@@ -899,7 +1022,6 @@ export function ReportCenterPage() {
     monthlyGradeId,
   ]);
 
-
   useEffect(() => {
     const grade = grades.find(
       (item) => item.gradeId === dailyGradeId,
@@ -914,7 +1036,6 @@ export function ReportCenterPage() {
       setDailyClassId(grade.classes[0].classId);
     }
   }, [dailyGradeId, dailyClassId, grades]);
-
 
   useEffect(() => {
     const grade = grades.find(
@@ -931,7 +1052,6 @@ export function ReportCenterPage() {
     }
   }, [weeklyGradeId, weeklyClassId, grades]);
 
-
   useEffect(() => {
     const grade = grades.find(
       (item) => item.gradeId === monthlyGradeId,
@@ -947,7 +1067,6 @@ export function ReportCenterPage() {
     }
   }, [monthlyGradeId, monthlyClassId, grades]);
 
-
   // ---------------------------------------------------------------------------
   // Active Configuration
   // ---------------------------------------------------------------------------
@@ -961,7 +1080,6 @@ export function ReportCenterPage() {
     [weeks, weeklyWeekId],
   );
 
-
   const dailyMatchingWeek = useMemo(
     () =>
       weeks.find((week) => {
@@ -973,17 +1091,14 @@ export function ReportCenterPage() {
     [weeks, dailyDate],
   );
 
-
   const isDailyDateValid =
     dailyDayInfo.isSchoolDay &&
     dailyDate <= today &&
     Boolean(dailyMatchingWeek);
 
-
   const isMonthValid =
     /^\d{4}-(0[1-9]|1[0-2])$/.test(monthlyMonth) &&
     monthlyMonth <= today.slice(0, 7);
-
 
   const activeScope: ExportScope =
     activeReportType === 'daily'
@@ -992,7 +1107,6 @@ export function ReportCenterPage() {
         ? weeklyScope
         : monthlyScope;
 
-
   const activeGradeId =
     activeReportType === 'daily'
       ? dailyGradeId
@@ -1000,14 +1114,12 @@ export function ReportCenterPage() {
         ? weeklyGradeId
         : monthlyGradeId;
 
-
   const activeClassId =
     activeReportType === 'daily'
       ? dailyClassId
       : activeReportType === 'weekly'
         ? weeklyClassId
         : monthlyClassId;
-
 
   const activeGrade = useMemo(
     () =>
@@ -1017,7 +1129,6 @@ export function ReportCenterPage() {
     [grades, activeGradeId],
   );
 
-
   const activeClass = useMemo(
     () =>
       activeGrade?.classes.find(
@@ -1025,7 +1136,6 @@ export function ReportCenterPage() {
       ),
     [activeGrade, activeClassId],
   );
-
 
   const hasValidScopeSelection =
     activeScope === 'all' ||
@@ -1037,7 +1147,6 @@ export function ReportCenterPage() {
       )
     );
 
-
   const canRunReport =
     hasValidScopeSelection &&
     (
@@ -1048,12 +1157,13 @@ export function ReportCenterPage() {
           : isMonthValid
     );
 
-
   // ---------------------------------------------------------------------------
   // State Update Helpers
   // ---------------------------------------------------------------------------
 
   const updateActiveScope = (value: ExportScope) => {
+    closePreview();
+
     if (activeReportType === 'daily') {
       setDailyScope(value);
     } else if (activeReportType === 'weekly') {
@@ -1063,8 +1173,9 @@ export function ReportCenterPage() {
     }
   };
 
-
   const updateActiveGrade = (value: number) => {
+    closePreview();
+
     if (activeReportType === 'daily') {
       setDailyGradeId(value);
     } else if (activeReportType === 'weekly') {
@@ -1074,8 +1185,9 @@ export function ReportCenterPage() {
     }
   };
 
-
   const updateActiveClass = (value: number) => {
+    closePreview();
+
     if (activeReportType === 'daily') {
       setDailyClassId(value);
     } else if (activeReportType === 'weekly') {
@@ -1085,53 +1197,69 @@ export function ReportCenterPage() {
     }
   };
 
-
   // ---------------------------------------------------------------------------
-  // Enrollment Helpers
+  // Preview Enrollment Query - Shared Cache
   // ---------------------------------------------------------------------------
 
+  // The weekly preparation page uses ['enrollments', previewClassId].
+  // Use the same key and data source here instead of loading a second copy.
+  const previewEnrollmentClassId =
+    previewConfig?.scope === 'class'
+      ? previewConfig.classId ?? 0
+      : 0;
 
+  const {
+    data: previewSourceEnrollments = [],
+    isLoading: isLoadingPreviewEnrollments,
+    isError: isPreviewEnrollmentsError,
+    refetch: refetchPreviewEnrollments,
+  } = useQuery({
+    queryKey: getEnrollmentQueryKey(previewEnrollmentClassId),
+    queryFn: async () => {
+      const data = previewEnrollmentClassId > 0
+        ? await enrollmentsApi.getEnrollmentsByClass(
+            previewEnrollmentClassId,
+          )
+        : await enrollmentsApi.getAllEnrollments();
 
+      return sortEnrollmentsAlphabetically(data);
+    },
+    enabled: showPreview && Boolean(previewConfig),
+    retry: 1,
+    staleTime: CACHE_TIME.enrollments,
+  });
 
+  // Filter school-wide cached enrollments to the selected grade when needed.
   const previewEnrollments = useMemo(() => {
     if (!previewConfig) return [];
 
-    if (
-      previewConfig.scope === 'class' &&
-      previewConfig.classId
-    ) {
-      return allEnrollments.filter(
-        (enrollment) =>
-          enrollment.classId === previewConfig.classId,
-      );
-    }
-
-    if (
-      previewConfig.scope === 'grade' &&
-      previewConfig.gradeId
-    ) {
+    if (previewConfig.scope === 'grade' && previewConfig.gradeId) {
       const grade = grades.find(
-        (item) =>
-          item.gradeId === previewConfig.gradeId,
+        (item) => item.gradeId === previewConfig.gradeId,
       );
 
       const classIds = new Set(
         grade?.classes.map((item) => item.classId) || [],
       );
 
-      return allEnrollments.filter(
-        (enrollment) =>
+      return sortEnrollmentsAlphabetically(
+        previewSourceEnrollments.filter((enrollment) =>
           classIds.has(enrollment.classId),
+        ),
       );
     }
 
-    return allEnrollments;
-  }, [previewConfig, allEnrollments, grades]);
-
+    return sortEnrollmentsAlphabetically(previewSourceEnrollments);
+  }, [previewConfig, previewSourceEnrollments, grades]);
 
   // ---------------------------------------------------------------------------
-  // Preview Records Query
+  // Preview Records Query - Shared Weekly Attendance Cache
   // ---------------------------------------------------------------------------
+
+  const previewRecordsClassId =
+    previewConfig?.scope === 'class'
+      ? previewConfig.classId ?? 0
+      : 0;
 
   const {
     data: previewRecords = [],
@@ -1139,6 +1267,8 @@ export function ReportCenterPage() {
     isError: isPreviewRecordsError,
     refetch: refetchPreviewRecords,
   } = useQuery({
+    // This remains the report-result key. Its queryFn reads the source records
+    // from the same weekly cache used by AdminWeeklyPreparationPage.
     queryKey: [
       'preview_records',
       previewConfig?.reportType,
@@ -1153,16 +1283,11 @@ export function ReportCenterPage() {
     queryFn: async (): Promise<AttendanceRecord[]> => {
       if (!previewConfig) return [];
 
-      // DAILY
+      // DAILY: read the selected date's containing week from the shared cache.
       if (
         previewConfig.reportType === 'daily' &&
         previewConfig.date
       ) {
-        const targetClass =
-          previewConfig.scope === 'class'
-            ? previewConfig.classId
-            : undefined;
-
         const matchingWeek = weeks.find((week) => {
           const start = toDateKey(week.startDate);
           const end = toDateKey(week.endDate);
@@ -1173,36 +1298,32 @@ export function ReportCenterPage() {
           );
         });
 
-        return fetchDailyRecords(
-          previewConfig.date,
-          targetClass,
-          matchingWeek,
+        if (!matchingWeek) {
+          throw new Error(
+            'لم يتم العثور على الأسبوع الدراسي الذي ينتمي إليه التاريخ المحدد.',
+          );
+        }
+
+        return fetchWeeklyRecordsFromCache(
+          queryClient,
+          matchingWeek.attendanceWeekId,
+          previewRecordsClassId,
         );
       }
 
-
-      // WEEKLY
+      // WEEKLY: exact same key as the weekly preparation page.
       if (
         previewConfig.reportType === 'weekly' &&
         previewConfig.weekId
       ) {
-        if (
-          previewConfig.scope === 'class' &&
-          previewConfig.classId
-        ) {
-          return attendanceApi.getAttendanceRecords(
-            previewConfig.classId,
-            previewConfig.weekId,
-          );
-        }
-
-        return attendanceApi.getAttendanceRecordsByWeek(
+        return fetchWeeklyRecordsFromCache(
+          queryClient,
           previewConfig.weekId,
+          previewRecordsClassId,
         );
       }
 
-
-      // MONTHLY
+      // MONTHLY: read each overlapping week from its shared cache entry.
       if (
         previewConfig.reportType === 'monthly' &&
         previewConfig.month
@@ -1221,21 +1342,13 @@ export function ReportCenterPage() {
         });
 
         const recordLists = await Promise.all(
-          overlappingWeeks.map((week) => {
-            if (
-              previewConfig.scope === 'class' &&
-              previewConfig.classId
-            ) {
-              return attendanceApi.getAttendanceRecords(
-                previewConfig.classId,
-                week.attendanceWeekId,
-              );
-            }
-
-            return attendanceApi.getAttendanceRecordsByWeek(
+          overlappingWeeks.map((week) =>
+            fetchWeeklyRecordsFromCache(
+              queryClient,
               week.attendanceWeekId,
-            );
-          }),
+              previewRecordsClassId,
+            ),
+          ),
         );
 
         return recordLists.flat();
@@ -1245,12 +1358,10 @@ export function ReportCenterPage() {
     },
 
     enabled: showPreview && Boolean(previewConfig),
-
     retry: 1,
-
-    staleTime: 30_000,
+    staleTime: CACHE_TIME.attendance,
+    refetchOnWindowFocus: true,
   });
-
 
   // ---------------------------------------------------------------------------
   // Preview Calculations
@@ -1300,21 +1411,26 @@ export function ReportCenterPage() {
     const startDate =
       matchingWeek?.startDate || previewConfig.date;
 
-    const rows =
-      reportCalculationService.calculateDailyAttendance(
-        previewEnrollments,
-        previewRecords,
-        info.dayNumber,
-        startDate,
-      );
+    const isAbsenceOnly =
+      previewConfig.kind === 'absence';
 
-    const absences =
-      reportCalculationService.calculateDailyAbsences(
-        previewEnrollments,
-        previewRecords,
-        info.dayNumber,
-        startDate,
-      );
+    const rows = isAbsenceOnly
+      ? []
+      : reportCalculationService.calculateDailyAttendance(
+          previewEnrollments,
+          previewRecords,
+          info.dayNumber,
+          startDate,
+        );
+
+    const absences = isAbsenceOnly
+      ? reportCalculationService.calculateDailyAbsences(
+          previewEnrollments,
+          previewRecords,
+          info.dayNumber,
+          startDate,
+        )
+      : [];
 
     return {
       rows,
@@ -1330,7 +1446,6 @@ export function ReportCenterPage() {
     weeks,
   ]);
 
-
   const weeklyPreviewAttendances = useMemo(
     () => {
       if (previewConfig?.reportType !== 'weekly') {
@@ -1341,14 +1456,11 @@ export function ReportCenterPage() {
         previewEnrollments,
         previewRecords,
       );
-    },
-    [
+    }, [
       previewConfig,
       previewEnrollments,
       previewRecords,
-    ],
-  );
-
+    ]);
 
   const monthlyPreviewData = useMemo(() => {
     if (
@@ -1374,7 +1486,6 @@ export function ReportCenterPage() {
     weeks,
   ]);
 
-
   const previewWeek = useMemo(
     () =>
       weeks.find(
@@ -1383,7 +1494,6 @@ export function ReportCenterPage() {
       ) || weeks[0],
     [weeks, previewConfig?.weekId],
   );
-
 
   // ---------------------------------------------------------------------------
   // Preview Configuration
@@ -1395,7 +1505,6 @@ export function ReportCenterPage() {
         'يرجى مراجعة نطاق التقرير والفترة المحددة.',
         'danger',
       );
-
       return;
     }
 
@@ -1459,7 +1568,6 @@ export function ReportCenterPage() {
           'لا توجد أسابيع دراسية متاحة.',
           'danger',
         );
-
         return;
       }
 
@@ -1550,7 +1658,6 @@ export function ReportCenterPage() {
     setShowPreview(true);
   };
 
-
   // ---------------------------------------------------------------------------
   // Excel Export
   // ---------------------------------------------------------------------------
@@ -1563,7 +1670,6 @@ export function ReportCenterPage() {
         'يرجى مراجعة نطاق التقرير والفترة المحددة.',
         'danger',
       );
-
       return;
     }
 
@@ -1573,14 +1679,34 @@ export function ReportCenterPage() {
     setExportingReport(type);
 
     try {
-      // -----------------------------------------------------------------------
-      // Load Required Data
-      // -----------------------------------------------------------------------
+      // Reuse the same enrollment cache key used by weekly preparation.
+      const exportScope =
+        type === 'daily'
+          ? dailyScope
+          : type === 'weekly'
+            ? weeklyScope
+            : monthlyScope;
+
+      const exportClassId =
+        exportScope === 'class'
+          ? type === 'daily'
+            ? dailyClassId
+            : type === 'weekly'
+              ? weeklyClassId
+              : monthlyClassId
+          : 0;
+
+      const cachedEnrollments = await queryClient.fetchQuery({
+        queryKey: getEnrollmentQueryKey(exportClassId),
+        queryFn: () =>
+          exportClassId > 0
+            ? enrollmentsApi.getEnrollmentsByClass(exportClassId)
+            : enrollmentsApi.getAllEnrollments(),
+        staleTime: CACHE_TIME.enrollments,
+      });
 
       const freshEnrollments =
-        allEnrollments.length > 0
-          ? allEnrollments
-          : await enrollmentsApi.getAllEnrollments();
+        sortEnrollmentsAlphabetically(cachedEnrollments);
 
       const reps =
         type === 'weekly'
@@ -1589,7 +1715,6 @@ export function ReportCenterPage() {
 
       const exportEnrollToClass =
         buildEnrollmentClassMap(freshEnrollments);
-
 
       const enrollsByClass = new Map<
         number,
@@ -1608,7 +1733,6 @@ export function ReportCenterPage() {
         );
       });
 
-
       // -----------------------------------------------------------------------
       // Resolve Representative Class IDs
       // -----------------------------------------------------------------------
@@ -1625,7 +1749,6 @@ export function ReportCenterPage() {
           );
         }
       });
-
 
       const repByClass = new Map<number, string>();
 
@@ -1645,7 +1768,6 @@ export function ReportCenterPage() {
           (representative as any).role || '',
         );
 
-        // Only use the main representative, not the deputy.
         const isMainRepresentative =
           role === 'Representative' ||
           username.endsWith('_1');
@@ -1679,9 +1801,7 @@ export function ReportCenterPage() {
         }
       });
 
-
       const academicYear = '1448-1449هـ';
-
 
       // -----------------------------------------------------------------------
       // DAILY EXPORT
@@ -1703,17 +1823,24 @@ export function ReportCenterPage() {
           return dailyDate >= start && dailyDate <= end;
         });
 
-        const allDateRecords = await fetchDailyRecords(
-          dailyDate,
-          undefined,
-          matchingWeek,
-        );
+        if (!matchingWeek) {
+          throw new Error(
+            'لم يتم العثور على الأسبوع الدراسي للتاريخ المحدد.',
+          );
+        }
+
+        // Read weekly data from the same cache as weekly preparation.
+        const allDateRecords =
+          await fetchWeeklyRecordsFromCache(
+            queryClient,
+            matchingWeek.attendanceWeekId,
+            dailyScope === 'class' ? dailyClassId : 0,
+          );
 
         const recordsByClass = groupRecordsByClass(
           allDateRecords,
           exportEnrollToClass,
         );
-
 
         // School Report
         if (dailyScope === 'all') {
@@ -1723,10 +1850,8 @@ export function ReportCenterPage() {
 
             classesData: grade.classes.map((classItem) => ({
               classItem,
-
               enrollments:
                 enrollsByClass.get(classItem.classId) || [],
-
               records:
                 recordsByClass.get(classItem.classId) || [],
             })),
@@ -1746,7 +1871,6 @@ export function ReportCenterPage() {
           );
         }
 
-
         // Grade Report
         else if (dailyScope === 'grade') {
           const targetGrade = grades.find(
@@ -1763,10 +1887,8 @@ export function ReportCenterPage() {
           const classesData = targetGrade.classes.map(
             (classItem) => ({
               classItem,
-
               enrollments:
                 enrollsByClass.get(classItem.classId) || [],
-
               records:
                 recordsByClass.get(classItem.classId) || [],
             }),
@@ -1786,7 +1908,6 @@ export function ReportCenterPage() {
             'success',
           );
         }
-
 
         // Class Report
         else {
@@ -1808,8 +1929,7 @@ export function ReportCenterPage() {
             recordsByClass.get(dailyClassId) || [];
 
           const reportDate =
-            matchingWeek?.startDate || dailyDate;
-
+            matchingWeek.startDate || dailyDate;
 
           if (dailyKind === 'absence') {
             const absences =
@@ -1859,7 +1979,6 @@ export function ReportCenterPage() {
         }
       }
 
-
       // -----------------------------------------------------------------------
       // WEEKLY EXPORT
       // -----------------------------------------------------------------------
@@ -1876,16 +1995,18 @@ export function ReportCenterPage() {
         const weekRange =
           `${formatArabicDateShort(targetWeek.startDate)} - ${formatArabicDateShort(targetWeek.endDate)}`;
 
+        // Read from the same weekly cache key used by the preparation page.
         const weekRecords =
-          await attendanceApi.getAttendanceRecordsByWeek(
+          await fetchWeeklyRecordsFromCache(
+            queryClient,
             targetWeek.attendanceWeekId,
+            weeklyScope === 'class' ? weeklyClassId : 0,
           );
 
         const recordsByClass = groupRecordsByClass(
           weekRecords,
           exportEnrollToClass,
         );
-
 
         // School Report
         if (weeklyScope === 'all') {
@@ -1895,13 +2016,10 @@ export function ReportCenterPage() {
 
             classesData: grade.classes.map((classItem) => ({
               classItem,
-
               representativeName:
                 repByClass.get(classItem.classId),
-
               enrollments:
                 enrollsByClass.get(classItem.classId) || [],
-
               records:
                 recordsByClass.get(classItem.classId) || [],
             })),
@@ -1921,7 +2039,6 @@ export function ReportCenterPage() {
           );
         }
 
-
         // Grade Report
         else if (weeklyScope === 'grade') {
           const targetGrade = grades.find(
@@ -1938,13 +2055,10 @@ export function ReportCenterPage() {
           const classesData = targetGrade.classes.map(
             (classItem) => ({
               classItem,
-
               representativeName:
                 repByClass.get(classItem.classId),
-
               enrollments:
                 enrollsByClass.get(classItem.classId) || [],
-
               records:
                 recordsByClass.get(classItem.classId) || [],
             }),
@@ -1971,7 +2085,6 @@ export function ReportCenterPage() {
             'success',
           );
         }
-
 
         // Class Report
         else {
@@ -2010,7 +2123,6 @@ export function ReportCenterPage() {
         }
       }
 
-
       // -----------------------------------------------------------------------
       // MONTHLY EXPORT
       // -----------------------------------------------------------------------
@@ -2033,11 +2145,15 @@ export function ReportCenterPage() {
             a.start.localeCompare(b.start),
           );
 
+        const monthlyRecordsClassId =
+          monthlyScope === 'class' ? monthlyClassId : 0;
 
         const weekRecordsList = await Promise.all(
           overlappingWeeks.map((item) =>
-            attendanceApi.getAttendanceRecordsByWeek(
+            fetchWeeklyRecordsFromCache(
+              queryClient,
               item.week.attendanceWeekId,
+              monthlyRecordsClassId,
             ),
           ),
         );
@@ -2050,21 +2166,17 @@ export function ReportCenterPage() {
           exportEnrollToClass,
         );
 
-
         const activeWeeksData: MonthlyAttendanceWeekData[] =
           overlappingWeeks.map((item, index) => ({
             weekNumber:
               item.week.weekNumber ?? index + 1,
-
             startDate: item.start,
             endDate: item.end,
-
             attendances: buildWeeklyAttendanceRows(
               freshEnrollments,
               weekRecordsList[index],
             ),
           }));
-
 
         // School Report
         if (monthlyScope === 'all') {
@@ -2075,7 +2187,6 @@ export function ReportCenterPage() {
               weeks,
               monthlyMonth,
             );
-
 
           const gradesData = grades.map((grade) => {
             const gradeEnrollments =
@@ -2107,7 +2218,6 @@ export function ReportCenterPage() {
             };
           });
 
-
           await excelExportService.exportAllGradesMonthlyReport({
             academicYear,
             month: monthlyMonth,
@@ -2123,7 +2233,6 @@ export function ReportCenterPage() {
             'success',
           );
         }
-
 
         // Grade Report
         else if (monthlyScope === 'grade') {
@@ -2144,18 +2253,18 @@ export function ReportCenterPage() {
             ),
           );
 
-          const gradeEnrollments =
+          const gradeEnrollments = sortEnrollmentsAlphabetically(
             targetGrade.classes.flatMap(
               (classItem) =>
                 enrollsByClass.get(classItem.classId) || [],
-            );
+            ),
+          );
 
           const gradeRecords =
             targetGrade.classes.flatMap(
               (classItem) =>
                 recordsByClass.get(classItem.classId) || [],
             );
-
 
           const gradeMonthly =
             reportCalculationService.calculateMonthlyReport(
@@ -2165,15 +2274,12 @@ export function ReportCenterPage() {
               monthlyMonth,
             );
 
-
           const gradeWeeksData: MonthlyAttendanceWeekData[] =
             overlappingWeeks.map((item, index) => ({
               weekNumber:
                 item.week.weekNumber ?? index + 1,
-
               startDate: item.start,
               endDate: item.end,
-
               attendances: buildWeeklyAttendanceRows(
                 gradeEnrollments,
                 weekRecordsList[index].filter((record) => {
@@ -2195,7 +2301,6 @@ export function ReportCenterPage() {
               ),
             }));
 
-
           await excelExportService.exportGradeMonthlyReport({
             gradeName: targetGrade.gradeName,
             academicYear,
@@ -2212,7 +2317,6 @@ export function ReportCenterPage() {
             'success',
           );
         }
-
 
         // Class Report
         else {
@@ -2233,7 +2337,6 @@ export function ReportCenterPage() {
           const classRecords =
             recordsByClass.get(monthlyClassId) || [];
 
-
           const classMonthly =
             reportCalculationService.calculateMonthlyReport(
               classEnrollments,
@@ -2242,15 +2345,12 @@ export function ReportCenterPage() {
               monthlyMonth,
             );
 
-
           const classWeeksData: MonthlyAttendanceWeekData[] =
             overlappingWeeks.map((item, index) => ({
               weekNumber:
                 item.week.weekNumber ?? index + 1,
-
               startDate: item.start,
               endDate: item.end,
-
               attendances: buildWeeklyAttendanceRows(
                 classEnrollments,
                 weekRecordsList[index].filter((record) => {
@@ -2268,7 +2368,6 @@ export function ReportCenterPage() {
                 }),
               ),
             }));
-
 
           await excelExportService.exportMonthlyReport(
             classMonthly.summary,
@@ -2306,7 +2405,6 @@ export function ReportCenterPage() {
     }
   };
 
-
   // ---------------------------------------------------------------------------
   // Page Actions
   // ---------------------------------------------------------------------------
@@ -2315,15 +2413,19 @@ export function ReportCenterPage() {
     window.print();
   };
 
-
   const handleRetryBaseQueries = () => {
     void Promise.all([
       refetchClasses(),
       refetchWeeks(),
-      refetchEnrollments(),
     ]);
   };
 
+  const handleRetryPreview = () => {
+    void Promise.all([
+      refetchPreviewRecords(),
+      refetchPreviewEnrollments(),
+    ]);
+  };
 
   // ---------------------------------------------------------------------------
   // Loading and Error States
@@ -2331,21 +2433,25 @@ export function ReportCenterPage() {
 
   const isLoadingBase =
     isLoadingClasses ||
-    isLoadingWeeks ||
-    isLoadingEnrollments;
+    isLoadingWeeks;
 
   const isBaseError =
-    isClassesError ||
-    isWeeksError ||
-    isEnrollmentsError;
+    (isClassesError && classes.length === 0) ||
+    (isWeeksError && weeks.length === 0);
 
+  const isPreviewLoading =
+    isLoadingPreviewRecords ||
+    isLoadingPreviewEnrollments;
+
+  const isPreviewError =
+    isPreviewRecordsError ||
+    isPreviewEnrollmentsError;
 
   if (isLoadingBase) {
     return (
       <LoadingState message="جاري تحميل بيانات التقارير..." />
     );
   }
-
 
   if (isBaseError) {
     return (
@@ -2362,7 +2468,6 @@ export function ReportCenterPage() {
     );
   }
 
-
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -2372,10 +2477,7 @@ export function ReportCenterPage() {
       dir="rtl"
       className="space-y-5 pb-12 text-right text-slate-900 dark:text-slate-100"
     >
-
-      {/* ------------------------------------------------------------------- */}
       {/* Header */}
-      {/* ------------------------------------------------------------------- */}
 
       <section
         className={`rounded-2xl px-5 py-5 shadow-sm sm:px-6 ${surfaceClassName}`}
@@ -2414,23 +2516,19 @@ export function ReportCenterPage() {
         </div>
       </section>
 
-
-      {/* ------------------------------------------------------------------- */}
       {/* Report Type Tabs */}
-      {/* ------------------------------------------------------------------- */}
 
       <nav
         aria-label="نوع التقرير"
         className="rounded-2xl border border-slate-200 bg-slate-100/80 p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
       >
         <div className="grid grid-cols-3 gap-1.5">
-
           <ReportTab
             active={activeReportType === 'daily'}
             icon={CalendarDays}
             title="يومي"
             description="تقرير بتاريخ محدد"
-            onClick={() => setActiveReportType('daily')}
+            onClick={() => handleReportTypeChange('daily')}
           />
 
           <ReportTab
@@ -2438,7 +2536,7 @@ export function ReportCenterPage() {
             icon={CalendarRange}
             title="أسبوعي"
             description="كشف أسبوع دراسي"
-            onClick={() => setActiveReportType('weekly')}
+            onClick={() => handleReportTypeChange('weekly')}
           />
 
           <ReportTab
@@ -2446,21 +2544,16 @@ export function ReportCenterPage() {
             icon={Calendar}
             title="شهري"
             description="ملخص الشهر والغياب"
-            onClick={() => setActiveReportType('monthly')}
+            onClick={() => handleReportTypeChange('monthly')}
           />
-
         </div>
       </nav>
 
-
-      {/* ------------------------------------------------------------------- */}
       {/* Configuration */}
-      {/* ------------------------------------------------------------------- */}
 
       <section
         className={`overflow-hidden rounded-2xl shadow-sm ${surfaceClassName}`}
       >
-
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
           <div>
             <h2 className="text-sm font-extrabold">
@@ -2481,13 +2574,10 @@ export function ReportCenterPage() {
           </span>
         </div>
 
-
         <div className="space-y-5 p-5 sm:p-6">
-
           {/* Filters */}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-
             {/* Scope */}
 
             <label className="block min-w-0">
@@ -2509,7 +2599,6 @@ export function ReportCenterPage() {
                 <option value="class">شعبة محددة</option>
               </select>
             </label>
-
 
             {/* Grade */}
 
@@ -2540,7 +2629,6 @@ export function ReportCenterPage() {
               </label>
             )}
 
-
             {/* Class */}
 
             {activeScope === 'class' && (
@@ -2570,22 +2658,25 @@ export function ReportCenterPage() {
               </label>
             )}
 
-
             {/* Period */}
 
             <div className="min-w-0">
-
               {activeReportType === 'daily' && (
                 <DailyWeekDaySelector
                   weeks={weeks}
                   selectedWeekId={
-                    dailyWeekId || dailyMatchingWeek?.attendanceWeekId || 0
+                    dailyWeekId ||
+                    dailyMatchingWeek?.attendanceWeekId ||
+                    0
                   }
                   onSelectWeek={(weekId) => {
+                    closePreview();
                     setDailyWeekId(weekId);
+
                     const selected = weeks.find(
                       (w) => w.attendanceWeekId === weekId,
                     );
+
                     if (selected) {
                       setDailyDate(
                         calculateDateForDay(
@@ -2597,11 +2688,14 @@ export function ReportCenterPage() {
                   }}
                   selectedDayNumber={dailyDayNumber}
                   onSelectDay={(dayNum) => {
+                    closePreview();
                     setDailyDayNumber(dayNum);
+
                     const activeW =
                       weeks.find(
                         (w) => w.attendanceWeekId === dailyWeekId,
                       ) || dailyMatchingWeek;
+
                     if (activeW) {
                       setDailyDate(
                         calculateDateForDay(
@@ -2617,7 +2711,6 @@ export function ReportCenterPage() {
                 />
               )}
 
-
               {activeReportType === 'weekly' && (
                 <>
                   <label
@@ -2629,7 +2722,10 @@ export function ReportCenterPage() {
 
                   <WeekSelector
                     selectedWeekId={weeklyWeekId}
-                    onSelectWeek={setWeeklyWeekId}
+                    onSelectWeek={(weekId) => {
+                      closePreview();
+                      setWeeklyWeekId(weekId);
+                    }}
                     showDateRange
                   />
 
@@ -2642,7 +2738,6 @@ export function ReportCenterPage() {
                   )}
                 </>
               )}
-
 
               {activeReportType === 'monthly' && (
                 <>
@@ -2658,9 +2753,10 @@ export function ReportCenterPage() {
                     type="month"
                     value={monthlyMonth}
                     max={today.slice(0, 7)}
-                    onChange={(event) =>
-                      setMonthlyMonth(event.target.value)
-                    }
+                    onChange={(event) => {
+                      closePreview();
+                      setMonthlyMonth(event.target.value);
+                    }}
                     className={inputClassName}
                   />
 
@@ -2671,17 +2767,14 @@ export function ReportCenterPage() {
                   )}
                 </>
               )}
-
             </div>
           </div>
-
 
           {/* Daily Report Type */}
 
           {activeReportType === 'daily' &&
             activeScope === 'class' && (
               <div className="max-w-sm border-t border-slate-100 pt-4 dark:border-slate-800">
-
                 <label
                   htmlFor="daily-report-kind"
                   className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300"
@@ -2692,11 +2785,12 @@ export function ReportCenterPage() {
                 <select
                   id="daily-report-kind"
                   value={dailyKind}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    closePreview();
                     setDailyKind(
                       event.target.value as DailyKind,
-                    )
-                  }
+                    );
+                  }}
                   className={inputClassName}
                 >
                   <option value="attendance">
@@ -2709,7 +2803,6 @@ export function ReportCenterPage() {
                 </select>
               </div>
             )}
-
 
           {/* Empty Data Warning */}
 
@@ -2726,16 +2819,13 @@ export function ReportCenterPage() {
             </div>
           )}
 
-
           {/* Actions */}
 
           <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-
             <div className="flex items-center gap-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
               {canRunReport ? (
                 <>
                   <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-
                   <span>
                     الإعدادات جاهزة لإنشاء التقرير.
                   </span>
@@ -2743,7 +2833,6 @@ export function ReportCenterPage() {
               ) : (
                 <>
                   <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-
                   <span>
                     راجع النطاق والفترة المحددة.
                   </span>
@@ -2751,9 +2840,7 @@ export function ReportCenterPage() {
               )}
             </div>
 
-
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
-
               <button
                 type="button"
                 onClick={() =>
@@ -2765,7 +2852,6 @@ export function ReportCenterPage() {
                 <Eye className="h-4 w-4" />
                 معاينة
               </button>
-
 
               <button
                 type="button"
@@ -2788,29 +2874,21 @@ export function ReportCenterPage() {
                   </>
                 )}
               </button>
-
             </div>
           </div>
-
         </div>
       </section>
 
-
-      {/* ------------------------------------------------------------------- */}
       {/* Preview */}
-      {/* ------------------------------------------------------------------- */}
 
       {showPreview && previewConfig && (
         <section
           className={`overflow-hidden rounded-2xl shadow-sm ${surfaceClassName}`}
         >
-
           {/* Preview Header */}
 
           <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-
             <div className="min-w-0">
-
               <div className="mb-1 flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
 
@@ -2826,41 +2904,25 @@ export function ReportCenterPage() {
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 {previewConfig.subtitle}
               </p>
-
             </div>
 
-
             <div className="flex shrink-0 items-center gap-2">
-
+             
               <button
                 type="button"
-                onClick={handlePrint}
-                disabled={isLoadingPreviewRecords || isPreviewRecordsError}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                <Printer className="h-4 w-4 text-[#245B63] dark:text-teal-400" />
-                طباعة
-              </button>
-
-
-              <button
-                type="button"
-                onClick={() => setShowPreview(false)}
+                onClick={closePreview}
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 <EyeOff className="h-4 w-4" />
                 إغلاق
               </button>
-
             </div>
           </div>
-
 
           {/* Print Header */}
 
           <div className="hidden print-only px-6 pb-5 pt-2">
             <div className="mb-4 flex items-center justify-between border-b pb-3">
-
               <div className="text-right">
                 <h2 className="text-lg font-bold">
                   {schoolName}
@@ -2891,20 +2953,16 @@ export function ReportCenterPage() {
             </div>
           </div>
 
-
           {/* Preview Content */}
 
           <div className="p-4 sm:p-6">
-
-            {isLoadingPreviewRecords ? (
+            {isPreviewLoading ? (
               <LoadingState message="جاري تحميل التقرير..." />
-            ) : isPreviewRecordsError ? (
+            ) : isPreviewError ? (
               <ReportError
-                title="تعذر تحميل سجلات التقرير"
-                description="حدث خطأ أثناء قراءة بيانات الحضور من الخادم. يمكنك المحاولة مرة أخرى."
-                onRetry={() => {
-                  void refetchPreviewRecords();
-                }}
+                title="تعذر تحميل بيانات التقرير"
+                description="حدث خطأ أثناء قراءة بيانات الطلاب أو سجلات الحضور. يمكنك المحاولة مرة أخرى."
+                onRetry={handleRetryPreview}
               />
             ) : previewConfig.reportType === 'daily' ? (
               <DailyReportView
@@ -2937,15 +2995,11 @@ export function ReportCenterPage() {
                 classNameTitle={previewConfig.title}
               />
             )}
-
           </div>
         </section>
       )}
 
-
-      {/* ------------------------------------------------------------------- */}
       {/* Footer */}
-      {/* ------------------------------------------------------------------- */}
 
       <div className="flex items-center justify-center gap-2 pb-2 text-[11px] text-slate-400 dark:text-slate-500">
         <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -2954,7 +3008,6 @@ export function ReportCenterPage() {
           يتم إنشاء التقارير وفق البيانات والفترة المحددتين.
         </span>
       </div>
-
     </main>
   );
 }

@@ -74,7 +74,13 @@ export function ClerkAttendancePage() {
   });
 
   const activeWeek = useMemo(() => resolveDefaultAttendanceWeek(weeks), [weeks]);
-  const effectiveWeekId = selectedWeekId ?? activeWeek?.attendanceWeekId;
+  const selectedWeek = useMemo(() => {
+    if (selectedWeekId !== null) {
+      return weeks.find((w) => w.attendanceWeekId === selectedWeekId) ?? activeWeek;
+    }
+    return activeWeek;
+  }, [weeks, selectedWeekId, activeWeek]);
+  const effectiveWeekId = selectedWeek?.attendanceWeekId;
 
   // Use the attendance matrix hook
   const {
@@ -155,14 +161,15 @@ export function ClerkAttendancePage() {
       ) : (
         <QuickAttendancePanel
           classNameTitle={currentClassName}
-          weekNumber={activeWeek?.weekNumber || 1}
+          attendanceWeekId={effectiveWeekId}
+          weekNumber={selectedWeek?.weekNumber || 1}
           selectedDay={selectedDay}
           onSelectDay={setSelectedDay}
           enrollments={enrollments}
           records={records}
           isSaving={isSaving}
-          onSaveSlot={async (d, c, m) => {
-            await saveSlot(d, c, m);
+          onSaveSlot={async (day, changes) => {
+            await saveSlot(day, changes);
           }}
         />
       )}

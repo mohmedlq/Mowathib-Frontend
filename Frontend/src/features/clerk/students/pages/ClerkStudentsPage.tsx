@@ -92,7 +92,7 @@ export function ClerkStudentsPage() {
     setSecondName(resolvedSecondName);
     setThirdName(resolvedThirdName);
     setLastName(resolvedLastName);
-    setNationalId(student.nationalId);
+    setNationalId(student.nationalId || '');
 
     const concluded = `${resolvedSecondName} ${resolvedThirdName} ${resolvedLastName}`.trim() ||
       (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
@@ -151,20 +151,16 @@ export function ClerkStudentsPage() {
       const concluded = `${secondName.trim()} ${thirdName.trim()} ${lastName.trim()}`.trim();
       const finalParentName = parentName.trim() || (concluded || undefined);
 
-      return await studentsApi.createStudentWithEnrollment(
-        {
-          firstName: firstName.trim(),
-          secondName: secondName.trim(),
-          thirdName: thirdName.trim(),
-          lastName: lastName.trim(),
-          nationalId: nationalId.trim(),
-          parentName: finalParentName,
-          parentPhoneNumber: parentPhoneNumber.trim() || undefined,
-          classId: formClassId,
-          schoolCode,
-        },
-        schoolCode
-      );
+      return await studentsApi.createStudentWithEnrollment({
+        firstName: firstName.trim(),
+        secondName: secondName.trim(),
+        thirdName: thirdName.trim(),
+        lastName: lastName.trim(),
+        nationalId: nationalId.trim() || null,
+        parentName: finalParentName,
+        parentPhoneNumber: parentPhoneNumber.trim() || null,
+        classId: formClassId,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clerk_students_paged'] });
@@ -457,13 +453,12 @@ export function ClerkStudentsPage() {
           </div>
 
           <Input
-            label="رقم الهوية الوطنية *"
+            label="رقم الهوية الوطنية (اختياري)"
             value={nationalId}
             onChange={(e) => setNationalId(e.target.value)}
             placeholder="10 أرقام"
             dir="ltr"
             className="text-left font-mono"
-            required
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -522,7 +517,7 @@ export function ClerkStudentsPage() {
           <Button
             variant="primary"
             size="sm"
-            disabled={addMutation.isPending || !firstName || !lastName || !nationalId || !formClassId}
+            disabled={addMutation.isPending || !firstName.trim() || !lastName.trim() || !formClassId}
             onClick={() => addMutation.mutate()}
             className="bg-[#0B5D43] hover:bg-[#084733] text-white"
           >
@@ -588,12 +583,11 @@ export function ClerkStudentsPage() {
           </div>
 
           <Input
-            label="رقم الهوية الوطنية *"
+            label="رقم الهوية الوطنية (اختياري)"
             value={nationalId}
             onChange={(e) => setNationalId(e.target.value)}
             dir="ltr"
             className="text-left font-mono"
-            required
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -634,7 +628,7 @@ export function ClerkStudentsPage() {
           <Button
             variant="primary"
             size="sm"
-            disabled={editMutation.isPending || !firstName || !lastName || !nationalId}
+            disabled={editMutation.isPending || !firstName.trim() || !lastName.trim()}
             onClick={() => editMutation.mutate()}
             className="bg-[#0B5D43] hover:bg-[#084733] text-white"
           >

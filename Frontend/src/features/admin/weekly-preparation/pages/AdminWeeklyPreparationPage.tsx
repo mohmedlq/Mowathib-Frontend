@@ -466,16 +466,7 @@ export function AdminWeeklyPreparationPage() {
         </div>
 
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            icon={<Printer className="h-4 w-4" />}
-            onClick={() => window.print()}
-            className="h-10 w-full justify-center rounded-xl border-[#DCE7E2] bg-white text-xs font-bold text-[#294337] hover:bg-[#F3F7F4] dark:border-[#293E35] dark:bg-[#17251F] dark:text-[#E2F0E7] sm:w-auto"
-          >
-            طباعة
-          </Button>
+        
 
           {selectedGradeTab > 0 && (
             <Button

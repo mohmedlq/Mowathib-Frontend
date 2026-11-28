@@ -139,17 +139,19 @@ export function RepresentativeStudentsPage() {
       );
     },
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['enrollments_paged', classId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['enrollments', classId],
-      });
+   onSuccess: async () => {
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: ['enrollments_paged', classId],
+    }),
+    queryClient.invalidateQueries({
+      queryKey: ['enrollments', classId],
+    }),
+  ]);
 
-      toast.show('تمت إضافة الطالب إلى الشعبة بنجاح', 'success');
-      closeFormModal();
-    },
+  toast.show('تمت إضافة الطالب إلى الشعبة بنجاح', 'success');
+  closeFormModal();
+},
 
     onError: () => {
       toast.show('فشلت إضافة الطالب، يرجى التحقق من البيانات', 'danger');
@@ -158,53 +160,60 @@ export function RepresentativeStudentsPage() {
 
   // تعديل بيانات الطالب
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: {
-      studentId: number;
-      student: StudentFormData;
-    }) => {
-      return await studentsApi.updateStudentDetails(data.studentId, data.student);
-    },
+ const updateMutation = useMutation({
+  mutationFn: async (data: {
+    studentId: number;
+    student: StudentFormData;
+  }) => {
+    return await studentsApi.updateStudentDetails(
+      data.studentId,
+      data.student
+    );
+  },
 
-    onSuccess: () => {
+  onSuccess: async () => {
+    await Promise.all([
       queryClient.invalidateQueries({
         queryKey: ['enrollments_paged', classId],
-      });
+      }),
       queryClient.invalidateQueries({
         queryKey: ['enrollments', classId],
-      });
+      }),
+    ]);
 
-      toast.show('تم تعديل بيانات الطالب بنجاح', 'success');
-      closeFormModal();
-    },
+    toast.show('تم تعديل بيانات الطالب بنجاح', 'success');
+    closeFormModal();
+  },
 
-    onError: () => {
-      toast.show('فشل تعديل بيانات الطالب', 'danger');
-    },
-  });
+  onError: () => {
+    toast.show('فشل تعديل بيانات الطالب', 'danger');
+  },
+});
 
   // إنهاء قيد الطالب من الشعبة
-  const removeMutation = useMutation({
-    mutationFn: async (enrollmentId: number) => {
-      await enrollmentsApi.removeStudentFromClass(enrollmentId);
-    },
+ const removeMutation = useMutation({
+  mutationFn: async (enrollmentId: number) => {
+    await enrollmentsApi.removeStudentFromClass(enrollmentId);
+  },
 
-    onSuccess: () => {
+  onSuccess: async () => {
+    await Promise.all([
       queryClient.invalidateQueries({
         queryKey: ['enrollments_paged', classId],
-      });
+      }),
       queryClient.invalidateQueries({
         queryKey: ['enrollments', classId],
-      });
+      }),
+    ]);
 
-      toast.show('تم إنهاء قيد الطالب من الشعبة', 'info');
-      setStudentToRemove(null);
-    },
+    toast.show('تم إنهاء قيد الطالب من الشعبة', 'info');
+    setStudentToRemove(null);
+  },
 
-    onError: () => {
-      toast.show('فشل حذف الطالب من الشعبة', 'danger');
-    },
-  });
+  onError: () => {
+    toast.show('فشل حذف الطالب من الشعبة', 'danger');
+  },
+});
 
   // فتح نافذة إضافة طالب
   const handleOpenAddModal = () => {
@@ -329,13 +338,13 @@ const handleEditStudent = (
   const isSaving = addMutation.isPending || updateMutation.isPending;
 
   const isFormValid =
-  firstName.trim().length > 0 &&
-  lastName.trim().length > 0 &&
-  nationalId.trim().length > 0 &&
-  (
-    editingStudentId !== null ||
-    /^\d{10}$/.test(nationalId.trim())
-  );
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    (
+      nationalId.trim().length === 0 ||
+      editingStudentId !== null ||
+      /^\d{10}$/.test(nationalId.trim())
+    );
   return (
     <div className="space-y-6">
 
@@ -557,7 +566,7 @@ const handleEditStudent = (
           </div>
 
           <Input
-            label="رقم الهوية الوطنية"
+            label="رقم الهوية الوطنية (اختياري)"
             placeholder="10 أرقام"
             value={nationalId}
             onChange={(e) => setNationalId(e.target.value)}

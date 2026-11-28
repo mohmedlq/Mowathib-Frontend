@@ -408,6 +408,7 @@ export function AdminAttendancePage() {
       ) : viewMode === 'quick' ? (
         <QuickAttendancePanel
           classNameTitle={currentScopeLabel}
+          attendanceWeekId={effectiveWeekId}
           weekNumber={selectedWeek?.weekNumber || 1}
           selectedDay={quickDay}
           onSelectDay={setQuickDay}

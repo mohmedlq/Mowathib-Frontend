@@ -98,8 +98,7 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
       changes,
     }: {
       dayNumber: number;
-      changes: Array<{ enrollmentId: number; status: BackendAttendanceStatus }>;
-      periodNumber?: number;
+      changes: Array<{ enrollmentId: number; status: AttendanceStatus }>;
     }) => {
       if (!isWeekReady) {
         throw new Error('لم يتم تحديد الأسبوع الدراسي.');
@@ -110,7 +109,7 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
       return await attendanceApi.saveBulkAttendance({
         attendanceWeekId: attendanceWeekId!,
         dayNumber,
-        records: changes,
+        records: changes as Array<{ enrollmentId: number; status: BackendAttendanceStatus }>,
       });
     },
     onSuccess: (count, variables) => {
@@ -124,6 +123,10 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
           }
           for (const ch of variables.changes) {
             const key = `${ch.enrollmentId}:${variables.dayNumber}`;
+            if (ch.status === 'Unmarked') {
+              map.delete(key);
+              continue;
+            }
             const existing = map.get(key);
             if (existing) {
               map.set(key, { ...existing, status: ch.status });
@@ -150,8 +153,9 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
       });
       toast.show(`تم حفظ تحضير ${count} طالب بنجاح`, 'success');
     },
-    onError: () => {
-      toast.show('حدث خطأ أثناء حفظ التحضير، يرجى المحاولة مرة أخرى', 'danger');
+    onError: (err) => {
+      const msg = err instanceof Error && err.message ? err.message : 'حدث خطأ أثناء حفظ التحضير، يرجى المحاولة مرة أخرى';
+      toast.show(msg, 'danger');
     },
   });
 
@@ -163,18 +167,8 @@ export function useAttendanceMatrix(classId: number, attendanceWeekId?: number |
     isLoading: enrollmentsQuery.isLoading || recordsQuery.isLoading,
     isSaving: saveSlotMutation.isPending,
     saveSlot: (
-      arg1: number,
-      arg2: any,
-      arg3?: any
-    ) => {
-      // Support both signatures:
-      // 1. (dayNumber: number, changes: Array<{ enrollmentId, status }>)
-      // 2. (dayNumber: number, periodNumber: number, changes: Array<{ enrollmentId, status }>)
-      if (Array.isArray(arg2)) {
-        return saveSlotMutation.mutateAsync({ dayNumber: arg1, changes: arg2 });
-      } else {
-        return saveSlotMutation.mutateAsync({ dayNumber: arg1, changes: arg3 || [] });
-      }
-    },
+      dayNumber: number,
+      changes: Array<{ enrollmentId: number; status: AttendanceStatus }>
+    ) => saveSlotMutation.mutateAsync({ dayNumber, changes }),
   };
 }
